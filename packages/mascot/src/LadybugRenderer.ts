@@ -53,6 +53,10 @@ const FLASH_SECONDS = 2.6;
 const ALARM_TINT = new THREE.Color("#ff2414");
 /** Sideways offset of the magnifying glass from the bug's nose. */
 const LENS_X = 0.2;
+/** How far in front of the eye (toward the camera) the lens sits while peeking. */
+const PEEK_GAP = 0.1;
+/** How much the eye behind the lens swells while peeking. */
+const PEEK_ZOOM = 0.45;
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 /** Frame-rate independent smoothing factor. */
@@ -119,6 +123,13 @@ export class LadybugRenderer {
   private lens = 0;
   private lensSide: 1 | -1 = 1;
   private lensX = -LENS_X;
+  /** 0–1: the magnifying glass is held up in front of one eye for a closer look. */
+  private peek = 0;
+  private peekLeft = 0;
+  private peekIn = randomBetween(1.2, 2.5);
+  private readonly eyePoint = new THREE.Vector3();
+  private readonly otherEyePoint = new THREE.Vector3();
+  private readonly toCamera = new THREE.Vector3();
 
   constructor(canvas: HTMLCanvasElement, viewport: LadybugViewport) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -245,6 +256,21 @@ export class LadybugRenderer {
     this.happy = approach(this.happy, mood === "happy" ? 1 : 0, 5, dt);
     this.nervous = approach(this.nervous, mood === "nervous" ? 1 : 0, 5, dt);
     this.alarmed = approach(this.alarmed, mood === "alarmed" ? 1 : 0, 8, dt);
+    // Now and then while sniffing, hold the magnifying glass up to one eye.
+    if (mood === "sniffing" && (mode === "idle" || walking) && this.lens > 0.9) {
+      if (this.peekLeft > 0) {
+        this.peekLeft -= dt;
+        if (this.peekLeft <= 0) this.peekIn = randomBetween(2.5, 5.5);
+      } else {
+        this.peekIn -= dt;
+        if (this.peekIn <= 0) this.peekLeft = randomBetween(1.4, 2.2);
+      }
+    } else {
+      this.peekLeft = 0;
+      if (mood !== "sniffing") this.peekIn = randomBetween(1.2, 2.5);
+    }
+    this.peek = approach(this.peek, this.peekLeft > 0 ? 1 : 0, 6, dt);
+    const peeking = THREE.MathUtils.smootherstep(this.peek, 0, 1);
     // Reactions are loudest right after the verdict and settle down after.
     const fresh = 0.3 + 0.7 * Math.exp(-this.moodTime / 2.5);
 
@@ -319,10 +345,11 @@ export class LadybugRenderer {
     this.headTilt += (tiltTarget - this.headTilt) * ease(3, dt);
     rig.head.rotation.z = this.headTilt;
     const sniffBurst = Math.max(0, Math.sin(t * 1.9)) ** 2;
-    const sniffNod = Math.sin(t * 17) * 0.08 * sniffBurst;
+    // Peeking through the glass, the head comes up and holds still.
+    const sniffNod = Math.sin(t * 17) * 0.08 * sniffBurst * (1 - peeking);
     rig.head.rotation.x =
       Math.sin(this.phase * 2) * 0.05 * this.gait +
-      this.sniff * (0.3 + sniffNod) -
+      this.sniff * (0.3 * (1 - peeking * 0.85) + sniffNod) -
       this.expect * 0.45 -
       this.alarmed * 0.12;
 
@@ -358,10 +385,15 @@ export class LadybugRenderer {
     // Happy squints into ^ ^; alarm and anticipation open the eyes wide.
     const wide = 1 + 0.2 * Math.max(this.alarmed, this.expect);
     const eyeOpen = (this.blink > 0 ? 0.1 : 1) * (1 - 0.45 * this.happy) * wide;
-    for (const eye of rig.eyes) {
-      eye.scale.y += (eyeOpen - eye.scale.y) * ease(40, dt);
-      eye.scale.x = wide;
-    }
+    // Which eye the glass is on: the viewer's side, following the lens over
+    // when the bug turns around (rig.eyes is [right, left]).
+    const lensOnLeft = THREE.MathUtils.clamp((1 - this.lensX / LENS_X) / 2, 0, 1);
+    rig.eyes.forEach((eye, i) => {
+      const zoom = 1 + PEEK_ZOOM * peeking * (i === 1 ? lensOnLeft : 1 - lensOnLeft);
+      eye.scale.y += (eyeOpen * zoom - eye.scale.y) * ease(40, dt);
+      eye.scale.x = wide * zoom;
+      eye.scale.z = zoom;
+    });
     // Worry shows as a small frown; the calm face has no mouth.
     const frown = Math.max(this.nervous * 0.75, this.alarmed);
     rig.frown.visible = frown > 0.02;
@@ -408,9 +440,18 @@ export class LadybugRenderer {
     this.sway.rotation.z = this.tilt + Math.sin(t * 53) * 0.03 * tremble;
     this.sway.position.x = (Math.sin(t * 61) * 0.006 + Math.sin(t * 37) * 0.004) * tremble;
 
+    // Squash and stretch spring.
+    const stiffness = 320;
+    const damping = 14;
+    this.squashVelocity += (-stiffness * this.squash - damping * this.squashVelocity) * dt;
+    this.squash += this.squashVelocity * dt;
+    const s = THREE.MathUtils.clamp(this.squash, -0.3, 0.3);
+    rig.root.scale.set(1 - s * 0.6, 1 + s, 1 - s * 0.6);
+
     // Magnifying glass: floats ahead of the nose on the viewer's side of the
     // head (local -x when heading right, since yaw turns +x away), turned
-    // toward the viewer, bobbing with each sniff.
+    // toward the viewer, bobbing with each sniff. While peeking it's raised
+    // between the camera and the eye on that side, so the eye looks zoomed.
     this.lens = approach(this.lens, mood === "sniffing" ? 1 : 0, 7, dt);
     const magnifier = rig.magnifier;
     magnifier.visible = this.lens > 0.01;
@@ -427,16 +468,21 @@ export class LadybugRenderer {
         0.27 + Math.sin(t * 2.1) * 0.015 - sniffNod * 0.12,
         0.52,
       );
-      magnifier.rotation.set(0.12 + sniffNod * 0.6, -yaw * 0.85, Math.sin(t * 1.3) * 0.06);
+      if (peeking > 0.001) {
+        this.sway.updateMatrixWorld(true);
+        const eye = rig.eyes[1].getWorldPosition(this.eyePoint);
+        eye.lerp(rig.eyes[0].getWorldPosition(this.otherEyePoint), 1 - lensOnLeft);
+        eye.addScaledVector(this.toCamera.subVectors(this.camera.position, eye).normalize(), PEEK_GAP);
+        rig.root.worldToLocal(eye);
+        eye.y += Math.sin(t * 3.1) * 0.006;
+        magnifier.position.lerp(eye, peeking);
+      }
+      magnifier.rotation.set(
+        (0.12 + sniffNod * 0.6) * (1 - peeking),
+        -yaw * 0.85,
+        Math.sin(t * 1.3) * 0.06 * (1 - peeking * 0.5),
+      );
     }
-
-    // Squash and stretch spring.
-    const stiffness = 320;
-    const damping = 14;
-    this.squashVelocity += (-stiffness * this.squash - damping * this.squashVelocity) * dt;
-    this.squash += this.squashVelocity * dt;
-    const s = THREE.MathUtils.clamp(this.squash, -0.3, 0.3);
-    rig.root.scale.set(1 - s * 0.6, 1 + s, 1 - s * 0.6);
 
     // Contact shadow only while on the ground.
     const grounded = mode === "idle" || walking;

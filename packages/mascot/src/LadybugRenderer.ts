@@ -57,12 +57,35 @@ const LENS_X = 0.2;
 const POCKET = new THREE.Vector3(0.24, 0.24, -0.3);
 /** Where it swings past on the way out, clear of the shell's flank. */
 const SWING = new THREE.Vector3(0.44, 0.34, 0.06);
-/** Seconds to take the magnifying glass out of the pocket, or put it back. */
-const DRAW_SECONDS = 0.6;
+/** Where it's held up beside the face, before and after a peek (x is per side). */
+const READY = new THREE.Vector3(0.38, 0.32, 0.42);
 /** How far in front of the eye (toward the camera) the lens sits while peeking. */
 const PEEK_GAP = 0.1;
 /** How much the eye behind the lens swells while peeking. */
 const PEEK_ZOOM = 0.45;
+
+/**
+ * A peek through the magnifying glass, beat by beat: whipped out from behind
+ * the back, held up beside the face, brought in front of the eye, peered
+ * through, moved away again, then whipped back.
+ */
+const OUT = 0;
+const READY_BEAT = 1;
+const RAISE = 2;
+const HOLD = 3;
+const LOWER = 4;
+const AFTER = 5;
+const STASH = 6;
+/** Seconds per beat; HOLD is picked per peek. */
+const BEAT_SECONDS = [0.2, 0.32, 0.36, 0, 0.3, 0.16, 0.2];
+/** Cutting a peek short jumps to the matching point on the way back. */
+const MIRROR = [STASH, AFTER, LOWER, LOWER, LOWER, AFTER, STASH];
+
+/** Pulls back a little before going (anticipation). */
+const BACK = 1.70158;
+const backIn = (x: number) => (BACK + 1) * x ** 3 - BACK * x ** 2;
+/** Overshoots a little and settles. */
+const backOut = (x: number) => 1 - backIn(1 - x);
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 /** Frame-rate independent smoothing factor. */
@@ -128,15 +151,22 @@ export class LadybugRenderer {
   private tint = 0;
   private lensSide: 1 | -1 = 1;
   private lensX = -LENS_X;
-  /** 0–1: from pocketed behind the back (0) to held up in front of one eye (1). */
-  private peek = 0;
-  private peekLeft = 0;
+  /** Current beat of a peek through the magnifying glass, or -1 while it's pocketed. */
+  private peekBeat = -1;
+  private peekBeatTime = 0;
+  private peekHold = 0;
   private peekIn = randomBetween(1.2, 2.5);
   private readonly eyePoint = new THREE.Vector3();
   private readonly otherEyePoint = new THREE.Vector3();
   private readonly toCamera = new THREE.Vector3();
   private readonly pocketPoint = new THREE.Vector3();
   private readonly swingPoint = new THREE.Vector3();
+  private readonly readyPoint = new THREE.Vector3();
+  /** Smoothed: head raised to look through the glass, and the eye magnified behind it. */
+  private headUp = 0;
+  private magnified = 0;
+  /** Antennae flick, kicked when the glass is whipped out or put away. */
+  private flick = 0;
 
   constructor(canvas: HTMLCanvasElement, viewport: LadybugViewport) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -263,32 +293,71 @@ export class LadybugRenderer {
     this.happy = approach(this.happy, mood === "happy" ? 1 : 0, 5, dt);
     this.nervous = approach(this.nervous, mood === "nervous" ? 1 : 0, 5, dt);
     this.alarmed = approach(this.alarmed, mood === "alarmed" ? 1 : 0, 8, dt);
-    // Now and then while sniffing, take the magnifying glass out from behind
-    // the back and hold it up to one eye, then pocket it again. It's held on
-    // the viewer's side (local -x when heading right, since yaw turns +x away).
+    // Now and then while sniffing, whip the magnifying glass out from behind
+    // the back, peer through it, and put it away again. It's held on the
+    // viewer's side (local -x when heading right, since yaw turns +x away).
     if (walking || held) this.lensSide = pose.heading;
     this.lensX = approach(this.lensX, -this.lensSide * LENS_X, 5, dt);
     const lensSide = THREE.MathUtils.clamp(this.lensX / LENS_X, -1, 1);
-    if (mood === "sniffing" && (mode === "idle" || walking)) {
-      if (this.peekLeft > 0) {
-        this.peekLeft -= dt;
-        if (this.peekLeft <= 0) this.peekIn = randomBetween(2.5, 5.5);
-      } else {
+    const canPeek = mood === "sniffing" && (mode === "idle" || walking);
+    const beatSeconds = (beat: number) => (beat === HOLD ? this.peekHold : BEAT_SECONDS[beat]);
+    if (this.peekBeat < 0) {
+      if (canPeek) {
         this.peekIn -= dt;
-        if (this.peekIn <= 0) this.peekLeft = DRAW_SECONDS + randomBetween(1.4, 2.2);
+        if (this.peekIn <= 0) {
+          this.peekBeat = OUT;
+          this.peekBeatTime = 0;
+          this.peekHold = randomBetween(1.2, 1.9);
+          this.squashVelocity -= 1.4;
+          this.flick = 1;
+        }
+      } else if (mood !== "sniffing") {
+        this.peekIn = randomBetween(1.2, 2.5);
       }
     } else {
-      this.peekLeft = 0;
-      if (mood !== "sniffing") this.peekIn = randomBetween(1.2, 2.5);
+      if (!canPeek && this.peekBeat < LOWER) {
+        const f = this.peekBeat === HOLD ? 1 : this.peekBeatTime / beatSeconds(this.peekBeat);
+        this.peekBeat = MIRROR[this.peekBeat];
+        this.peekBeatTime = (1 - f) * beatSeconds(this.peekBeat);
+      }
+      this.peekBeatTime += dt;
+      while (this.peekBeat >= 0 && this.peekBeatTime >= beatSeconds(this.peekBeat)) {
+        this.peekBeatTime -= beatSeconds(this.peekBeat);
+        this.peekBeat++;
+        if (this.peekBeat > STASH) {
+          this.peekBeat = -1;
+          this.peekIn = randomBetween(2.5, 5.5);
+          this.squashVelocity -= 1;
+          this.flick = 1;
+        }
+      }
     }
-    this.peek = THREE.MathUtils.clamp(
-      this.peek + ((this.peekLeft > 0 ? 1 : -1) * dt) / DRAW_SECONDS,
-      0,
-      1,
-    );
-    const peeking = THREE.MathUtils.smootherstep(this.peek, 0, 1);
-    /** Peaks halfway out of the pocket: a little twist to reach behind. */
-    const reach = Math.sin(Math.PI * peeking);
+    const beat = this.peekBeat;
+    const f = beat < 0 ? 0 : THREE.MathUtils.clamp(this.peekBeatTime / beatSeconds(beat), 0, 1);
+    /** Raising and lowering the glass between beside the face (0) and the eye (1). */
+    const raised =
+      beat === RAISE
+        ? THREE.MathUtils.smootherstep(f, 0, 1)
+        : beat === HOLD
+          ? 1
+          : beat === LOWER
+            ? THREE.MathUtils.smootherstep(1 - f, 0, 1)
+            : 0;
+    /** Leaning the lens in toward the camera partway through the hold. */
+    const pump = beat === HOLD ? Math.sin(Math.PI * f) ** 2 : 0;
+    const headUpGoal =
+      beat === OUT ? 0.4 * f : beat === STASH ? 0.4 * (1 - f) : beat < 0 ? 0 : 0.4 + 0.6 * raised;
+    this.headUp = approach(this.headUp, headUpGoal, 18, dt);
+    const magnifyGoal =
+      beat === RAISE || beat === LOWER
+        ? THREE.MathUtils.smoothstep(raised, 0.6, 1)
+        : beat === HOLD
+          ? 1 + 0.5 * pump
+          : 0;
+    this.magnified = approach(this.magnified, magnifyGoal, 20, dt);
+    /** A twist of the body to reach behind the back. */
+    const reach = beat === OUT || beat === STASH ? Math.sin(Math.PI * f) : 0;
+    this.flick *= Math.exp(-6 * dt);
     // Reactions are loudest right after the verdict and settle down after.
     const fresh = 0.3 + 0.7 * Math.exp(-this.moodTime / 2.5);
 
@@ -352,7 +421,7 @@ export class LadybugRenderer {
       Math.abs(Math.sin(t * 7.5)) * 0.025 * wiggle +
       Math.abs(pitch) * 0.2;
     rig.body.rotation.x = pitch;
-    rig.body.rotation.y = Math.sin(t * 7.5) * 0.14 * wiggle + lensSide * reach * 0.12;
+    rig.body.rotation.y = Math.sin(t * 7.5) * 0.14 * wiggle + lensSide * reach * 0.16;
     rig.body.rotation.z =
       Math.sin(this.phase) * 0.05 * this.gait + Math.sin(t * 15) * 0.1 * wiggle;
     rig.body.scale.y = 1 + Math.sin(t * 2.4) * 0.012 + this.expect * 0.03;
@@ -361,13 +430,14 @@ export class LadybugRenderer {
     // ground in quick bursts of little nods. Expectant: looks up.
     const tiltTarget = mode === "idle" ? Math.sin(t * 0.6) * (0.14 - this.expect * 0.08) : 0;
     this.headTilt += (tiltTarget - this.headTilt) * ease(3, dt);
-    rig.head.rotation.z = this.headTilt;
+    // Peering: the head cocks toward the glass.
+    rig.head.rotation.z = this.headTilt - lensSide * 0.12 * this.headUp ** 2;
     const sniffBurst = Math.max(0, Math.sin(t * 1.9)) ** 2;
     // Peeking through the glass, the head comes up and holds still.
-    const sniffNod = Math.sin(t * 17) * 0.08 * sniffBurst * (1 - peeking);
+    const sniffNod = Math.sin(t * 17) * 0.08 * sniffBurst * (1 - this.headUp);
     rig.head.rotation.x =
       Math.sin(this.phase * 2) * 0.05 * this.gait +
-      this.sniff * (0.3 * (1 - peeking * 0.85) + sniffNod) -
+      this.sniff * (0.3 * (1 - this.headUp * 0.85) + sniffNod) -
       this.expect * 0.45 -
       this.alarmed * 0.12;
 
@@ -384,13 +454,15 @@ export class LadybugRenderer {
         frantic +
         twitch * 0.3 +
         quiver +
+        side * this.flick * 0.3 * Math.sin(t * 28) +
         side * (this.nervous * 0.15 - this.alarmed * 0.3 + Math.sin(t * 15) * 0.08 * wiggle);
       pivot.rotation.x =
         Math.sin(t * 1.7 + side * 2) * 0.12 -
         (airborne ? 0.3 : 0) +
         twitch * 0.2 -
         this.nervous * 0.4 +
-        this.expect * 0.25;
+        this.expect * 0.25 -
+        this.flick * 0.4;
     }
 
     // Blinking.
@@ -406,10 +478,14 @@ export class LadybugRenderer {
     // Which eye the glass is on: the viewer's side, following the lens over
     // when the bug turns around (rig.eyes is [right, left]).
     const lensOnLeft = (1 - lensSide) / 2;
-    const magnified = THREE.MathUtils.smoothstep(this.peek, 0.75, 1);
+    // The eye behind the lens swells; the other one squints shut, like
+    // looking through a telescope.
+    const squint = Math.min(1, this.magnified);
     rig.eyes.forEach((eye, i) => {
-      const zoom = 1 + PEEK_ZOOM * magnified * (i === 1 ? lensOnLeft : 1 - lensOnLeft);
-      eye.scale.y += (eyeOpen * zoom - eye.scale.y) * ease(40, dt);
+      const behind = i === 1 ? lensOnLeft : 1 - lensOnLeft;
+      const zoom = 1 + PEEK_ZOOM * this.magnified * behind;
+      const open = eyeOpen * zoom * (1 - 0.65 * squint * (1 - behind));
+      eye.scale.y += (open - eye.scale.y) * ease(40, dt);
       eye.scale.x = wide * zoom;
       eye.scale.z = zoom;
     });
@@ -467,36 +543,60 @@ export class LadybugRenderer {
     const s = THREE.MathUtils.clamp(this.squash, -0.3, 0.3);
     rig.root.scale.set(1 - s * 0.6, 1 + s, 1 - s * 0.6);
 
-    // Magnifying glass: swings out from behind the back, past the flank and
-    // up between the camera and the eye on the viewer's side, so the eye
-    // looks zoomed. It turns edge-on and shrinks as it goes back in the pocket.
+    // Magnifying glass: whipped out from behind the back past the flank,
+    // held beside the face, then brought up between the camera and the eye on
+    // the viewer's side so the eye looks zoomed. Turned edge-on and shrunk
+    // while it's behind the shell.
     const magnifier = rig.magnifier;
-    magnifier.visible = this.peek > 0.01;
+    magnifier.visible = beat >= 0;
     if (magnifier.visible) {
-      this.sway.updateMatrixWorld(true);
-      const eye = rig.eyes[1].getWorldPosition(this.eyePoint);
-      eye.lerp(rig.eyes[0].getWorldPosition(this.otherEyePoint), 1 - lensOnLeft);
-      eye.addScaledVector(this.toCamera.subVectors(this.camera.position, eye).normalize(), PEEK_GAP);
-      rig.root.worldToLocal(eye);
-      eye.y += Math.sin(t * 3.1) * 0.006 * peeking;
-      // Quadratic Bézier: pocket → past the flank → in front of the eye.
+      const faceYaw = -yaw * 0.85;
       const pocket = this.pocketPoint.copy(POCKET).setX(lensSide * POCKET.x);
       const swing = this.swingPoint.copy(SWING).setX(lensSide * SWING.x);
-      const u = peeking;
-      magnifier.position
-        .copy(pocket)
-        .multiplyScalar((1 - u) ** 2)
-        .addScaledVector(swing, 2 * u * (1 - u))
-        .addScaledVector(eye, u * u);
-      // Handle toward the bug's back; squashing x through 0 reads as the glass
-      // turning over.
-      const size = 0.45 + 0.55 * u;
-      magnifier.scale.set(size * lensSide, size, size);
-      magnifier.rotation.set(
-        0.3 * (1 - u),
-        THREE.MathUtils.lerp(lensSide * 1.3, -yaw * 0.85, u),
-        Math.sin(t * 1.3) * 0.03 * u,
-      );
+      const ready = this.readyPoint.copy(READY).setX(lensSide * READY.x);
+      ready.y += Math.sin(t * 2.1) * 0.01;
+      if (beat === OUT || beat === STASH) {
+        // 0 in the pocket, 1 beside the face; overshoots on the way out, and
+        // pulls back a little before going in.
+        const u = beat === OUT ? backOut(f) : 1 - backIn(f);
+        magnifier.position
+          .copy(pocket)
+          .multiplyScalar((1 - u) ** 2)
+          .addScaledVector(swing, 2 * u * (1 - u))
+          .addScaledVector(ready, u * u);
+        const size = 0.45 + 0.55 * u;
+        magnifier.scale.set(size * lensSide, size, size);
+        magnifier.rotation.set(
+          0.3 * (1 - u) + 0.12 * u,
+          THREE.MathUtils.lerp(lensSide * 1.3, faceYaw, u),
+          lensSide * 0.9 * (1 - u),
+        );
+      } else {
+        // Settles with a little wobble once it's out, and again once it's
+        // moved away from the eye.
+        const settle =
+          beat === READY_BEAT || beat === AFTER ? Math.sin(f * Math.PI * 3) * (1 - f) : 0;
+        if (raised > 0) {
+          this.sway.updateMatrixWorld(true);
+          const eye = rig.eyes[1].getWorldPosition(this.eyePoint);
+          eye.lerp(rig.eyes[0].getWorldPosition(this.otherEyePoint), 1 - lensOnLeft);
+          this.toCamera.subVectors(this.camera.position, eye).normalize();
+          eye.addScaledVector(this.toCamera, PEEK_GAP + 0.04 * pump);
+          rig.root.worldToLocal(eye);
+          eye.y += Math.sin(t * 3.1) * 0.006;
+          magnifier.position.lerpVectors(ready, eye, raised);
+          // Arcs up a little on the way.
+          magnifier.position.y += Math.sin(Math.PI * raised) * 0.05;
+        } else {
+          magnifier.position.copy(ready);
+        }
+        magnifier.scale.set(lensSide, 1, 1);
+        magnifier.rotation.set(
+          0.12 * (1 - raised),
+          faceYaw,
+          lensSide * 0.25 * settle + Math.sin(t * 1.3) * 0.03,
+        );
+      }
     }
 
     // Contact shadow only while on the ground.

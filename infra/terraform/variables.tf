@@ -87,6 +87,12 @@ variable "registry_name" {
   default     = "ladybug"
 }
 
+variable "registry_region" {
+  description = "Region for the Container Registry, which fewer regions offer (e.g. not atl). null = the same as region. List options: curl https://api.vultr.com/v2/registry/region/list"
+  type        = string
+  default     = null
+}
+
 variable "registry_plan" {
   type    = string
   default = "start_up"

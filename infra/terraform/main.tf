@@ -3,7 +3,8 @@ data "vultr_kubernetes_version" "current" {}
 locals {
   kubernetes_version = coalesce(var.kubernetes_version, data.vultr_kubernetes_version.current.latest)
   # Databases and Object Storage, skipped when the cluster only runs sandboxes.
-  data_services = var.sandbox_only ? 0 : 1
+  data_services   = var.sandbox_only ? 0 : 1
+  registry_region = coalesce(var.registry_region, var.region)
 }
 
 resource "vultr_vpc" "main" {
@@ -131,7 +132,7 @@ resource "vultr_object_storage_bucket" "artifacts" {
 
 resource "vultr_container_registry" "main" {
   name   = var.registry_name
-  region = var.region
+  region = local.registry_region
   plan   = var.registry_plan
   public = false
 }

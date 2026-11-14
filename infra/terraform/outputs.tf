@@ -46,7 +46,7 @@ output "s3_secret_access_key" {
 
 output "registry" {
   description = "Image prefix, e.g. <registry>/ladybug-server:<tag>."
-  value       = "${var.region}.vultrcr.com/${vultr_container_registry.main.name}"
+  value       = "${local.registry_region}.vultrcr.com/${vultr_container_registry.main.name}"
 }
 
 output "registry_username" {

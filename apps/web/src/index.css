@@ -400,7 +400,7 @@ p {
   font-weight: 550;
 }
 
-.form-error.needs-key {
+.form-error.needs-account {
   color: var(--red-ink);
 }
 
@@ -434,6 +434,55 @@ p {
 .key-field.is-highlighted input {
   border-color: var(--red);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 20%, transparent);
+}
+
+.account-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  font-size: 0.9rem;
+  color: var(--ink-2);
+}
+
+/* Signed out: the sign-in fields take the whole row, the demo link wraps below. */
+.account-bar.sign-in {
+  display: grid;
+  flex-basis: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+}
+
+.account-bar.sign-in .key-field input {
+  width: 100%;
+}
+
+@media (max-width: 560px) {
+  .account-bar.sign-in {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.account-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--red-ink);
+  font-size: 0.85rem;
+}
+
+.account-status {
+  margin: 1rem 1.1rem 0;
+  padding: 0.6em 1em;
+  border: 1px solid color-mix(in srgb, var(--sun) 45%, transparent);
+  border-radius: 14px;
+  background: var(--sun-wash);
+  color: var(--sun-ink);
+  font-size: 0.9rem;
+}
+
+.account-status[data-status="rejected"] {
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  background: var(--red-wash);
+  color: var(--red-ink);
 }
 
 /* how it works */

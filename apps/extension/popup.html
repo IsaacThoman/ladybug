@@ -13,6 +13,29 @@
       </div>
     </header>
 
+    <section id="signed-out" class="account" hidden>
+      <form id="auth-form" class="auth-form">
+        <p class="account-note">Sign in so Ladybug can check the pages you visit and warn your desktop ladybug.</p>
+        <label for="username">Username</label>
+        <input id="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required />
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+        <div class="row">
+          <button type="submit" data-mode="login">Sign in</button>
+          <button type="submit" data-mode="signup" class="secondary">Create account</button>
+        </div>
+        <p id="auth-error" class="form-error" hidden></p>
+      </form>
+    </section>
+
+    <section id="signed-in" class="account" hidden>
+      <div class="account-row">
+        <span>Signed in as <strong id="account-name"></strong></span>
+        <button id="sign-out" type="button" class="link">Sign out</button>
+      </div>
+      <p id="account-status" class="account-status" hidden></p>
+    </section>
+
     <label class="toggle">
       <input id="enabled" type="checkbox" />
       <span>Report the pages I visit</span>

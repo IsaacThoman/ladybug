@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { isIP } from "node:net";
 import type { AdminStreamEvent, PendingAnalysis, ScanReport, Verdict } from "@ladybug/shared";
 import { logEvent, sendPetAlert } from "./activity.ts";
+import type { AlertRecipient } from "./activity.ts";
 import { config } from "./config.ts";
 import { createScan, waitForScan } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
@@ -21,6 +22,17 @@ const useScans = () => config.analyzer === "scan" && scanDeps !== null;
 
 /** Analyses in progress, keyed by normalised URL. */
 const pending = new Map<string, PendingAnalysis>();
+/** Who to tell when each analysis finishes, keyed by URL, then user id (or "everyone"). */
+const watchers = new Map<string, Map<string, AlertRecipient>>();
+
+const recipientKey = (recipient: AlertRecipient) => (recipient === "everyone" ? "everyone" : recipient.userId);
+
+/** Everyone waiting on an analysis. Someone "everyone" covers needs no alert of their own. */
+export function recipientsFor(url: string): AlertRecipient[] {
+  const waiting = watchers.get(url);
+  if (!waiting) return [];
+  return waiting.has("everyone") ? ["everyone"] : [...waiting.values()];
+}
 
 export const listPending = () =>
   [...pending.values()].sort((a, b) => a.startedAt - b.startedAt);
@@ -56,11 +68,18 @@ export function placeholderVerdict(url: string, host: string): { verdict: Verdic
 
 /**
  * Starts analysing a URL unless it's already being analysed. The result is
- * remembered in Typesense and pushed to the desktop pet.
+ * remembered in Typesense and pushed to the pets of everyone who visited the
+ * URL meanwhile. `joined` is false when this recipient was already waiting.
  */
-export function startAnalysis(url: string, host: string) {
+export function startAnalysis(url: string, host: string, recipient: AlertRecipient) {
+  const waiting = watchers.get(url) ?? new Map<string, AlertRecipient>();
+  const key = recipientKey(recipient);
+  const joined = !waiting.has(key);
+  waiting.set(key, recipient);
+  watchers.set(url, waiting);
+
   const existing = pending.get(url);
-  if (existing) return existing;
+  if (existing) return { analysis: existing, joined };
 
   const startedAt = Date.now();
   const scan = useScans();
@@ -82,8 +101,8 @@ export function startAnalysis(url: string, host: string) {
       ? { analyzer: "scan", scanId: analysis.scanId }
       : { analyzer: "placeholder", delayMs: config.analysisDelayMs },
   });
-  void runAnalysis(analysis);
-  return analysis;
+  void runAnalysis(analysis, recipient === "everyone" ? null : recipient.userId);
+  return { analysis, joined };
 }
 
 /** Sandbox scans give benign / suspicious / malicious; the URL store keeps safe / unsafe. */
@@ -105,22 +124,25 @@ function hostOf(url: string) {
   }
 }
 
-/** Runs a sandbox scan and waits for its report. */
-async function scanVerdict(url: string, scanId: string) {
+/** Runs a sandbox scan and waits for its report. The scan is listed under `userId`. */
+async function scanVerdict(url: string, scanId: string, userId: string | null) {
   const deps = scanDeps!;
   const parsed = normaliseScanUrl(url);
   if ("error" in parsed) throw new Error(`can't scan ${url}: ${parsed.error}`);
-  await createScan(deps, parsed.url, null, scanId);
+  await createScan(deps, parsed.url, { apiKey: null, userId }, scanId);
   const scan = await waitForScan(deps, scanId, config.scanTimeoutMs);
   if (scan.status !== "done" || !scan.report) throw new Error(scan.error ?? "the scan failed");
   return verdictFromReport(scan.report);
 }
 
-async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis) {
+async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, userId: string | null) {
+  const alertAll = (level: "danger" | "ok" | "info", message: string) => {
+    for (const recipient of recipientsFor(url)) sendPetAlert(recipient, level, message, url, host, scanId);
+  };
   try {
     let result: { verdict: Verdict; reason: string };
     if (scanId) {
-      result = await scanVerdict(url, scanId);
+      result = await scanVerdict(url, scanId, userId);
     } else {
       await sleep(config.analysisDelayMs);
       result = placeholderVerdict(url, host);
@@ -145,9 +167,9 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis) {
       details: { analyzer: scanId ? "scan" : "placeholder", recordId: record.id, reason, scanId },
     });
     if (verdict === "unsafe") {
-      sendPetAlert("danger", `Watch out! ${host} looks unsafe. ${reason.replace(/\.$/, "")}.`, url, host, scanId);
+      alertAll("danger", `Watch out! ${host} looks unsafe. ${reason.replace(/\.$/, "")}.`);
     } else {
-      sendPetAlert("ok", `All good, ${host} checked out fine.`, url, host, scanId);
+      alertAll("ok", `All good, ${host} checked out fine.`);
     }
   } catch (error) {
     logEvent({
@@ -157,9 +179,10 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis) {
       host,
       details: { scanId },
     });
-    if (scanId) sendPetAlert("info", `I couldn't finish checking ${host}.`, url, host, scanId);
+    if (scanId) alertAll("info", `I couldn't finish checking ${host}.`);
   } finally {
     pending.delete(url);
+    watchers.delete(url);
     broadcastPending();
   }
 }

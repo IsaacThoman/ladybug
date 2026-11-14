@@ -7,7 +7,8 @@ import type { Redis } from "ioredis";
 import { API_KEY_HEADER, isTerminalStatus } from "@ladybug/shared";
 import type { ApiError, CreateScanResponse, ScanEvent, ScanJob, ScanListResponse } from "@ladybug/shared";
 import { getScan, insertScan, isValidArtifactKey, listScans, readEvents } from "@ladybug/backend";
-import type { ArtifactStore, Db } from "@ladybug/backend";
+import type { AccountStore, ArtifactStore, Db } from "@ladybug/backend";
+import { accessProblem, bearerToken, currentUser, sendAuthError } from "./accounts.ts";
 import { normaliseScanUrl } from "./validate.ts";
 
 export type ScanDeps = {
@@ -15,11 +16,13 @@ export type ScanDeps = {
   redis: Redis;
   queue: Queue<ScanJob>;
   artifacts: ArtifactStore;
+  accounts: AccountStore;
   /** SSE readers block on XREAD, so each needs its own connection. */
   createSubscriber: () => Redis;
+  /** Keys for scripts: they may start scans without an account. */
   apiKeys: string[];
   rateLimitPerMinute: number;
-  /** Trusted header with the real client IP (CLIENT_IP_HEADER), for rate limits without API keys. */
+  /** Trusted header with the real client IP (CLIENT_IP_HEADER), for sign-in rate limits. */
   clientIpHeader?: string | null;
 };
 
@@ -40,9 +43,12 @@ function scanId(req: Request, res: Response): string | null {
   return id;
 }
 
+/** Who started a scan: an account, an API key, or neither (an admin check). */
+export type ScanOwner = { apiKey: string | null; userId: string | null };
+
 /** Stores and queues a scan for an already-validated URL. */
-export async function createScan(deps: ScanDeps, url: string, apiKey: string | null, id: string = randomUUID()) {
-  await insertScan(deps.db, { id, inputUrl: url, apiKey });
+export async function createScan(deps: ScanDeps, url: string, owner: ScanOwner, id: string = randomUUID()) {
+  await insertScan(deps.db, { id, inputUrl: url, ...owner });
   await deps.queue.add("scan", { scanId: id, url }, { jobId: id, removeOnComplete: 1000, removeOnFail: 1000 });
   return id;
 }
@@ -75,16 +81,21 @@ export async function waitForScan(deps: ScanDeps, scanId: string, timeoutMs: num
 export function scansRouter(deps: ScanDeps) {
   const router = Router();
 
+  // Approved accounts start scans; so do API keys, for scripts.
   router.post("/", async (req, res) => {
-    let apiKey: string | null = null;
-    if (deps.apiKeys.length > 0) {
-      apiKey = req.header(API_KEY_HEADER) ?? null;
-      if (!apiKey || !deps.apiKeys.includes(apiKey)) return fail(res, 401, "missing or invalid API key");
+    const headerKey = req.header(API_KEY_HEADER) ?? null;
+    const apiKey = headerKey && deps.apiKeys.includes(headerKey) ? headerKey : null;
+    let userId: string | null = null;
+    if (!apiKey) {
+      if (headerKey && !bearerToken(req)) return fail(res, 401, "invalid API key");
+      const user = await currentUser(deps.accounts, req);
+      const problem = accessProblem(user);
+      if (problem) return sendAuthError(res, problem);
+      userId = user!.id;
     }
 
-    // Fixed one-minute window per key (or per client IP when auth is off).
-    const clientIp = (deps.clientIpHeader && req.header(deps.clientIpHeader)?.trim()) || req.ip;
-    const bucket = `ratelimit:${apiKey ?? clientIp}:${Math.floor(Date.now() / 60_000)}`;
+    // Fixed one-minute window per account or key.
+    const bucket = `ratelimit:${userId ?? apiKey}:${Math.floor(Date.now() / 60_000)}`;
     const count = await deps.redis.multi().incr(bucket).expire(bucket, 120).exec();
     if (Number(count?.[0]?.[1] ?? 0) > deps.rateLimitPerMinute) {
       res.setHeader("Retry-After", "60");
@@ -94,13 +105,17 @@ export function scansRouter(deps: ScanDeps) {
     const parsed = normaliseScanUrl(req.body?.url);
     if ("error" in parsed) return fail(res, 400, parsed.error);
 
-    const body: CreateScanResponse = { scanId: await createScan(deps, parsed.url, apiKey) };
+    const body: CreateScanResponse = { scanId: await createScan(deps, parsed.url, { apiKey, userId }) };
     res.status(202).json(body);
   });
 
+  // The signed-in user's own scans. Single scans stay readable by id, so report links work for anyone.
   router.get("/", async (req, res) => {
+    const user = await currentUser(deps.accounts, req);
+    const problem = accessProblem(user);
+    if (problem) return sendAuthError(res, problem);
     const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
-    const scans = await listScans(deps.db, limit);
+    const scans = await listScans(deps.db, user!.id, limit);
     const body: ScanListResponse = {
       scans: scans.map(({ report, ...scan }) => ({
         ...scan,

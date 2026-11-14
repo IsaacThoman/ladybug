@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import FaceTime from "./components/FaceTime";
+import { useOverlayPointer } from "./overlay-pointer";
 import Pet from "./components/Pet";
 import type { OverlayLayout } from "./ladybug-api";
 
 export default function App() {
+  useOverlayPointer();
   const [layout, setLayout] = useState<OverlayLayout | null>(null);
 
   useEffect(() => {
@@ -11,5 +14,5 @@ export default function App() {
   }, []);
 
   if (!layout) return null;
-  return <Pet layout={layout} />;
+  return <><Pet layout={layout} /><FaceTime layout={layout} /></>;
 }

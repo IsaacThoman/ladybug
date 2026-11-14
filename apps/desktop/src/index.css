@@ -18,3 +18,22 @@ body,
   background: transparent;
   user-select: none;
 }
+
+.facetime {
+  position: absolute;
+  z-index: 10;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  overflow: auto;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  padding: 12px;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+.facetime button { cursor: pointer; padding: 6px 12px; }
+.facetime button:disabled { cursor: default; }
+.facetime section p { margin: 8px 0; }
+.caller-video { display: block; width: 100%; margin-top: 12px; background: #111; }
+.caller-video.hidden { display: none; }

@@ -165,3 +165,5 @@ export type CheckTimeline =
 export type AdminStreamEvent =
   | { kind: "event"; event: LogEvent }
   | { kind: "pending"; pending: PendingAnalysis[] };
+
+export type { CallPhase, CallState, PreparedCall, FaceTimeApi } from "./calls.ts";

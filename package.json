@@ -10,12 +10,18 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "dev": "concurrently -k -n server,desktop -c blue,magenta \"npm:dev:server\" \"npm:dev:desktop\"",
+    "dev": "concurrently -k -n server,worker,web,desktop -c blue,yellow,green,magenta \"npm:dev:server\" \"npm:dev:worker\" \"npm:dev:web\" \"npm:dev:desktop\"",
     "dev:server": "npm run dev -w @ladybug/server",
     "dev:desktop": "npm run dev -w @ladybug/desktop",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "dev:worker": "npm run dev -w @ladybug/worker",
+    "dev:web": "npm run dev -w @ladybug/web",
+    "dev:sandbox": "npm run dev -w @ladybug/sandbox",
+    "test": "npm run test --workspaces --if-present",
+    "services:up": "docker compose up -d",
+    "services:down": "docker compose down"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

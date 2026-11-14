@@ -1,0 +1,30 @@
+# Local services for development: `npm run services:up`.
+# The server and worker run on the host (`npm run dev`); sandboxes are
+# started by the worker's docker provider.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ladybug
+      POSTGRES_PASSWORD: ladybug
+      POSTGRES_DB: ladybug
+    ports:
+      - "127.0.0.1:${LADYBUG_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ladybug"]
+      interval: 2s
+      retries: 30
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "127.0.0.1:${LADYBUG_VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  postgres:

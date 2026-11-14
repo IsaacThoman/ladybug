@@ -1,0 +1,15 @@
+{
+  "name": "@ladybug/sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/index.ts",
+    "start": "node src/index.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@ladybug/shared": "^0.0.0",
+    "playwright": "1.64.1"
+  }
+}

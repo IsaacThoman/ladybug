@@ -15,6 +15,9 @@ const COLORS = {
   eye: "#140b09",
   blush: "#ff8a86",
   wing: "#e6f1ff",
+  brass: "#d6a446",
+  handle: "#6b3f2a",
+  glass: "#dcf1ff",
 };
 
 const SHELL = { rx: 0.31, ry: 0.25, rz: 0.35, center: new THREE.Vector3(0, 0.17, -0.05) };
@@ -35,6 +38,15 @@ export type LadybugRig = {
   elytra: { pivot: THREE.Group; side: Side }[];
   wings: { pivot: THREE.Group; side: Side }[];
   legs: { pivot: THREE.Group; side: Side; tripod: 0 | 1 }[];
+  /** The smile. Flip scale.y to -1 for a frown. */
+  mouth: THREE.Mesh;
+  /**
+   * Magnifying glass, hidden at scale 0. Origin at the lens centre, lens
+   * facing +z, handle hanging down and out to +x.
+   */
+  magnifier: THREE.Group;
+  /** Glow the body a colour (alarm flash). amount 0 = off. */
+  setTint: (color: THREE.ColorRepresentation, amount: number) => void;
   dispose: () => void;
 };
 
@@ -248,6 +260,54 @@ export function buildLadybug(): LadybugRig {
     antennae.push({ pivot, side });
   }
 
+  // Magnifying glass for scans: brass rim, a faint glass disc with a glint,
+  // and a wooden handle.
+  const magnifier = new THREE.Group();
+  const LENS_R = 0.14;
+  const brassMat = mat(
+    new THREE.MeshStandardMaterial({ color: COLORS.brass, metalness: 0.85, roughness: 0.3 }),
+  );
+  const handleMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.handle, roughness: 0.55 }));
+  const glassMat = mat(
+    new THREE.MeshPhysicalMaterial({
+      color: COLORS.glass,
+      roughness: 0.05,
+      clearcoat: 1,
+      transparent: true,
+      opacity: 0.38,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  const glintMat = mat(
+    new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.85 }),
+  );
+  const rim = new THREE.Mesh(geo(new THREE.TorusGeometry(LENS_R, 0.017, 12, 48)), brassMat);
+  magnifier.add(rim);
+  const glass = new THREE.Mesh(geo(new THREE.CircleGeometry(LENS_R, 40)), glassMat);
+  glass.renderOrder = 2;
+  magnifier.add(glass);
+  const glint = new THREE.Mesh(
+    geo(new THREE.TorusGeometry(LENS_R * 0.68, 0.007, 6, 24, Math.PI * 0.42)),
+    glintMat,
+  );
+  glint.rotation.z = Math.PI * 0.55;
+  glint.position.z = 0.004;
+  glint.renderOrder = 3;
+  magnifier.add(glint);
+  const handleDir = dir(0.45, -0.9, 0);
+  const collar = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.021, 0.021, 0.035, 12)), brassMat);
+  collar.position.copy(handleDir).multiplyScalar(LENS_R + 0.026);
+  collar.quaternion.setFromUnitVectors(Y_AXIS, handleDir);
+  magnifier.add(collar);
+  const handle = new THREE.Mesh(geo(new THREE.CapsuleGeometry(0.019, 0.12, 4, 12)), handleMat);
+  handle.position.copy(handleDir).multiplyScalar(LENS_R + 0.11);
+  handle.quaternion.setFromUnitVectors(Y_AXIS, handleDir);
+  magnifier.add(handle);
+  magnifier.scale.setScalar(0);
+  magnifier.visible = false;
+  root.add(magnifier);
+
   // Six stubby legs. Tripod gait: front + back on one side move with the
   // middle leg on the other side.
   const legs: LadybugRig["legs"] = [];
@@ -291,6 +351,14 @@ export function buildLadybug(): LadybugRig {
     elytra,
     wings,
     legs,
+    mouth: smile,
+    magnifier,
+    setTint: (color, amount) => {
+      for (const m of [shellMat, darkMat, creamMat]) {
+        m.emissive.set(color);
+        m.emissiveIntensity = amount;
+      }
+    },
     dispose: () => {
       geometries.forEach((g) => g.dispose());
       materials.forEach((m) => m.dispose());

@@ -18,6 +18,7 @@
 }
 
 .pet-bubble {
+  --bubble-bg: rgba(255, 255, 255, 0.95);
   position: absolute;
   z-index: 1;
   bottom: calc(100% + 8px);
@@ -27,7 +28,7 @@
   width: max-content;
   padding: 8px 12px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--bubble-bg);
   color: #1d1d1f;
   font-size: 13px;
   font-weight: 500;
@@ -44,7 +45,24 @@
   left: 50%;
   transform: translateX(-50%);
   border: 7px solid transparent;
-  border-top-color: rgba(255, 255, 255, 0.95);
+  border-top-color: var(--bubble-bg);
+}
+
+/* Verdict bubbles. */
+.pet-bubble.safe {
+  --bubble-bg: rgba(232, 248, 236, 0.97);
+  color: #17602f;
+}
+
+.pet-bubble.warn {
+  --bubble-bg: rgba(255, 243, 214, 0.97);
+  color: #7a4a00;
+}
+
+.pet-bubble.danger {
+  --bubble-bg: rgba(214, 38, 30, 0.96);
+  color: #fff;
+  font-weight: 600;
 }
 
 @keyframes bubble-in {

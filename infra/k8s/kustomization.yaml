@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespaces.yaml
+  - network-policies.yaml
+  - rbac.yaml
+  - configmap.yaml
+  - gateway.yaml
+  - server.yaml
+  - worker.yaml
+  - web.yaml
+configurations:
+  - image-fields.yaml
+# bootstrap.sh overrides these with the Terraform registry and TAG.
+images:
+  - name: ladybug-server
+    newName: registry.example.invalid/ladybug/ladybug-server
+    newTag: replace-me
+  - name: ladybug-worker
+    newName: registry.example.invalid/ladybug/ladybug-worker
+    newTag: replace-me
+  - name: ladybug-web
+    newName: registry.example.invalid/ladybug/ladybug-web
+    newTag: replace-me
+  - name: ladybug-gateway
+    newName: registry.example.invalid/ladybug/ladybug-gateway
+    newTag: replace-me
+  - name: ladybug-sandbox
+    newName: registry.example.invalid/ladybug/ladybug-sandbox
+    newTag: replace-me

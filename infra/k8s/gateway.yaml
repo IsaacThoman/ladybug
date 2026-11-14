@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: ladybug
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: registry-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: ladybug-gateway
+          # The upstream entrypoint runs usermod/gosu as root; bypass it here.
+          command: [mitmdump]
+          args:
+            - --listen-port
+            - "8080"
+            - --set
+            - proxyauth=any
+            - --set
+            - block_global=false
+            - --set
+            - connection_strategy=lazy
+            - -s
+            - /addons/ladybug_addon.py
+            - --quiet
+          env:
+            - name: HOME
+              value: /home/mitmproxy
+          ports:
+            - name: proxy
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          startupProbe:
+            tcpSocket:
+              port: proxy
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: proxy
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: proxy
+            periodSeconds: 10
+          volumeMounts:
+            - name: gateway-ca
+              mountPath: /home/mitmproxy/.mitmproxy/mitmproxy-ca.pem
+              subPath: mitmproxy-ca.pem
+              readOnly: true
+      volumes:
+        - name: gateway-ca
+          secret:
+            secretName: gateway-ca
+            defaultMode: 0440
+            items:
+              - key: mitmproxy-ca.pem
+                path: mitmproxy-ca.pem
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: ladybug
+spec:
+  selector:
+    app.kubernetes.io/name: gateway
+  ports:
+    - name: proxy
+      port: 8080
+      targetPort: proxy

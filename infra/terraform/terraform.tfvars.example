@@ -1,0 +1,7 @@
+# cp terraform.tfvars.example terraform.tfvars
+region            = "sjc"
+sandbox_min_nodes = 2
+sandbox_max_nodes = 6
+# Must be globally unique.
+registry_name    = "ladybugdemo"
+artifacts_bucket = "ladybug-artifacts-demo"

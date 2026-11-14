@@ -11,9 +11,17 @@ const api: LadybugApi = {
       ipcRenderer.removeListener("ladybug:layout-changed", handler);
     };
   },
-  setClickThrough: (clickThrough) =>
-    ipcRenderer.send("ladybug:set-click-through", clickThrough),
+  setPetRect: (rect) => ipcRenderer.send("ladybug:set-pet-rect", rect),
+  setPetHeld: (held) => ipcRenderer.send("ladybug:set-pet-held", held),
   showMenu: () => ipcRenderer.send("ladybug:show-menu"),
+  onScanRequested: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, url: string | null) => callback(url);
+    ipcRenderer.on("ladybug:scan-url", handler);
+    return () => {
+      ipcRenderer.removeListener("ladybug:scan-url", handler);
+    };
+  },
+  openExternal: (url) => ipcRenderer.send("ladybug:open-external", url),
 };
 
 contextBridge.exposeInMainWorld("ladybug", api);

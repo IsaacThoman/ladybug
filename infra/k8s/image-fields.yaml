@@ -1,0 +1,4 @@
+# The worker creates sandbox pods dynamically; transform its configured image too.
+images:
+  - kind: ConfigMap
+    path: data/SANDBOX_IMAGE

@@ -4,6 +4,7 @@ import type {
   AccountStatus,
   AdminAccountsResponse,
   AdminModelSettings,
+  AdminSandboxesResponse,
   AdminStreamEvent,
   AdminSummary,
   Decision,
@@ -61,7 +62,10 @@ const DECISIONS = [
   "skipped",
 ] as const satisfies readonly Decision[];
 
-export function adminRouter(accounts: AccountStore, models: ModelSettingsStore) {
+/** Running sandbox scans and the newest `limit` finished ones. */
+export type SandboxLister = (limit: number) => Promise<AdminSandboxesResponse>;
+
+export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, sandboxes: SandboxLister) {
   const router = express.Router();
 
   // Live activity: every logged event, plus the list of running analyses.
@@ -175,6 +179,12 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore) 
       details: { model, previous: previous ?? catalog.defaultModel },
     });
     res.json(await modelSettings());
+  });
+
+  // Every sandbox scan, live and finished. Postgres and Valkey, so it works without Typesense.
+  router.get("/sandboxes", async (req, res) => {
+    const limit = Math.min(100, Math.max(1, Math.floor(Number(req.query.limit) || 24)));
+    res.json(await sandboxes(limit));
   });
 
   router.use(requireStore);

@@ -1,6 +1,7 @@
 import type {
   AdminAccountsResponse,
   AdminModelSettings,
+  AdminSandboxesResponse,
   AdminSession,
   AdminSummary,
   CheckResponse,
@@ -96,6 +97,8 @@ export const api = {
   rejectUser: (id: string) => request<unknown>(`/api/admin/users/${id}/reject`, { method: "POST" }),
 
   deleteUser: (id: string) => request<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
+
+  sandboxes: (limit: number) => request<AdminSandboxesResponse>(`/api/admin/sandboxes${query({ limit })}`),
 
   modelSettings: () => request<AdminModelSettings>("/api/admin/settings/model"),
 

@@ -5,6 +5,8 @@ export * from "./scan.ts";
 export * from "./sandbox.ts";
 export * from "./accounts.ts";
 
+import type { ScanStatus, ScanVerdict, Screenshot } from "./scan.ts";
+
 export const DEFAULT_SERVER_PORT = 3001;
 /**
  * The hosted Ladybug: API, report pages and admin all live on this origin.
@@ -210,6 +212,48 @@ export type AdminModelSettings = {
 /** `PUT /api/admin/settings/model`. null goes back to the worker's default. */
 export type UpdateModelRequest = {
   model: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Sandboxes (admin)
+
+/** One sandbox scan, as a tile on the admin Sandboxes page. */
+export type AdminSandbox = {
+  scanId: string;
+  inputUrl: string;
+  /** Where the page ended up, once the sandbox knows. */
+  finalUrl: string | null;
+  status: ScanStatus;
+  /**
+   * Still running, but nothing has happened for a long while: the worker
+   * probably died. Shown with the finished ones.
+   */
+  stalled: boolean;
+  /** The account that started it, "API key", or null (an admin check). */
+  startedBy: string | null;
+  createdAt: string;
+  /** The latest thing that happened: a status change, screenshot, tool call… */
+  lastActivityAt: string;
+  /** Set once the scan is done or failed. */
+  finishedAt: string | null;
+  /** The newest screenshot, null before the first one. */
+  screenshot: Screenshot | null;
+  screenshotCount: number;
+  /** What the sandbox is up to: the latest tool call or note. For finished scans, the summary. */
+  activity: string | null;
+  verdict: ScanVerdict | null;
+  score: number | null;
+  error: string | null;
+};
+
+/** `GET /api/admin/sandboxes?limit=24`: every running sandbox, plus the newest finished ones. */
+export type AdminSandboxesResponse = {
+  /** Running (or stalled) scans, newest first. */
+  running: AdminSandbox[];
+  /** Done or failed, newest first, up to `limit`. */
+  finished: AdminSandbox[];
+  /** Whether there are older finished scans past `limit`. */
+  moreFinished: boolean;
 };
 
 /** Server-sent events on /api/admin/stream. */

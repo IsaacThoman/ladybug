@@ -20,6 +20,20 @@ export async function publishEvent(redis: Redis, scanId: string, event: ScanEven
 
 export type StreamEntry = { id: string; event: ScanEvent };
 
+function parseEntries(items: [id: string, fields: string[]][]): StreamEntry[] {
+  const entries: StreamEntry[] = [];
+  for (const [id, fields] of items) {
+    const idx = fields.indexOf("event");
+    if (idx === -1) continue;
+    try {
+      entries.push({ id, event: JSON.parse(fields[idx + 1]) as ScanEvent });
+    } catch {
+      // Skip malformed entries.
+    }
+  }
+  return entries;
+}
+
 /**
  * Reads entries after `afterId` ("0" = from the start), blocking up to
  * `blockMs` for new ones. Needs a dedicated connection while blocking.
@@ -32,17 +46,10 @@ export async function readEvents(
 ): Promise<StreamEntry[]> {
   const res = await redis.xread("COUNT", 100, "BLOCK", blockMs, "STREAMS", scanStreamKey(scanId), afterId);
   if (!res) return [];
-  const entries: StreamEntry[] = [];
-  for (const [, items] of res) {
-    for (const [id, fields] of items) {
-      const idx = fields.indexOf("event");
-      if (idx === -1) continue;
-      try {
-        entries.push({ id, event: JSON.parse(fields[idx + 1]) as ScanEvent });
-      } catch {
-        // Skip malformed entries.
-      }
-    }
-  }
-  return entries;
+  return res.flatMap(([, items]) => parseEntries(items));
+}
+
+/** A scan's newest `count` events, newest first. Doesn't block. */
+export async function latestEvents(redis: Redis, scanId: string, count: number): Promise<StreamEntry[]> {
+  return parseEntries(await redis.xrevrange(scanStreamKey(scanId), "+", "-", "COUNT", count));
 }

@@ -145,7 +145,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
         </a>
 
         <div className="sidebar-mascot">
-          <MascotStage unit={104} mood={line.mood} followPointer={line.mood === "calm"} ref={mascotRef}>
+          <MascotStage unit={104} mood={line.mood} ref={mascotRef}>
             <p className="mascot-bubble" data-tone={line.tone} key={`${line.mood}:${line.says}`}>
               {line.says}
             </p>

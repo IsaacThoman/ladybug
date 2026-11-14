@@ -2,11 +2,11 @@
 
 export type Rect = { x: number; y: number; width: number; height: number };
 
-/** Primary display layout, in overlay-window coordinates. */
+/** Display or development-window layout, in renderer coordinates. */
 export type OverlayLayout = {
   width: number;
   height: number;
-  /** Area not covered by the dock/taskbar/menu bar. */
+  /** Display work area, or the padded interior of the development window. */
   workArea: Rect;
 };
 

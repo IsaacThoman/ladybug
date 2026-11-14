@@ -11,8 +11,10 @@
   },
   "scripts": {
     "dev": "concurrently -k -n server,desktop,admin,ext -c blue,magenta,green,yellow \"npm:dev:server\" \"npm:dev:desktop\" \"npm:dev:admin\" \"npm:dev:extension\"",
+    "dev:overlay": "concurrently -k -n server,desktop,admin,ext -c blue,magenta,green,yellow \"npm:dev:server\" \"npm:dev:desktop:overlay\" \"npm:dev:admin\" \"npm:dev:extension\"",
     "dev:server": "npm run dev -w @ladybug/server",
     "dev:desktop": "npm run dev -w @ladybug/desktop",
+    "dev:desktop:overlay": "npm run dev:overlay -w @ladybug/desktop",
     "dev:admin": "npm run dev -w @ladybug/admin",
     "dev:extension": "npm run dev -w @ladybug/extension",
     "typesense": "docker compose up -d typesense",

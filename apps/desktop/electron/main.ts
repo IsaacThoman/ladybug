@@ -26,6 +26,7 @@ process.env.APP_ROOT = path.join(__dirname, "..");
 
 // Use ['ENV_NAME'] to avoid vite:define replacing it at build time.
 export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+const windowedDev = Boolean(VITE_DEV_SERVER_URL) && !process.argv.includes("--overlay");
 export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 
@@ -38,8 +39,22 @@ const ICON_PATH = path.join(process.env.VITE_PUBLIC, "pulpo.png");
 let overlayWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
-/** Layout of the primary display, relative to the overlay window. */
+/** Movement bounds in renderer coordinates. */
 function getOverlayLayout(): OverlayLayout {
+  if (windowedDev && overlayWin) {
+    const [width, height] = overlayWin.getContentSize();
+    const padding = 24;
+    return {
+      width,
+      height,
+      workArea: {
+        x: padding,
+        y: padding,
+        width: width - padding * 2,
+        height: height - padding * 2,
+      },
+    };
+  }
   const { bounds, workArea } = screen.getPrimaryDisplay();
   return {
     width: bounds.width,
@@ -54,7 +69,7 @@ function getOverlayLayout(): OverlayLayout {
 }
 
 function fitOverlayToDisplay() {
-  if (!overlayWin || overlayWin.isDestroyed()) return;
+  if (windowedDev || !overlayWin || overlayWin.isDestroyed()) return;
   overlayWin.setBounds(screen.getPrimaryDisplay().bounds);
   overlayWin.webContents.send("ladybug:layout-changed", getOverlayLayout());
 }
@@ -63,39 +78,46 @@ function createOverlayWindow() {
   const { bounds } = screen.getPrimaryDisplay();
 
   overlayWin = new BrowserWindow({
-    ...bounds,
+    ...(windowedDev ? { width: 960, height: 640, minWidth: 480, minHeight: 360 } : bounds),
+    title: windowedDev ? "Ladybug — Development" : "Ladybug",
     show: false,
-    transparent: true,
-    backgroundColor: "#00000000",
-    frame: false,
-    hasShadow: false,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
+    transparent: !windowedDev,
+    backgroundColor: windowedDev ? "#e8edf2" : "#00000000",
+    frame: windowedDev,
+    hasShadow: windowedDev,
+    resizable: windowedDev,
+    movable: windowedDev,
+    minimizable: windowedDev,
+    maximizable: windowedDev,
     fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    enableLargerThanScreen: true,
+    skipTaskbar: !windowedDev,
+    alwaysOnTop: !windowedDev,
+    enableLargerThanScreen: !windowedDev,
     icon: ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
     },
   });
 
-  // Float above everything, including fullscreen apps and the macOS menu bar.
-  overlayWin.setAlwaysOnTop(true, "screen-saver");
-  overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  if (windowedDev) {
+    overlayWin.center();
+    overlayWin.on("resize", () => {
+      overlayWin?.webContents.send("ladybug:layout-changed", getOverlayLayout());
+    });
+  } else {
+    // Float above everything, including fullscreen apps and the macOS menu bar.
+    overlayWin.setAlwaysOnTop(true, "screen-saver");
+    overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  // The overlay is click-through by default. The renderer turns mouse events
-  // back on while the cursor is over the pet; `forward` keeps mousemove events
-  // flowing so it can detect that.
-  overlayWin.setIgnoreMouseEvents(true, { forward: true });
+    // Forward mouse moves so the renderer can detect hovering over the pet.
+    overlayWin.setIgnoreMouseEvents(true, { forward: true });
+  }
 
   overlayWin.once("ready-to-show", () => {
     // macOS may clamp the initial bounds below the menu bar.
     fitOverlayToDisplay();
-    overlayWin?.showInactive();
+    if (windowedDev) overlayWin?.show();
+    else overlayWin?.showInactive();
   });
 
   overlayWin.on("closed", () => {
@@ -120,8 +142,10 @@ function togglePetVisibility() {
 
 function buildMenu() {
   return Menu.buildFromTemplate([
-    { label: "Show / Hide Pet", click: togglePetVisibility },
-    { type: "separator" },
+    ...(!windowedDev ? [
+      { label: "Show / Hide Pet", click: togglePetVisibility },
+      { type: "separator" as const },
+    ] : []),
     { label: "Quit Ladybug", role: "quit" },
   ]);
 }
@@ -136,6 +160,7 @@ function createTray() {
 ipcMain.handle("ladybug:get-layout", () => getOverlayLayout());
 
 ipcMain.on("ladybug:set-click-through", (event, clickThrough: boolean) => {
+  if (windowedDev) return;
   const win = BrowserWindow.fromWebContents(event.sender);
   win?.setIgnoreMouseEvents(clickThrough, { forward: true });
 });
@@ -146,13 +171,15 @@ ipcMain.on("ladybug:show-menu", (event) => {
 });
 
 // The pet lives in the tray, so keep running when the overlay is closed.
-app.on("window-all-closed", () => {});
+app.on("window-all-closed", () => {
+  if (windowedDev) app.quit();
+});
 
 app.whenReady().then(() => {
-  // Overlay-only app: no dock icon on macOS.
-  app.dock?.hide();
-
-  createTray();
+  if (!windowedDev) {
+    app.dock?.hide();
+    createTray();
+  }
   createOverlayWindow();
 
   screen.on("display-metrics-changed", fitOverlayToDisplay);

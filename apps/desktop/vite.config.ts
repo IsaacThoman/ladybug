@@ -4,12 +4,15 @@ import electron from "vite-plugin-electron/simple";
 import react from "@vitejs/plugin-react";
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     electron({
       main: {
         entry: "electron/main.ts",
+        async onstart({ startup }) {
+          await startup(mode === "overlay" ? [".", "--overlay"] : ["."]);
+        },
       },
       preload: {
         input: path.join(import.meta.dirname, "electron/preload.ts"),
@@ -18,4 +21,4 @@ export default defineConfig({
       renderer: process.env.NODE_ENV === "test" ? undefined : {},
     }),
   ],
-});
+}));

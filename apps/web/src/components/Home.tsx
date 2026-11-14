@@ -141,7 +141,7 @@ export default function Home() {
           )}
         </div>
         <div className="hero-mascot">
-          <MascotStage unit={230} mood={mood} followPointer={mood === "calm"} ref={mascotRef}>
+          <MascotStage unit={230} mood={mood} ref={mascotRef}>
             <p className="mascot-bubble" key={mood} aria-hidden="true">
               {says}
             </p>

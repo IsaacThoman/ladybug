@@ -19,6 +19,8 @@ export type ScanDeps = {
   createSubscriber: () => Redis;
   apiKeys: string[];
   rateLimitPerMinute: number;
+  /** Trusted header with the real client IP (CLIENT_IP_HEADER), for rate limits without API keys. */
+  clientIpHeader?: string | null;
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -81,7 +83,8 @@ export function scansRouter(deps: ScanDeps) {
     }
 
     // Fixed one-minute window per key (or per client IP when auth is off).
-    const bucket = `ratelimit:${apiKey ?? req.ip}:${Math.floor(Date.now() / 60_000)}`;
+    const clientIp = (deps.clientIpHeader && req.header(deps.clientIpHeader)?.trim()) || req.ip;
+    const bucket = `ratelimit:${apiKey ?? clientIp}:${Math.floor(Date.now() / 60_000)}`;
     const count = await deps.redis.multi().incr(bucket).expire(bucket, 120).exec();
     if (Number(count?.[0]?.[1] ?? 0) > deps.rateLimitPerMinute) {
       res.setHeader("Retry-After", "60");

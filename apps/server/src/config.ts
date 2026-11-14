@@ -30,6 +30,14 @@ export const config = {
   rateLimitPerMinute: numberFromEnv("RATE_LIMIT_PER_MINUTE", 10),
   /** Reverse proxies in front of the server: 2 on Kubernetes (edge, then the web nginx). */
   trustProxyHops: numberFromEnv("TRUST_PROXY_HOPS", 1),
+  /**
+   * Header carrying the real client IP, set by a proxy you trust (e.g.
+   * cf-connecting-ip behind a Cloudflare Tunnel). Only set it if the server is
+   * unreachable except through that proxy, or clients can spoof it.
+   */
+  clientIpHeader: process.env.CLIENT_IP_HEADER?.trim().toLowerCase() || null,
+  /** When set, /admin and /api/admin require HTTP Basic auth with this password (any username). */
+  adminPassword: process.env.ADMIN_PASSWORD || null,
   /** Built admin UI, served at /admin when it exists. */
   adminDist:
     process.env.ADMIN_DIST ?? path.resolve(import.meta.dirname, "../../admin/dist"),

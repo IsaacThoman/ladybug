@@ -1,0 +1,219 @@
+# The whole Ladybug backend, deployable as is (Coolify, or any Docker host).
+# It publishes no host ports: give service `web` a domain on port 8080 and
+# route to it (Coolify's Traefik, a Cloudflare Tunnel, ...). compose.local.yaml
+# publishes ports for local use:
+#
+#   cp .env.example .env
+#   docker compose -f compose.yaml -f compose.local.yaml up --build
+#
+# Scans run in sandbox containers that the worker starts on this host's Docker
+# (it mounts the Docker socket). Sandboxes sit on an internal network whose only
+# way out is the egress gateway, which refuses private addresses.
+
+services:
+  # The public entry point: the scan report page, with /api, /admin and /health
+  # proxied to the server.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    expose:
+      - "8080"
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # API, pet alerts, extension checks and the admin UI. Reached through web.
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    expose:
+      - "3001"
+    environment:
+      PORT: 3001
+      TYPESENSE_URL: http://typesense:8108
+      TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:?Set TYPESENSE_API_KEY}
+      DATABASE_URL: postgres://${POSTGRES_USER:-ladybug}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ladybug}
+      REDIS_URL: redis://valkey:6379
+      ARTIFACT_STORE: ${ARTIFACT_STORE:-local}
+      ARTIFACT_DIR: /app/.artifacts
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-ladybug-artifacts}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      # scan (sandbox scans through the worker) or placeholder (URL heuristics only).
+      ANALYZER: ${ANALYZER:-scan}
+      ANALYSIS_DELAY_MS: ${ANALYSIS_DELAY_MS:-30000}
+      # Basic auth for /admin and /api/admin. Set it before exposing the domain.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Comma-separated keys allowed to start scans. Empty = anyone can.
+      API_KEYS: ${API_KEYS:-}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-10}
+      # Proxies in front of the server: Traefik, then web's nginx.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
+      # cf-connecting-ip when the only way in is a Cloudflare Tunnel.
+      CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+    volumes:
+      - artifacts:/app/.artifacts
+    depends_on:
+      typesense:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Runs scans: starts a sandbox container per scan through the host's Docker.
+  # No domain, no ports.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    # Root inside the container to use the Docker socket. Mounting the socket
+    # is host-root-equivalent; the worker never runs untrusted code itself.
+    user: root
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ladybug}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ladybug}
+      REDIS_URL: redis://valkey:6379
+      ARTIFACT_STORE: ${ARTIFACT_STORE:-local}
+      ARTIFACT_DIR: /app/.artifacts
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-ladybug-artifacts}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      SANDBOX_PROVIDER: docker
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-ladybug-sandbox:latest}
+      SANDBOX_DOCKER_NETWORK: ${SANDBOX_NETWORK:-ladybug-sandboxes}
+      GATEWAY_PROXY_URL: http://gateway:8080
+      GATEWAY_CA_FILE: /gateway-ca/mitmproxy-ca-cert.pem
+      # Each scan's sandbox takes up to 2 CPUs and 3 GB; size this to the host.
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      # Any OpenAI-compatible Chat Completions endpoint. Unset = signal-only reports.
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_VISION: ${LLM_VISION:-true}
+      SAFE_BROWSING_API_KEY: ${SAFE_BROWSING_API_KEY:-}
+      URLHAUS_AUTH_KEY: ${URLHAUS_AUTH_KEY:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - artifacts:/app/.artifacts
+      - gateway-ca:/gateway-ca:ro
+    networks:
+      - default
+      - sandboxes
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+      sandbox-image:
+        condition: service_started
+    restart: unless-stopped
+
+  # The sandboxes' only route out: mitmproxy, refusing private addresses and
+  # tagging each flow with its scan. Its CA is shared with the worker, which
+  # hands the public cert to each sandbox.
+  gateway:
+    build:
+      context: .
+      dockerfile: infra/gateway/Dockerfile
+    expose:
+      - "8080"
+    volumes:
+      - gateway-ca:/home/mitmproxy/.mitmproxy
+    networks:
+      - default
+      - sandboxes
+    restart: unless-stopped
+
+  # Builds the sandbox image on each deploy so the worker can start it. The
+  # container itself only sleeps; it never runs the browser.
+  sandbox-image:
+    build:
+      context: .
+      dockerfile: apps/sandbox/Dockerfile
+    image: ${SANDBOX_IMAGE:-ladybug-sandbox:latest}
+    entrypoint: ["sleep", "infinity"]
+    # The image's own healthcheck polls the sandbox daemon, which doesn't run here.
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  typesense:
+    image: typesense/typesense:30.2
+    command:
+      - --data-dir=/data
+      - --api-key=${TYPESENSE_API_KEY:?Set TYPESENSE_API_KEY}
+    volumes:
+      - typesense-data:/data
+    healthcheck:
+      # The image has no curl/wget, so speak HTTP over bash's /dev/tcp.
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/8108 &&
+          printf 'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"ok":true' <&3
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ladybug}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ladybug}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    # The scan queue lives here, so keep it across restarts.
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+networks:
+  # Sandboxes join only this network. `internal` means no route out except
+  # through containers on it (the gateway). The fixed name is what the worker
+  # passes to `docker run --network`.
+  sandboxes:
+    name: ${SANDBOX_NETWORK:-ladybug-sandboxes}
+    internal: true
+
+volumes:
+  typesense-data:
+  postgres-data:
+  valkey-data:
+  artifacts:
+  gateway-ca:

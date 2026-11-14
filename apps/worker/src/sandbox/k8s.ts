@@ -5,7 +5,7 @@ import * as k8s from "@kubernetes/client-node";
 import { GATEWAY_PORT, SANDBOX_DAEMON_PORT, SANDBOX_ENV } from "@ladybug/shared";
 import { config } from "../config.ts";
 import { DaemonClient } from "./client.ts";
-import { newSandboxToken, waitForDaemon } from "./provider.ts";
+import { gatewayCaPem, newSandboxToken, waitForDaemon } from "./provider.ts";
 import type { Sandbox, SandboxProvider } from "./provider.ts";
 
 export const SANDBOX_APP_LABEL = "ladybug-sandbox";
@@ -18,13 +18,19 @@ function nodeSelector(): Record<string, string> | undefined {
   return Object.fromEntries(raw.split(",").map((pair) => pair.split("=").map((s) => s.trim()) as [string, string]));
 }
 
-export function sandboxPodSpec(opts: { name: string; scanId: string; token: string; proxyUrl: string | null }): k8s.V1Pod {
+export function sandboxPodSpec(opts: {
+  name: string;
+  scanId: string;
+  token: string;
+  proxyUrl: string | null;
+  caPem: string | null;
+}): k8s.V1Pod {
   const env: k8s.V1EnvVar[] = [
     { name: SANDBOX_ENV.token, value: opts.token },
     { name: SANDBOX_ENV.scanId, value: opts.scanId },
   ];
   if (opts.proxyUrl) env.push({ name: SANDBOX_ENV.proxyUrl, value: opts.proxyUrl });
-  if (config.gatewayCaPem) env.push({ name: SANDBOX_ENV.gatewayCaPem, value: config.gatewayCaPem });
+  if (opts.caPem) env.push({ name: SANDBOX_ENV.gatewayCaPem, value: opts.caPem });
   const selector = nodeSelector();
 
   return {
@@ -103,7 +109,7 @@ export class K8sProvider implements SandboxProvider {
   async create(scanId: string): Promise<Sandbox> {
     const name = `sandbox-${scanId.slice(0, 8)}-${randomBytes(3).toString("hex")}`;
     const token = newSandboxToken();
-    const body = sandboxPodSpec({ name, scanId, token, proxyUrl: await this.proxyUrl() });
+    const body = sandboxPodSpec({ name, scanId, token, proxyUrl: await this.proxyUrl(), caPem: await gatewayCaPem() });
     await this.core.createNamespacedPod({ namespace: this.namespace, body });
 
     try {

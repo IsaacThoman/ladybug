@@ -60,7 +60,7 @@ Shared by server and worker:
 | `S3_ACCESS_KEY_ID` | yes | |
 | `S3_SECRET_ACCESS_KEY` | yes | |
 
-Server only: `PORT` (3001), `API_KEYS` (comma-separated; unset disables auth), `RATE_LIMIT_PER_MINUTE` (default 10 per key), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes).
+Server only: `PORT` (3001), `API_KEYS` (comma-separated; unset disables auth), `RATE_LIMIT_PER_MINUTE` (default 10 per key), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes and in `compose.yaml`), `CLIENT_IP_HEADER` (trusted header with the client IP, e.g. `cf-connecting-ip` behind a Cloudflare Tunnel), `ADMIN_PASSWORD` (Basic auth for `/admin` and `/api/admin`; unset = open).
 
 Worker only:
 
@@ -79,6 +79,8 @@ Worker only:
 | `GATEWAY_HOST` | | k8s: `gateway.ladybug.svc.cluster.local` |
 | `GATEWAY_PROXY_URL` | | docker: optional explicit proxy URL |
 | `GATEWAY_CA_PEM` | | public CA cert of the gateway |
+| `GATEWAY_CA_FILE` | | or a file holding it (compose: the gateway's shared volume) |
+| `SANDBOX_DOCKER_NETWORK` | | docker provider: run sandboxes on this network and reach them by IP (compose: `ladybug-sandboxes`, `internal`) |
 | `SAFE_BROWSING_API_KEY` | yes | Google Safe Browsing v4 |
 | `URLHAUS_AUTH_KEY` | yes | abuse.ch Auth-Key (URLhaus + MalwareBazaar) |
 | `WORKER_CONCURRENCY` | | default 10 |

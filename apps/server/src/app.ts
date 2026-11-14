@@ -5,7 +5,7 @@ import express from "express";
 import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
 import { checkVisit } from "./checker.ts";
 import { config } from "./config.ts";
-import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
+import { errorHandler, optionalString, requireAdmin, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
 import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
@@ -65,12 +65,12 @@ export function createApp(deps: ScanDeps) {
     petChannel.attach(req, res);
   });
 
-  app.use("/api/admin", adminRouter());
+  app.use("/api/admin", requireAdmin, adminRouter());
 
   // Built admin UI (see apps/admin).
   if (fs.existsSync(config.adminDist)) {
-    app.use("/admin", express.static(config.adminDist));
-    app.get("/admin/{*path}", (_req, res) => {
+    app.use("/admin", requireAdmin, express.static(config.adminDist));
+    app.get("/admin/{*path}", requireAdmin, (_req, res) => {
       res.sendFile(path.join(config.adminDist, "index.html"));
     });
     app.get("/", (_req, res) => res.redirect("/admin/"));

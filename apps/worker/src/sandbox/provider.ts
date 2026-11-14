@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
+import { config } from "../config.ts";
 import { DaemonClient } from "./client.ts";
 
 export type Sandbox = {
@@ -17,6 +19,18 @@ export interface SandboxProvider {
 }
 
 export const newSandboxToken = () => randomBytes(24).toString("base64url");
+
+/** The gateway's public CA cert, for the sandbox's Chrome to trust. Read per sandbox: the gateway may create it after the worker starts. */
+export async function gatewayCaPem(): Promise<string | null> {
+  if (config.gatewayCaPem) return config.gatewayCaPem;
+  if (!config.gatewayCaFile) return null;
+  try {
+    return await readFile(config.gatewayCaFile, "utf8");
+  } catch {
+    console.warn(`[worker] gateway CA not readable at ${config.gatewayCaFile}; sandboxes will skip certificate checks`);
+    return null;
+  }
+}
 
 export async function waitForDaemon(client: DaemonClient, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs;

@@ -25,6 +25,7 @@ const deps: ScanDeps = {
   createSubscriber: () => createRedis(),
   apiKeys: config.apiKeys,
   rateLimitPerMinute: config.rateLimitPerMinute,
+  clientIpHeader: config.clientIpHeader,
 };
 configureAnalyzer(deps);
 

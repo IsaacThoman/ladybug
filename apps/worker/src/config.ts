@@ -20,6 +20,14 @@ export const config = {
   gatewayHost: env.GATEWAY_HOST || null,
   gatewayProxyUrl: env.GATEWAY_PROXY_URL || null,
   gatewayCaPem: env.GATEWAY_CA_PEM || null,
+  /** Or a file holding it, e.g. the gateway's mitmproxy-ca-cert.pem on a shared volume. */
+  gatewayCaFile: env.GATEWAY_CA_FILE || null,
+  /**
+   * Docker provider: run sandboxes on this network and reach them by IP, instead
+   * of publishing their port on 127.0.0.1. Needed when the worker itself runs in
+   * a container (docker compose / Coolify).
+   */
+  sandboxDockerNetwork: env.SANDBOX_DOCKER_NETWORK || null,
   safeBrowsingApiKey: env.SAFE_BROWSING_API_KEY || null,
   urlhausAuthKey: env.URLHAUS_AUTH_KEY || null,
   concurrency: Number(env.WORKER_CONCURRENCY || 10),

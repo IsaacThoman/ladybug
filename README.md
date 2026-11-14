@@ -29,7 +29,7 @@ npm-workspaces monorepo:
 | `packages/backend` | Node-only helpers for the server and worker: Postgres, Valkey, the artifact store. |
 | `infra/` | Vultr deployment: Terraform, kustomize manifests with NetworkPolicies, the mitmproxy egress gateway. See [`infra/README.md`](infra/README.md). |
 | `docs/contracts.md` | Names, ports, labels and environment variables the pieces agree on. |
-| `docker-compose.yml` | The backend stack: Typesense, Postgres, Valkey and the server, with the admin UI built in. |
+| `compose.yaml`, `compose.local.yaml` | The whole backend as a deployable Compose stack (Coolify or any Docker host), and the local override that publishes ports. |
 
 ## Getting started
 
@@ -41,35 +41,32 @@ npm install
 
 ### 1. Backend
 
-Build the sandbox image once (and again when `apps/sandbox` changes):
+Copy the compose settings first. To get real LLM scans, set `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` in it; the model can be any OpenAI-compatible Chat Completions API with tool calling:
+
+```sh
+cp .env.example .env
+```
+
+Without `LLM_API_KEY` and `LLM_MODEL`, scans still run end to end and score from hard signals only; the report is flagged `llm_skipped`. To skip sandbox scans altogether and use the old URL heuristics, set `ANALYZER=placeholder`.
+
+Either run the whole backend in Docker. This is the same stack a deployment runs (see [Deploy](#deploy)), with ports published on localhost:
+
+```sh
+npm run stack:up             # report page on http://localhost:8080, server on http://localhost:3001
+npm run stack:down
+```
+
+Or run only the data services in Docker, and the server and worker on your machine with hot reload. The worker then starts sandbox containers on your local Docker, so build the sandbox image once (and again when `apps/sandbox` changes):
 
 ```sh
 docker build -f apps/sandbox/Dockerfile -t ladybug-sandbox:dev .
-```
-
-The scan worker runs on your machine, because it starts sandbox containers on your local Docker. Configure its model endpoint, any OpenAI-compatible Chat Completions API with tool calling, then start it:
-
-```sh
 cp apps/worker/.env.example apps/worker/.env   # set LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
+npm run services:up          # Typesense :8108, Postgres :5432, Valkey :6379
+npm run dev:server           # server on http://localhost:3001
 npm run dev:worker
 ```
 
-Without `LLM_API_KEY` and `LLM_MODEL`, scans still run end to end and score from hard signals only; the report is flagged `llm_skipped`. To skip sandbox scans altogether and use the old URL heuristics, set `ANALYZER=placeholder` for the server.
-
-Either run the whole backend in Docker:
-
-```sh
-docker compose up --build    # Typesense + server on http://localhost:3001
-```
-
-or run only the data services in Docker and the server locally with hot reload:
-
-```sh
-npm run services:up          # Typesense :8108, Postgres :5432, Valkey :6379
-npm run dev:server           # server on http://localhost:3001
-```
-
-If those ports are taken, set `TYPESENSE_PORT`, `POSTGRES_PORT` or `VALKEY_PORT` and update the URLs in the `.env` files.
+If those ports are taken, change `TYPESENSE_PORT`, `POSTGRES_PORT`, `VALKEY_PORT`, `SERVER_PORT` or `WEB_PORT` in `.env`, and update the URLs in the apps' `.env` files.
 
 On startup the server creates its Typesense collections and seeds two examples:
 
@@ -112,7 +109,7 @@ To see it work, visit `https://example.com/` (nothing happens), the phishing tes
 
 ### 4. Admin UI
 
-- With docker compose: <http://localhost:3001/admin/>
+- With `npm run stack:up`: <http://localhost:8080/admin/>, or the server directly at <http://localhost:3001/admin/>. If `ADMIN_PASSWORD` is set it asks for it; any username works.
 - With `npm run dev:server`: `npm run dev:admin`, then <http://localhost:5174/admin/>. It proxies API calls to the server.
 
 It has three tabs:
@@ -121,7 +118,7 @@ It has three tabs:
 - **Activity log:** every request, decision, analysis, pet alert and admin change. You can search and filter it, click a row for details, and new events appear live.
 - **URL database:** known URLs and hosts, searched in Typesense. You can add rules, flip verdicts, or forget a record so it's analysed again.
 
-`npm run dev` starts the server, desktop app, admin UI and extension watcher together. It still needs `npm run typesense`.
+`npm run dev` starts the server, worker, report page, desktop app, admin UI and extension watcher together. It still needs `npm run services:up`.
 
 ### 5. Scan report page
 
@@ -139,13 +136,13 @@ npm run scan -w @ladybug/worker -- https://example.com
 
 ### Config
 
-- `.env` (docker compose): `TYPESENSE_API_KEY`, `ANALYSIS_DELAY_MS`, `SERVER_PORT`, `SERVER_BIND`, `TYPESENSE_PORT`
-- `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_DIST`
+- `.env` (Compose): `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required), `ADMIN_PASSWORD`, `API_KEYS`, `LLM_*`, `WORKER_CONCURRENCY`, and the local ports
+- `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_PASSWORD`, `ADMIN_DIST`
 - `apps/worker/.env`: `DATABASE_URL`, `REDIS_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SANDBOX_PROVIDER`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY`
 - `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://ladybugg.garden` for both.
 - Extension: release builds report to `https://ladybugg.garden`, and `npm run dev:extension` builds report to `http://localhost:3001`. Either can be changed in its popup.
 
-See the `.env.example` files, and [`docs/contracts.md`](docs/contracts.md) for every variable. Only starting scans can be authenticated (`API_KEYS`), so docker compose only publishes the server and Typesense on localhost by default. Change `TYPESENSE_API_KEY` before exposing anything.
+See the `.env.example` files, and [`docs/contracts.md`](docs/contracts.md) for every variable. `compose.local.yaml` only publishes ports on localhost. Before exposing anything, set strong `POSTGRES_PASSWORD`, `TYPESENSE_API_KEY` and `ADMIN_PASSWORD`. `API_KEYS` can gate starting scans, but reading reports and pet alerts is open.
 
 ## How it works
 
@@ -192,6 +189,32 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 | `POST /api/admin/check`, `POST/PUT/DELETE /api/admin/urls` | Admin UI |
 | `GET /health` | Everything |
 
+## Deploy
+
+### Coolify (or any Docker host)
+
+`compose.yaml` is the whole backend: report page, server, worker, egress gateway, Typesense, Postgres and Valkey. It publishes no host ports.
+
+1. Create a Git-based application in Coolify with the **Docker Compose** build pack, using `compose.yaml` at the repository root. Don't add `compose.local.yaml`.
+2. Set environment variables:
+   - `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required: strong, URL-safe values)
+   - `ADMIN_PASSWORD`, to protect `/admin`
+   - `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL`
+   - optionally `API_KEYS`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY` and `WORKER_CONCURRENCY`
+
+   `.env.example` lists them all.
+3. Give service **`web`** the domain, on internal port `8080`: for example `https://ladybugg.garden:8080`. Traefik routes it, and `web` proxies `/api`, `/admin` and `/health` to the server. Don't give any other service a domain.
+4. Deploy. The first build takes a while: it also builds the sandbox image (service `sandbox-image`, which only holds the image and sleeps).
+
+Things to know:
+
+- **Docker socket.** The worker mounts `/var/run/docker.sock` to start one sandbox container per scan, which is root-equivalent on the host. Sandboxes join only the internal `ladybug-sandboxes` network (rename it with `SANDBOX_NETWORK`). Their only way out is the gateway, which refuses private and link-local addresses, so they can't reach the other containers, the host's private networks or cloud metadata. They can still reach anything public, including services on the host's own public IP.
+- **Sizing.** Each scan's sandbox can use up to 2 CPUs and 3 GB of RAM, so set `WORKER_CONCURRENCY` (default 2) to fit the server.
+- **Artifacts.** Screenshots and HAR files live on the `artifacts` volume. To use Object Storage instead, set `ARTIFACT_STORE=s3` and the `S3_*` variables.
+- **Cloudflare Tunnel.** Point the tunnel at Coolify's proxy, and set the `web` domain as `http://ladybugg.garden:8080` (http, so Traefik doesn't try to get its own certificate behind Cloudflare). Set `CLIENT_IP_HEADER=cf-connecting-ip` so rate limits see visitors' real IPs. Only do that if the tunnel is the only way in, or clients could spoof the header. Live updates use server-sent events with regular heartbeats, so they stay open through Cloudflare.
+- **Proxy hops.** Without the tunnel, `TRUST_PROXY_HOPS=2` (the default here) covers Traefik, then web's nginx.
+- **Kubernetes.** The Vultr Kubernetes setup is an alternative: see [`infra/README.md`](infra/README.md).
+
 ## Using the pet
 
 - It wanders along the bottom of the screen on its own.
@@ -211,8 +234,8 @@ Everything else on the overlay is click-through, so it never gets in the way of 
 | `npm run dev:server` / `dev:worker` / `dev:web` / `dev:desktop` / `dev:admin` / `dev:extension` | One of them |
 | `npm run typesense` | Start Typesense in Docker |
 | `npm run services:up` / `services:down` | Start Typesense, Postgres and Valkey in Docker / stop them |
+| `npm run stack:up` / `stack:down` | The whole backend in Docker, ports on localhost |
 | `npm run scan -w @ladybug/worker -- <url>` | One-off sandbox scan, report to stdout |
-| `docker compose up --build` | Whole backend in Docker |
 | `npm run build` | Typecheck and build every workspace |
 | `npm run typecheck` | Typecheck every workspace |
 | `npm test` | Unit tests (Node's test runner) |

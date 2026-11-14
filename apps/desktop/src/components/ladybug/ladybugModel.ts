@@ -184,7 +184,8 @@ export function buildLadybug(): LadybugRig {
   const onHead = (u: THREE.Vector3, lift = 0) =>
     headCenter.clone().addScaledVector(u, HEAD.r + lift);
 
-  // Minimal eyes: a cream patch with a small dark dot. The whole eye group
+  // Minimal eyes: a cream patch with a small dark dot. The dots sit low in the
+  // patch so the bug looks relaxed rather than surprised. The whole eye group
   // squashes when blinking.
   const eyes: THREE.Group[] = [];
   for (const side of [1, -1] as const) {
@@ -194,7 +195,7 @@ export function buildLadybug(): LadybugRig {
     eye.quaternion.setFromUnitVectors(Z_AXIS, u);
     eye.add(ellipsoid(creamMat, 0.066, 0.074, 0.02));
     const pupil = ellipsoid(eyeMat, 0.013, 0.015, 0.006, smallSphere);
-    pupil.position.set(0, -0.004, 0.019);
+    pupil.position.set(0, -0.04, 0.016);
     eye.add(pupil);
     head.add(eye);
     eyes.push(eye);

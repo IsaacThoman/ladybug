@@ -16,8 +16,8 @@ import {
 } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
 import { findHttpUrl, parseHttpUrl } from "../urls";
-import { LadybugRenderer } from "./ladybug/LadybugRenderer";
-import type { LadybugMood } from "./ladybug/LadybugRenderer";
+import { LadybugRenderer } from "@ladybug/mascot";
+import type { LadybugMood } from "@ladybug/mascot";
 import "./Pet.css";
 
 // Hit box, roughly the ladybug's silhouette. Its bottom edge is the ground line.

@@ -1,7 +1,19 @@
 import type { LogEvent } from "@ladybug/shared";
 
 export type Tone = "good" | "warning" | "critical" | "neutral" | "accent";
-export type IconName = "check" | "alert" | "clock" | "minus" | "globe" | "bell" | "user" | "x";
+export type IconName =
+  | "check"
+  | "alert"
+  | "clock"
+  | "minus"
+  | "globe"
+  | "bell"
+  | "user"
+  | "x"
+  | "home"
+  | "pulse"
+  | "database"
+  | "signout";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",

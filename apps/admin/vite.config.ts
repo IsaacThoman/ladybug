@@ -8,6 +8,8 @@ const server = process.env.LADYBUG_SERVER_URL ?? "http://localhost:3001";
 export default defineConfig({
   base: "/admin/",
   plugins: [react()],
+  // The 3D ladybug (three.js) is one lazy chunk of about 580 kB.
+  build: { chunkSizeWarningLimit: 650 },
   server: {
     port: 5174,
     proxy: {

@@ -20,12 +20,13 @@ npm-workspaces monorepo:
 | --- | --- |
 | `apps/desktop` | Electron + Vite + React app. A transparent, click-through window covers the whole primary display, and a 3D ladybug (three.js) walks around on top of it. It listens to the server for alerts. |
 | `apps/server` | Node + Express backend (TypeScript, run directly with Node's type stripping). Checks URLs, runs analyses, logs activity, serves the admin UI. |
-| `apps/admin` | Vite + React admin UI: stats, live activity log, running analyses, and the URL database. |
+| `apps/admin` | Vite + React admin UI: a sign-in page, stats, live activity log, running analyses, and the URL database, with the ladybug narrating from the sidebar. |
 | `apps/extension` | Chrome extension (Manifest V3) that reports each page you visit to the server. |
 | `apps/worker` | Scan worker: sandbox lifecycle, pre-scan lookups, scripted detonation, the LLM agent loop, scoring. |
 | `apps/sandbox` | Sandbox image: headful Chrome on Xvfb plus an HTTP tool daemon the worker drives. |
-| `apps/web` | Vite + React live scan report page, with a recorded demo at `/demo`. |
+| `apps/web` | Vite + React landing page and live scan report, with a recorded demo at `/demo`. |
 | `packages/shared` | Types and constants shared by all of the above. |
+| `packages/mascot` | The 3D ladybug (three.js), used by the desktop pet, plus the garden look the web and admin pages share: colors, fonts, the ladybug on its leaf, the hills. |
 | `packages/backend` | Node-only helpers for the server and worker: Postgres (with the TimescaleDB and pgvector parts), Valkey, the artifact store. |
 | `infra/` | Vultr deployment: Terraform, kustomize manifests with NetworkPolicies, the mitmproxy egress gateway. See [`infra/README.md`](infra/README.md). |
 | `docs/contracts.md` | Names, ports, labels and environment variables the pieces agree on. |
@@ -109,7 +110,7 @@ To see it work, visit `https://example.com/` (nothing happens), the phishing tes
 
 ### 4. Admin UI
 
-- With `npm run stack:up`: <http://localhost:8080/admin/>, or the server directly at <http://localhost:3001/admin/>. If `ADMIN_PASSWORD` is set it asks for it; any username works.
+- With `npm run stack:up`: <http://localhost:8080/admin/>, or the server directly at <http://localhost:3001/admin/>. If `ADMIN_PASSWORD` is set, it opens on a sign-in page that asks for it. Scripts can still use HTTP Basic (`curl -u :password`).
 - With `npm run dev:server`: `npm run dev:admin`, then <http://localhost:5174/admin/>. It proxies API calls to the server.
 
 It has three tabs:
@@ -258,4 +259,4 @@ Everything else on the overlay is click-through, so it never gets in the way of 
 | `scripts/build-images.sh` | Build (and push) the container images for Vultr |
 | `npm run dist -w @ladybug/desktop` | Package the desktop app with electron-builder |
 
-The ladybug is built procedurally in `apps/desktop/src/components/ladybug/`: `ladybugModel.ts` is the model, `LadybugRenderer.ts` handles the camera, lighting and animation. The tray icon is still the Pulpo smiley placeholder.
+The ladybug is built procedurally in `packages/mascot/src/`: `ladybugModel.ts` is the model, `LadybugRenderer.ts` handles the camera, lighting and animation, and `LadybugMascot.tsx` puts it on a web page. The tray icon is still the Pulpo smiley placeholder.

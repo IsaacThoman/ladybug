@@ -5,7 +5,8 @@ import express from "express";
 import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
 import { checkVisit } from "./checker.ts";
 import { config } from "./config.ts";
-import { errorHandler, optionalString, requireAdmin, requireStore, requireString } from "./http.ts";
+import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
+import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
 import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
@@ -67,12 +68,15 @@ export function createApp(deps: ScanDeps) {
     petChannel.attach(req, res);
   });
 
+  // Sign-in first: the admin UI calls these while signed out.
+  app.use("/api/admin", adminAuthRouter());
   app.use("/api/admin", requireAdmin, adminRouter());
 
-  // Built admin UI (see apps/admin).
+  // Built admin UI (see apps/admin). It's public: it holds no data, and shows
+  // its sign-in page until the API accepts the session.
   if (fs.existsSync(config.adminDist)) {
-    app.use("/admin", requireAdmin, express.static(config.adminDist));
-    app.get("/admin/{*path}", requireAdmin, (_req, res) => {
+    app.use("/admin", express.static(config.adminDist));
+    app.get("/admin/{*path}", (_req, res) => {
       res.sendFile(path.join(config.adminDist, "index.html"));
     });
     app.get("/", (_req, res) => res.redirect("/admin/"));

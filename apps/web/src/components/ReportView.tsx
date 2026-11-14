@@ -1,6 +1,9 @@
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { SCAN_STATUSES, isTerminalStatus } from "@ladybug/shared";
-import type { ScanStatus } from "@ladybug/shared";
+import type { ScanStatus, ScanVerdict } from "@ladybug/shared";
+import { MascotStage } from "@ladybug/mascot/react";
+import type { LadybugMascotHandle, LadybugMood } from "@ladybug/mascot/react";
 import { formatElapsed } from "../format.ts";
 import type { ScanState } from "../scanState.ts";
 import { useNow } from "../useNow.ts";
@@ -41,6 +44,14 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
   const finalUrl = report?.finalUrl ?? scan.redirectChain.at(-1) ?? null;
   const showFinal = finalUrl && finalUrl !== scan.inputUrl;
   const showActivity = scan.activity.length > 0 || running;
+  const verdict = scan.result?.verdict ?? null;
+  const mascotRef = useRef<LadybugMascotHandle>(null);
+
+  // The ladybug reacts once when the verdict lands, like the desktop pet.
+  useEffect(() => {
+    if (verdict === "malicious") mascotRef.current?.alarm();
+    else if (verdict === "benign") mascotRef.current?.celebrate();
+  }, [verdict]);
 
   return (
     <>
@@ -71,12 +82,15 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
             </div>
             <StatusStepper status={scan.status} reached={reached} error={scan.error} />
           </div>
-          <ScoreGauge
-            score={scan.result?.score ?? null}
-            verdict={scan.result?.verdict ?? null}
-            confidence={report?.confidence ?? null}
-            pending={running}
-          />
+          <div className="topbar-side">
+            <MascotStage unit={74} mood={moodFor(running, scan.status === "failed", verdict)} ref={mascotRef} className="topbar-mascot" />
+            <ScoreGauge
+              score={scan.result?.score ?? null}
+              verdict={verdict}
+              confidence={report?.confidence ?? null}
+              pending={running}
+            />
+          </div>
         </section>
 
         {notice}
@@ -104,6 +118,14 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
       </main>
     </>
   );
+}
+
+function moodFor(running: boolean, failed: boolean, verdict: ScanVerdict | null): LadybugMood {
+  if (running) return "sniffing";
+  if (failed || verdict === "suspicious") return "nervous";
+  if (verdict === "malicious") return "alarmed";
+  if (verdict === "benign") return "happy";
+  return "calm";
 }
 
 function ClockIcon() {

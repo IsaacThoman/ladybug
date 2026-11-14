@@ -1,4 +1,5 @@
 import type {
+  AdminSession,
   AdminSummary,
   CheckResponse,
   CheckTimeline,
@@ -11,11 +12,16 @@ import type {
   Verdict,
 } from "@ladybug/shared";
 
+/** Fired on window when the API says the admin session is gone. */
+export const SIGNED_OUT = "ladybug:signed-out";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
+  // Signed out (session expired, or the password changed): back to the sign-in page.
+  if (res.status === 401 && !path.startsWith("/api/admin/login")) window.dispatchEvent(new Event(SIGNED_OUT));
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -45,6 +51,13 @@ export type UrlFilter = {
 };
 
 export const api = {
+  session: () => request<AdminSession>("/api/admin/session"),
+
+  login: (password: string) =>
+    request<void>("/api/admin/login", { method: "POST", body: JSON.stringify({ password }) }),
+
+  logout: () => request<void>("/api/admin/logout", { method: "POST" }),
+
   summary: () => request<AdminSummary>("/api/admin/summary"),
 
   timeline: (range: TimelineRange) => request<CheckTimeline>(`/api/admin/timeline${query({ range })}`),

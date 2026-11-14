@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER_PORT } from "@ladybug/shared";
+import { DEFAULT_SERVER_PORT, PUBLIC_URL } from "@ladybug/shared";
 import type { CheckResponse } from "@ladybug/shared";
 
 export type Settings = {
@@ -9,7 +9,9 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
-  serverUrl: `http://localhost:${DEFAULT_SERVER_PORT}`,
+  // Release builds report to the hosted server; `npm run dev:extension` to localhost.
+  // Either can be changed in the popup.
+  serverUrl: import.meta.env.MODE === "development" ? `http://localhost:${DEFAULT_SERVER_PORT}` : PUBLIC_URL,
   enabled: true,
 };
 

@@ -1,0 +1,140 @@
+# The public entry point: Caddy on the site domain (ladybugg.garden), with
+# automatic HTTPS from Let's Encrypt. It proxies everything to the web
+# service, whose nginx serves the report page and forwards /api to the server.
+# Point the domain's A record at this Service's external IP.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-caddyfile
+  namespace: ladybug
+data:
+  Caddyfile: |
+    {
+      servers {
+        # The Vultr LB speaks proxy protocol, so Caddy sees real client IPs.
+        listener_wrappers {
+          proxy_protocol {
+            timeout 5s
+            allow 0.0.0.0/0
+          }
+          tls
+        }
+        # The LB forwards TCP only, so no HTTP/3.
+        protocols h1 h2
+      }
+    }
+
+    {$SITE_DOMAIN} {
+      # The admin UI and API have no authentication yet. Reach them with
+      # kubectl -n ladybug port-forward svc/server 3001.
+      @admin path /admin /admin/* /api/admin /api/admin/*
+      respond @admin "Not found" 404
+
+      reverse_proxy web:80 {
+        # Server-sent events (scan progress, pet alerts) must not be buffered.
+        flush_interval -1
+      }
+    }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: edge-data
+  namespace: ladybug
+spec:
+  accessModes: [ReadWriteOnce]
+  # Certificates and the ACME account, so restarts don't re-issue and hit
+  # Let's Encrypt rate limits. Vultr Block Storage's smallest HDD volume is 40Gi.
+  resources:
+    requests:
+      storage: 40Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge
+  namespace: ladybug
+spec:
+  # One replica with Recreate: the certificate volume is ReadWriteOnce, and
+  # ACME challenges must reach the replica that asked for them.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: edge
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: edge
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        pool: system
+      containers:
+        - name: caddy
+          image: caddy:2.11.9-alpine
+          env:
+            - name: SITE_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: ladybug-config
+                  key: SITE_DOMAIN
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [NET_BIND_SERVICE]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 5
+          volumeMounts:
+            - name: caddyfile
+              mountPath: /etc/caddy
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: caddyfile
+          configMap:
+            name: edge-caddyfile
+        - name: data
+          persistentVolumeClaim:
+            claimName: edge-data
+        - name: config
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge
+  namespace: ladybug
+  annotations:
+    # TCP pass-through: Caddy terminates TLS itself.
+    service.beta.kubernetes.io/vultr-loadbalancer-protocol: tcp
+    service.beta.kubernetes.io/vultr-loadbalancer-proxy-protocol: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: edge
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: https

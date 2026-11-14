@@ -102,10 +102,11 @@ Electron downloads its binary the first time the desktop app starts.
 ### 3. Browser extension
 
 ```sh
-npm run build -w @ladybug/extension    # or `npm run dev:extension` to rebuild on change
+npm run dev:extension                  # rebuilds on change, reports to http://localhost:3001
+npm run build -w @ladybug/extension    # release build, reports to https://ladybugg.garden
 ```
 
-Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `apps/extension/dist`. Its popup shows whether it can reach the server and the last pages it reported, and lets you pause reporting or point it at another server. The toolbar badge shows `!` on unsafe pages and `…` while a page is being checked.
+Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `apps/extension/dist`. A server URL saved in the popup overrides the build's default. Its popup shows whether it can reach the server and the last pages it reported, and lets you pause reporting or point it at another server. The toolbar badge shows `!` on unsafe pages and `…` while a page is being checked.
 
 To see it work, visit `https://example.com/` (nothing happens), the phishing test page above (the ladybug alerts), and any other site (the ladybug checks it in the sandbox, then reports back, usually within a minute or two).
 
@@ -141,8 +142,8 @@ npm run scan -w @ladybug/worker -- https://example.com
 - `.env` (docker compose): `TYPESENSE_API_KEY`, `ANALYSIS_DELAY_MS`, `SERVER_PORT`, `SERVER_BIND`, `TYPESENSE_PORT`
 - `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_DIST`
 - `apps/worker/.env`: `DATABASE_URL`, `REDIS_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SANDBOX_PROVIDER`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY`
-- `apps/desktop/.env`: `VITE_SERVER_URL` (default `http://localhost:3001`), `VITE_WEB_URL` (default `http://localhost:5175`), `VITE_API_KEY`
-- Extension: the server URL is set in its popup.
+- `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://ladybugg.garden` for both.
+- Extension: release builds report to `https://ladybugg.garden`, and `npm run dev:extension` builds report to `http://localhost:3001`. Either can be changed in its popup.
 
 See the `.env.example` files, and [`docs/contracts.md`](docs/contracts.md) for every variable. Only starting scans can be authenticated (`API_KEYS`), so docker compose only publishes the server and Typesense on localhost by default. Change `TYPESENSE_API_KEY` before exposing anything.
 

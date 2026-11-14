@@ -24,8 +24,8 @@ const GREETINGS = [
 export function createApp(deps: ScanDeps) {
   const app = express();
 
-  // Behind the Vultr load balancer / nginx, so req.ip is the client.
-  app.set("trust proxy", 1);
+  // How many reverse proxies sit in front, so req.ip (used for rate limits) is the client.
+  app.set("trust proxy", config.trustProxyHops);
   app.use(cors());
   app.use(express.json({ limit: "16kb" }));
 

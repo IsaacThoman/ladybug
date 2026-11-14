@@ -60,7 +60,7 @@ Shared by server and worker:
 | `S3_ACCESS_KEY_ID` | yes | |
 | `S3_SECRET_ACCESS_KEY` | yes | |
 
-Server only: `PORT` (3001), `API_KEYS` (comma-separated; unset disables auth), `RATE_LIMIT_PER_MINUTE` (default 10 per key).
+Server only: `PORT` (3001), `API_KEYS` (comma-separated; unset disables auth), `RATE_LIMIT_PER_MINUTE` (default 10 per key), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes).
 
 Worker only:
 
@@ -83,4 +83,6 @@ Worker only:
 | `URLHAUS_AUTH_KEY` | yes | abuse.ch Auth-Key (URLhaus + MalwareBazaar) |
 | `WORKER_CONCURRENCY` | | default 10 |
 
-Web and desktop (Vite, build time): `VITE_SERVER_URL` (desktop default `http://localhost:3001`; web default same origin, Vite dev proxies `/api`), `VITE_WEB_URL` (desktop, default `http://localhost:5175`), `VITE_API_KEY` (desktop).
+Web and desktop (Vite, build time): `VITE_SERVER_URL` (desktop default `http://localhost:3001` in dev, `PUBLIC_URL` when packaged; web default same origin, Vite dev proxies `/api`), `VITE_WEB_URL` (desktop, default `http://localhost:5175` in dev, `PUBLIC_URL` when packaged), `VITE_API_KEY` (desktop). The extension defaults to `http://localhost:3001` in `--mode development` builds and `PUBLIC_URL` otherwise.
+
+`PUBLIC_URL` (in shared) is `https://ladybugg.garden`: on Kubernetes the `edge` Service (Caddy, automatic HTTPS) serves it, proxying to `web`, which forwards `/api/` to `server`. `SITE_DOMAIN` in `ladybug-config` sets the domain Caddy serves.

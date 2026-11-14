@@ -30,9 +30,6 @@ export default function App() {
       {route.name === "home" && (
         <>
           <Header>
-            <a href="#how" className="nav-link">
-              How it works
-            </a>
             <Link href="/demo" className="button ghost small">
               Watch a demo
             </Link>

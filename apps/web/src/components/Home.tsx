@@ -91,7 +91,6 @@ export default function Home() {
     <main className="home">
       <section className="hero">
         <div className="hero-copy">
-          <p className="kicker">A sandbox for suspicious links</p>
           <h1>
             Is this link <em>safe?</em>
           </h1>

@@ -46,7 +46,6 @@ const CAMERA_DISTANCE = 6;
 const CAMERA_PITCH = THREE.MathUtils.degToRad(15);
 /** How far forward (model units) the front feet reach; they're kept on the ground line. */
 const FRONT_FEET_Z = 0.22;
-const IDLE_GLANCES = [0, 0, 0, 0.45, -0.45, 0.25, -0.25];
 const SPIN_SECONDS = 0.7;
 const FLARE_SECONDS = 1.4;
 const FLASH_SECONDS = 2.6;
@@ -97,8 +96,6 @@ export class LadybugRenderer {
   private squashVelocity = 0;
   private blinkIn = randomBetween(1.5, 4);
   private blink = 0;
-  private glance = 0;
-  private glanceIn = randomBetween(2, 5);
   private startleLeft = 0;
 
   private mood: LadybugMood = "calm";
@@ -248,24 +245,16 @@ export class LadybugRenderer {
     // Reactions are loudest right after the verdict and settle down after.
     const fresh = 0.3 + 0.7 * Math.exp(-this.moodTime / 2.5);
 
-    // Facing: three-quarter view while moving, glance around while idle.
-    // Looking up at a dragged link, or celebrating, it faces the viewer.
+    // Facing: three-quarter view while moving, straight ahead while idle
+    // (unless asked to look somewhere). Looking up at a dragged link, or
+    // celebrating, it faces the viewer.
     const facesViewer = mood === "expectant" || mood === "happy";
-    if (mode === "idle" && !facesViewer && pose.look !== undefined) {
-      this.glance = THREE.MathUtils.clamp(pose.look, -0.7, 0.7);
-    } else if (mode === "idle" && !facesViewer) {
-      this.glanceIn -= dt;
-      if (this.glanceIn <= 0) {
-        this.glance =
-          IDLE_GLANCES[Math.floor(Math.random() * IDLE_GLANCES.length)] *
-          (mood === "sniffing" ? 0.5 : 1);
-        this.glanceIn = randomBetween(1.5, 4.5);
-      }
-    } else {
-      this.glance = 0;
-    }
+    const glance =
+      mode === "idle" && !facesViewer && pose.look !== undefined
+        ? THREE.MathUtils.clamp(pose.look, -0.7, 0.7)
+        : 0;
     const targetYaw =
-      mode === "idle" ? this.glance : held ? pose.heading * 0.3 : pose.heading * WALK_YAW;
+      mode === "idle" ? glance : held ? pose.heading * 0.3 : pose.heading * WALK_YAW;
     this.yaw += (targetYaw - this.yaw) * ease(walking ? 8 : 5, dt);
     let spinYaw = 0;
     if (this.spin >= 0) {

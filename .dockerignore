@@ -3,12 +3,23 @@
 **/dist-electron
 **/release
 **/.env
+**/.env.local
 **/*.log
 .git
+.DS_Store
+.artifacts
 .playwright-cli
 
-# Only the server image is built here; the other apps just need their
-# package.json so `npm ci` sees the whole workspace.
+# Infra secrets and state never belong in an image.
+**/secrets.env
+**/.generated
+**/.terraform
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+
+# No image needs these apps' sources; `npm ci` only needs their package.json
+# to see the whole workspace.
 apps/desktop/*
 !apps/desktop/package.json
 apps/extension/*

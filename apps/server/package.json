@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "node --watch --env-file-if-exists=.env src/index.ts",
     "start": "node --env-file-if-exists=.env src/index.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test 'src/**/*.test.ts'"
   },
   "dependencies": {
     "@ladybug/shared": "^0.0.0",
     "cors": "^2.8.6",
-    "express": "^5.3.0"
+    "express": "^5.3.0",
+    "@ladybug/backend": "^0.0.0",
+    "bullmq": "^6.7.6",
+    "ioredis": "^5.11.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

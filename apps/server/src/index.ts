@@ -1,13 +1,36 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { Queue } from "bullmq";
+import { SCAN_QUEUE } from "@ladybug/shared";
+import type { ScanJob } from "@ladybug/shared";
+import { createArtifactStore, createDb, createRedis, migrate } from "@ladybug/backend";
+import { configureAnalyzer } from "./analyzer.ts";
 import { createApp } from "./app.ts";
 import { config } from "./config.ts";
+import type { ScanDeps } from "./scans.ts";
 import { seedUrls } from "./seed.ts";
 import { initStore } from "./store.ts";
 
 const RETRY_MS = 3_000;
 
-createApp().listen(config.port, () => {
-  console.log(`[server] listening on http://localhost:${config.port}`);
+// Scans: Postgres for scan rows, Valkey for the queue and event streams.
+const db = createDb();
+await migrate(db);
+const redis = createRedis();
+const queue = new Queue<ScanJob>(SCAN_QUEUE, { connection: createRedis({ forBullmq: true }) });
+const deps: ScanDeps = {
+  db,
+  redis,
+  queue,
+  artifacts: createArtifactStore(),
+  createSubscriber: () => createRedis(),
+  apiKeys: config.apiKeys,
+  rateLimitPerMinute: config.rateLimitPerMinute,
+};
+configureAnalyzer(deps);
+
+const server = createApp(deps).listen(config.port, () => {
+  console.log(`[server] listening on http://localhost:${config.port} (analyzer: ${config.analyzer})`);
+  if (config.apiKeys.length === 0) console.warn("[server] API_KEYS is not set: anyone can start scans");
 });
 
 // Typesense may still be starting (e.g. under docker compose), so keep trying.
@@ -31,3 +54,12 @@ async function connectStore() {
 }
 
 void connectStore();
+
+const shutdown = async () => {
+  server.close();
+  await Promise.allSettled([queue.close(), db.end()]);
+  redis.disconnect();
+  process.exit(0);
+};
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

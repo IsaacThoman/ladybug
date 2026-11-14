@@ -70,7 +70,7 @@ export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Pr
   });
   const analysis = startAnalysis(url, host);
   if (!alreadyRunning) {
-    sendPetAlert("info", `Hmm, I don't know ${host} yet. Checking it…`, url, host);
+    sendPetAlert("info", `Hmm, I don't know ${host} yet. Checking it…`, url, host, analysis.scanId);
   }
   return { status: "pending", url, etaMs: Math.max(0, analysis.etaAt - Date.now()) };
 }

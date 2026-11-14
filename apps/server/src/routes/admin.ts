@@ -70,7 +70,7 @@ export function adminRouter() {
       events: { total: 0, requests: 0, alerts: 0 },
       pending: listPending(),
       petsConnected: petChannel.size,
-      analysisDelayMs: config.analysisDelayMs,
+      analysisDelayMs: config.analyzer === "scan" ? config.scanEtaMs : config.analysisDelayMs,
     };
     if (isStoreReady()) {
       const [urls, events] = await Promise.all([

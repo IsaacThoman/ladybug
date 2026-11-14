@@ -1,6 +1,11 @@
-// Types and constants shared between the server, desktop app, extension and admin UI.
+// Types and constants shared between the server, worker, sandbox, desktop app,
+// extension, admin UI and web report page. Browser-safe: no Node imports.
+
+export * from "./scan.ts";
+export * from "./sandbox.ts";
 
 export const DEFAULT_SERVER_PORT = 3001;
+export const DEFAULT_WEB_PORT = 5175;
 
 export type HealthResponse = {
   status: "ok";
@@ -64,6 +69,8 @@ export type PetAlert = {
   host: string;
   /** Epoch ms. */
   at: number;
+  /** The sandbox scan behind this alert, if any. The pet opens its report on click. */
+  scanId?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -101,6 +108,8 @@ export type PendingAnalysis = {
   host: string;
   startedAt: number;
   etaAt: number;
+  /** The sandbox scan doing the analysis, when the server runs real scans. */
+  scanId?: string;
 };
 
 // ---------------------------------------------------------------------------

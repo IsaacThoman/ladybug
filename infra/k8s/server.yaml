@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: ladybug
+spec:
+  # One replica: running analyses and the pet alert stream live in this
+  # process's memory, so a pet on one replica would miss another's alerts.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: server
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: registry-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: ladybug-server
+          envFrom:
+            - secretRef:
+                name: ladybug-secrets
+            - configMapRef:
+                name: ladybug-config
+          ports:
+            - name: http
+              containerPort: 3001
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: ladybug
+  # Configure the Vultr LB's HTTP health check to GET /health on port 3001.
+  # Confirm the annotations supported by the cluster's cloud controller first.
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: server
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    # nginx also uses this port on the ClusterIP (server:3001).
+    - name: api
+      port: 3001
+      targetPort: http

@@ -10,16 +10,22 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "dev": "concurrently -k -n server,desktop,admin,ext -c blue,magenta,green,yellow \"npm:dev:server\" \"npm:dev:desktop\" \"npm:dev:admin\" \"npm:dev:extension\"",
-    "dev:overlay": "concurrently -k -n server,desktop,admin,ext -c blue,magenta,green,yellow \"npm:dev:server\" \"npm:dev:desktop:overlay\" \"npm:dev:admin\" \"npm:dev:extension\"",
+    "dev": "concurrently -k -n server,worker,web,desktop,admin,ext -c blue,yellow,green,magenta,cyan,gray \"npm:dev:server\" \"npm:dev:worker\" \"npm:dev:web\" \"npm:dev:desktop\" \"npm:dev:admin\" \"npm:dev:extension\"",
+    "dev:overlay": "concurrently -k -n server,worker,web,desktop,admin,ext -c blue,yellow,green,magenta,cyan,gray \"npm:dev:server\" \"npm:dev:worker\" \"npm:dev:web\" \"npm:dev:desktop:overlay\" \"npm:dev:admin\" \"npm:dev:extension\"",
     "dev:server": "npm run dev -w @ladybug/server",
+    "dev:worker": "npm run dev -w @ladybug/worker",
+    "dev:web": "npm run dev -w @ladybug/web",
+    "dev:sandbox": "npm run dev -w @ladybug/sandbox",
     "dev:desktop": "npm run dev -w @ladybug/desktop",
     "dev:desktop:overlay": "npm run dev:overlay -w @ladybug/desktop",
     "dev:admin": "npm run dev -w @ladybug/admin",
     "dev:extension": "npm run dev -w @ladybug/extension",
     "typesense": "docker compose up -d typesense",
+    "services:up": "docker compose up -d --wait typesense postgres valkey",
+    "services:down": "docker compose down",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
     "lint": "eslint ."
   },
   "devDependencies": {

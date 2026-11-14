@@ -7,6 +7,8 @@ import { checkVisit } from "./checker.ts";
 import { config } from "./config.ts";
 import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
+import { scansRouter } from "./scans.ts";
+import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
 import { isStoreReady } from "./store.ts";
 
@@ -16,13 +18,16 @@ const GREETINGS = [
   "Keep going, you're doing great.",
   "Time for a stretch?",
   "*happy wiggle*",
+  "Got a sketchy link? Drop it on me.",
 ];
 
-export function createApp() {
+export function createApp(deps: ScanDeps) {
   const app = express();
 
+  // Behind the Vultr load balancer / nginx, so req.ip is the client.
+  app.set("trust proxy", 1);
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: "16kb" }));
 
   app.get("/health", (_req, res) => {
     const body: HealthResponse = {
@@ -38,6 +43,9 @@ export function createApp() {
     const body: GreetingResponse = { message };
     res.json(body);
   });
+
+  // Sandbox scans: started by the pet, the web page, or the analyzer below.
+  app.use("/api/scans", scansRouter(deps));
 
   // Called by the browser extension for every page visit.
   app.post("/api/check", requireStore, async (req, res) => {

@@ -37,15 +37,15 @@ export function logEvent(input: Omit<LogEvent, "id" | "at">): LogEvent {
 }
 
 /** Pushes an alert to every connected desktop pet, and logs that it did. */
-export function sendPetAlert(level: AlertLevel, message: string, url: string, host: string) {
-  const alert: PetAlert = { id: newId(), level, message, url, host, at: Date.now() };
+export function sendPetAlert(level: AlertLevel, message: string, url: string, host: string, scanId?: string) {
+  const alert: PetAlert = { id: newId(), level, message, url, host, at: Date.now(), ...(scanId ? { scanId } : {}) };
   petChannel.send("alert", alert);
   logEvent({
     type: "alert",
     message: `Pet alert (${level}) to ${petChannel.size} pet(s): ${message}`,
     url,
     host,
-    details: { level, petsConnected: petChannel.size, alertId: alert.id },
+    details: { level, petsConnected: petChannel.size, alertId: alert.id, scanId },
   });
   return alert;
 }

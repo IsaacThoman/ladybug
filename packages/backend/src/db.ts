@@ -116,3 +116,71 @@ export async function saveReport(db: Db, id: string, report: ScanReport) {
     JSON.stringify(report),
   ]);
 }
+
+/** A scan row for the admin Sandboxes page: who started it, and the bits of the report a tile shows. */
+export type SandboxScanRow = {
+  scanId: string;
+  inputUrl: string;
+  status: ScanStatus;
+  /** The account's username, "API key", or null (an admin check). */
+  startedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  error: string | null;
+  report: Pick<ScanReport, "finalUrl" | "verdict" | "score" | "summary" | "screenshots" | "finishedAt"> | null;
+};
+
+type SandboxRow = {
+  id: string;
+  input_url: string;
+  status: ScanStatus;
+  started_by: string | null;
+  created_at: Date;
+  updated_at: Date;
+  error: string | null;
+  report: SandboxScanRow["report"];
+};
+
+const SANDBOX_COLUMNS = `
+  s.id, s.input_url, s.status, s.error, s.created_at, s.updated_at,
+  coalesce(u.username, CASE WHEN s.api_key IS NOT NULL THEN 'API key' END) AS started_by,
+  CASE WHEN s.report IS NULL THEN NULL ELSE jsonb_build_object(
+    'finalUrl', s.report->'finalUrl', 'verdict', s.report->'verdict', 'score', s.report->'score',
+    'summary', s.report->'summary', 'screenshots', s.report->'screenshots', 'finishedAt', s.report->'finishedAt'
+  ) END AS report`;
+
+const toSandboxRow = (row: SandboxRow): SandboxScanRow => ({
+  scanId: row.id,
+  inputUrl: row.input_url,
+  status: row.status,
+  startedBy: row.started_by,
+  createdAt: row.created_at.toISOString(),
+  updatedAt: row.updated_at.toISOString(),
+  error: row.error,
+  report: row.report,
+});
+
+/**
+ * Every scan across all users that hasn't finished (from the last day, as
+ * long as its event stream lives), and the newest `limit` that have.
+ */
+export async function listSandboxScans(db: Db, limit: number) {
+  const [running, finished] = await Promise.all([
+    db.query<SandboxRow>(
+      `SELECT ${SANDBOX_COLUMNS} FROM scans s LEFT JOIN users u ON u.id = s.user_id
+       WHERE s.status NOT IN ('done', 'failed') AND s.created_at > now() - interval '1 day'
+       ORDER BY s.created_at DESC LIMIT 200`,
+    ),
+    db.query<SandboxRow>(
+      `SELECT ${SANDBOX_COLUMNS} FROM scans s LEFT JOIN users u ON u.id = s.user_id
+       WHERE s.status IN ('done', 'failed')
+       ORDER BY s.created_at DESC LIMIT $1`,
+      [limit + 1],
+    ),
+  ]);
+  return {
+    running: running.rows.map(toSandboxRow),
+    finished: finished.rows.slice(0, limit).map(toSandboxRow),
+    moreFinished: finished.rows.length > limit,
+  };
+}

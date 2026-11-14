@@ -14,7 +14,8 @@ export type IconName =
   | "pulse"
   | "database"
   | "signout"
-  | "sliders";
+  | "sliders"
+  | "grid";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",

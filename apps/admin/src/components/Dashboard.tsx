@@ -8,12 +8,14 @@ import { useAdminStream, useNow } from "../useAdminStream";
 import ActivityView from "./ActivityView";
 import Icon from "./Icon";
 import OverviewView from "./OverviewView";
+import SandboxesView from "./SandboxesView";
 import SettingsView from "./SettingsView";
 import UrlsView from "./UrlsView";
 import UsersView from "./UsersView";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: "home", sub: "What's happening in the garden right now." },
+  { id: "sandboxes", label: "Sandboxes", icon: "grid", sub: "Every sandboxed browser, live while it runs, and the ones that just finished." },
   { id: "activity", label: "Activity log", icon: "pulse", sub: "Every visit, decision and alert, newest first." },
   { id: "urls", label: "URL database", icon: "database", sub: "Pages and hosts Ladybugg already has a verdict for." },
   { id: "users", label: "Users", icon: "user", sub: "Who can use Ladybugg. New accounts wait here until you approve them." },
@@ -80,6 +82,8 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
   const [urlsVersion, setUrlsVersion] = useState(0);
   // Bumped when someone signs up or an admin changes an account.
   const [usersVersion, setUsersVersion] = useState(0);
+  // Bumped when an analysis starts or finishes, so the sandbox grid refreshes right away.
+  const [sandboxesVersion, setSandboxesVersion] = useState(0);
   // Bumped when an admin (maybe in another tab) changes a setting.
   const [settingsVersion, setSettingsVersion] = useState(0);
   const mascotRef = useRef<LadybugMascotHandle>(null);
@@ -90,6 +94,9 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
     if (event.type === "analysis_completed" || event.type === "admin") setUrlsVersion((v) => v + 1);
     if (event.type === "account" || event.type === "admin") setUsersVersion((v) => v + 1);
     if (event.type === "admin") setSettingsVersion((v) => v + 1);
+    if (event.type === "analysis_started" || event.type === "analysis_completed" || event.type === "error") {
+      setSandboxesVersion((v) => v + 1);
+    }
   }, []);
   const { pending, connected } = useAdminStream(onEvent);
 
@@ -193,12 +200,13 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
         )}
       </aside>
 
-      <main className="content">
+      <main className="content" data-wide={tab === "sandboxes" || undefined}>
         <header className="page-head">
           <h1>{current.label}</h1>
           <p>{current.sub}</p>
         </header>
         {tab === "overview" && <OverviewView summary={summary} pending={pending} live={live} />}
+        {tab === "sandboxes" && <SandboxesView version={sandboxesVersion} />}
         {tab === "activity" && <ActivityView live={live} />}
         {tab === "urls" && <UrlsView version={urlsVersion} />}
         {tab === "users" && <UsersView version={usersVersion} />}

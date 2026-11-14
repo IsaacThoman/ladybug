@@ -11,8 +11,10 @@ import { config } from "./config.ts";
 import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
 import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
+import type { SandboxLister } from "./routes/admin.ts";
 import { authRouter } from "./routes/auth.ts";
 import type { Limiter } from "./routes/auth.ts";
+import { listSandboxes } from "./sandboxes.ts";
 import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
@@ -30,7 +32,9 @@ const GREETINGS = [
   "Got a sketchy link? Drop it on me.",
 ];
 
-export function createApp(deps: ScanDeps & { authLimit: Limiter; modelSettings?: ModelSettingsStore }) {
+export function createApp(
+  deps: ScanDeps & { authLimit: Limiter; modelSettings?: ModelSettingsStore; sandboxes?: SandboxLister },
+) {
   const app = express();
 
   // How many reverse proxies sit in front, so req.ip (used for rate limits) is the client.
@@ -88,7 +92,8 @@ export function createApp(deps: ScanDeps & { authLimit: Limiter; modelSettings?:
   // Sign-in first: the admin UI calls these while signed out.
   app.use("/api/admin", adminAuthRouter());
   const modelSettings = deps.modelSettings ?? createModelSettings(deps.db, deps.redis);
-  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts, modelSettings));
+  const sandboxes = deps.sandboxes ?? ((limit: number) => listSandboxes(deps.db, deps.redis, limit));
+  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts, modelSettings, sandboxes));
 
   // Built admin UI (see apps/admin). It's public: it holds no data, and shows
   // its sign-in page until the API accepts the session.

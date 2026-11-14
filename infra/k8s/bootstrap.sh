@@ -2,6 +2,17 @@
 set -euo pipefail
 umask 077
 
+# --sandbox-only: the cluster runs just the sandbox pods and the egress gateway.
+# The server and worker stay elsewhere (e.g. Coolify) and the worker signs in
+# from outside. Needs Terraform applied with sandbox_only = true.
+sandbox_only=false
+for arg in "$@"; do
+  case "$arg" in
+    --sandbox-only) sandbox_only=true ;;
+    *) echo "Usage: [TAG=<tag>] infra/k8s/bootstrap.sh [--sandbox-only]" >&2; exit 1 ;;
+  esac
+done
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 k8s_dir="$root/infra/k8s"
 generated_dir="$k8s_dir/.generated"
@@ -9,12 +20,13 @@ secrets_file="$k8s_dir/secrets.env"
 for tool in terraform kubectl openssl python3 base64; do
   command -v "$tool" >/dev/null || { echo "Missing prerequisite: $tool" >&2; exit 1; }
 done
-if [[ ! -f "$secrets_file" ]]; then
-  echo "Copy infra/k8s/secrets.example.env to infra/k8s/secrets.env and fill in the local keys." >&2
-  exit 1
-fi
-# Fail before touching the cluster if local keys conflict with managed outputs.
-python3 - "$secrets_file" <<'PY'
+if ! $sandbox_only; then
+  if [[ ! -f "$secrets_file" ]]; then
+    echo "Copy infra/k8s/secrets.example.env to infra/k8s/secrets.env and fill in the local keys." >&2
+    exit 1
+  fi
+  # Fail before touching the cluster if local keys conflict with managed outputs.
+  python3 - "$secrets_file" <<'PY'
 import sys
 allowed = {"LLM_API_KEY", "SAFE_BROWSING_API_KEY", "URLHAUS_AUTH_KEY", "API_KEYS"}
 seen = set()
@@ -27,18 +39,21 @@ for line in open(sys.argv[1]):
         sys.exit("secrets.env must contain unique KEY=value entries for the four local keys only")
     seen.add(key)
 PY
+fi
 
 output() { terraform -chdir="$root/infra/terraform" output -raw "$1"; }
 registry=$(output registry)
 registry=${registry%/}
-# Assign separately so a failed Terraform output cannot be masked by printf or
-# kubectl succeeding with an empty substitution.
-database_url=$(output database_url)
-redis_url=$(output redis_url)
-s3_access_key_id=$(output s3_access_key_id)
-s3_secret_access_key=$(output s3_secret_access_key)
-s3_bucket=$(output s3_bucket)
-s3_endpoint=$(output s3_endpoint)
+if ! $sandbox_only; then
+  # Assign separately so a failed Terraform output cannot be masked by printf or
+  # kubectl succeeding with an empty substitution.
+  database_url=$(output database_url)
+  redis_url=$(output redis_url)
+  s3_access_key_id=$(output s3_access_key_id)
+  s3_secret_access_key=$(output s3_secret_access_key)
+  s3_bucket=$(output s3_bucket)
+  s3_endpoint=$(output s3_endpoint)
+fi
 registry_username=$(output registry_username)
 registry_password=$(output registry_password)
 tag=${TAG:-$(git -C "$root" rev-parse --short HEAD)}
@@ -81,6 +96,77 @@ CA
     --from-file="ca.crt=$scratch/ca.crt" --dry-run=client -o yaml | kubectl apply -f -
 else
   echo "Keeping the existing gateway-ca (CA rotation must be deliberate)."
+fi
+
+if $sandbox_only; then
+  for file in namespaces network-policies gateway remote-worker; do
+    cp "$k8s_dir/$file.yaml" "$generated_dir/$file.yaml"
+  done
+  python3 - "$registry" "$tag" > "$generated_dir/kustomization.yaml" <<'PY'
+import json, sys
+registry, tag = sys.argv[1:]
+json.dump({
+    "apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
+    "resources": [f"{name}.yaml" for name in ("namespaces", "network-policies", "gateway", "remote-worker")],
+    "images": [{"name": "ladybug-gateway", "newName": f"{registry}/ladybug-gateway", "newTag": tag}],
+}, sys.stdout, indent=2)
+PY
+  kubectl apply -k "$generated_dir"
+  kubectl -n ladybug rollout status deployment/gateway --timeout=300s
+
+  # Sandbox pods take the gateway's address and public CA from this ConfigMap,
+  # so the worker outside the cluster doesn't have to know either.
+  gateway_ip=$(kubectl -n ladybug get service gateway -o jsonpath='{.spec.clusterIP}')
+  kubectl -n ladybug get secret gateway-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > "$scratch/ca.crt"
+  kubectl -n sandbox create configmap sandbox-env \
+    --from-literal="PROXY_URL=http://$gateway_ip:8080" \
+    --from-file="GATEWAY_CA_PEM=$scratch/ca.crt" --dry-run=client -o yaml | kubectl apply -f -
+
+  # Kubeconfigs for the two ServiceAccounts, holding nothing but their own token.
+  server=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.server}')
+  cluster_ca=$(kubectl config view --minify --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+  account_kubeconfig() {
+    local token=""
+    for _ in $(seq 30); do
+      token=$(kubectl -n ladybug get secret "$1-token" -o jsonpath='{.data.token}' | base64 -d)
+      [[ -n "$token" ]] && break
+      sleep 1
+    done
+    [[ -n "$token" ]] || { echo "No token for ServiceAccount $1 yet; run bootstrap again." >&2; exit 1; }
+    cat <<YAML
+apiVersion: v1
+kind: Config
+clusters:
+  - name: ladybug
+    cluster:
+      server: $server
+      certificate-authority-data: $cluster_ca
+users:
+  - name: $1
+    user:
+      token: $token
+contexts:
+  - name: ladybug
+    context:
+      cluster: ladybug
+      user: $1
+current-context: ladybug
+YAML
+  }
+  account_kubeconfig remote-worker > "$generated_dir/remote-worker.kubeconfig"
+  account_kubeconfig deployer > "$generated_dir/deployer.kubeconfig"
+  {
+    echo "SANDBOX_PROVIDER=k8s"
+    echo "SANDBOX_KUBECONFIG_B64=$(base64 < "$generated_dir/remote-worker.kubeconfig" | tr -d '\n')"
+    echo "SANDBOX_IMAGE=$registry/ladybug-sandbox:${SANDBOX_TAG:-latest}"
+    echo "SANDBOX_IMAGE_PULL_SECRET=registry-pull"
+    echo "SANDBOX_ENV_CONFIGMAP=sandbox-env"
+  } > "$generated_dir/worker.env"
+
+  echo "Bootstrap complete. Run infra/k8s/test/deny-test.sh before accepting scan URLs."
+  echo "Worker settings (for Coolify's environment variables): $generated_dir/worker.env"
+  echo "Deploy workflow kubeconfig: $generated_dir/deployer.kubeconfig (see infra/README.md)"
+  exit 0
 fi
 
 # Keep the Typesense key stable across bootstraps; generate one the first time.

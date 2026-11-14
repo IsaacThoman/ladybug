@@ -11,10 +11,14 @@ import { supportWebhook } from "./webhook.ts";
 import { publishEvent } from "@ladybug/backend";
 import { scansRouter } from "../scans.ts";
 import { checkVisit } from "../checker.ts";
-import { configureAnalyzer, isAnalysisRunning } from "../analyzer.ts";
+import { configureAnalyzer, isAnalysisRunning, recipientsFor } from "../analyzer.ts";
 import { config as analyzerConfig } from "../config.ts";
 import { typesense } from "../typesense.ts";
 import type { ScanDeps } from "../scans.ts";
+
+const visitor = { userId: "browser-user", username: "alice" };
+const visit = (request: Parameters<typeof checkVisit>[0], origin: Parameters<typeof checkVisit>[1]) =>
+  checkVisit(request, origin, origin === "admin" ? "everyone" : visitor);
 
 const config: MessagingConfig = { key: "message-key", secret: "webhook-secret", line: "line", destination: "+15551234567", tenant: undefined };
 const event = (at: number, id = randomUUID()) => ({ event_id: id, event_type: "message.received", data: {
@@ -111,18 +115,19 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     st.mock.method(typesense, "upsert", async () => ({}));
     // The lookup needs its deterministic candidate ID.
     st.mock.method(typesense, "search", async (_collection: string, options: { filter_by: string }) => ({ hits: knownUnsafe ? [{ document: { id: options.filter_by.slice(4, -1).split(",")[0], verdict: "unsafe", scope: "url", source: "manual", reason: "test" } }] : [] }));
-    await checkVisit({ url: "https://known.example/" }, "admin"); await f.service.drain(); assert.equal(f.sends.length, 0);
-    await checkVisit({ url: "https://known.example/" }, "extension"); await new Promise((r) => setImmediate(r)); await f.service.drain(); assert.equal(f.sends.length, 1);
+    await visit({ url: "https://known.example/" }, "admin"); await f.service.drain(); assert.equal(f.sends.length, 0);
+    await visit({ url: "https://known.example/" }, "extension"); await new Promise((r) => setImmediate(r)); await f.service.drain(); assert.equal(f.sends.length, 1);
     knownUnsafe = false;
     const wait = async (url: string) => { while (isAnalysisRunning(url)) await new Promise((r) => setTimeout(r, 5)); await new Promise((r) => setImmediate(r)); };
-    await checkVisit({ url: "https://phish.example/" }, "admin");
-    await checkVisit({ url: "https://phish.example/" }, "extension");
+    await visit({ url: "https://phish.example/" }, "admin");
+    await visit({ url: "https://phish.example/" }, "extension");
+    assert.deepEqual(recipientsFor("https://phish.example/"), ["everyone"]);
     await wait("https://phish.example/"); await f.service.drain(); assert.equal(f.sends.length, 2);
-    await checkVisit({ url: "https://safe.example/" }, "extension"); await wait("https://safe.example/");
-    await checkVisit({ url: "https://malware-admin.example/" }, "admin"); await wait("https://malware-admin.example/");
+    await visit({ url: "https://safe.example/" }, "extension"); await wait("https://safe.example/");
+    await visit({ url: "https://malware-admin.example/" }, "admin"); await wait("https://malware-admin.example/");
     await f.service.drain(); assert.equal(f.sends.length, 2);
     st.mock.method(typesense, "upsert", async () => { throw new Error("analysis store failure"); });
-    await checkVisit({ url: "https://phish-failed.example/" }, "extension"); await wait("https://phish-failed.example/");
+    await visit({ url: "https://phish-failed.example/" }, "extension"); await wait("https://phish-failed.example/");
     await f.service.drain(); assert.equal(f.sends.length, 2);
   });
   await t.test("sandbox suspicious/malicious results notify browser visits; benign/failed and manual scans do not", async (st) => {
@@ -134,7 +139,7 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     let verdict = "suspicious", failed = false;
     const rows = new Map<string, unknown>();
     const deps = {
-      redis, apiKeys: [], rateLimitPerMinute: 100,
+      redis, apiKeys: ["manual-test-key"], rateLimitPerMinute: 100,
       createSubscriber: () => new Redis(process.env.TEST_REDIS_URL!),
       db: { query: async (sql: string, args: string[]) => {
         if (sql.startsWith("INSERT")) rows.set(args[0], { id: args[0], input_url: args[1], status: failed ? "failed" : "done", error: failed ? "scan failed" : null, created_at: new Date(), updated_at: new Date(), report: failed ? null : { verdict, score: 80, summary: "test" } });
@@ -152,7 +157,7 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     for (const result of ["suspicious", "malicious", "benign", "failed"]) {
       verdict = result; failed = result === "failed";
       const url = `https://${result}.example/`;
-      await checkVisit({ url }, "extension"); await wait(url);
+      await visit({ url }, "extension"); await wait(url);
     }
     assert.equal(f.sends.length, 2);
     failed = false; verdict = "malicious";
@@ -160,7 +165,7 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     const server = app.listen(0, "127.0.0.1"); await once(server, "listening");
     const address = server.address(); assert.ok(address && typeof address !== "string");
     try {
-      const response = await fetch(`http://127.0.0.1:${address.port}/scans`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://manual.example/" }) });
+      const response = await fetch(`http://127.0.0.1:${address.port}/scans`, { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": "manual-test-key" }, body: JSON.stringify({ url: "https://manual.example/" }) });
       assert.equal(response.status, 202); await f.service.drain(); assert.equal(f.sends.length, 2);
     } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); }
   });

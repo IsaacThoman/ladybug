@@ -130,7 +130,9 @@ h2 {
   gap: 6px;
 }
 
-input[type="url"] {
+input[type="url"],
+input[type="text"],
+input[type="password"] {
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
@@ -141,7 +143,9 @@ input[type="url"] {
   font: inherit;
 }
 
-input[type="url"]:focus {
+input[type="url"]:focus,
+input[type="text"]:focus,
+input[type="password"]:focus {
   outline: 2px solid var(--red);
   outline-offset: -1px;
 }
@@ -159,6 +163,70 @@ button {
 
 button:hover {
   filter: brightness(0.94);
+}
+
+button.secondary {
+  background: var(--grey-soft);
+  color: var(--text);
+}
+
+button.link {
+  padding: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: underline;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.account {
+  margin-top: 14px;
+}
+
+.account-note {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.auth-form label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auth-form input {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.auth-form .row {
+  margin-top: 4px;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.account-status {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.account-status[data-status="rejected"] {
+  background: var(--red-soft);
+  color: var(--red);
 }
 
 .form-error {

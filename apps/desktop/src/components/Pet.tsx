@@ -14,9 +14,10 @@ import {
   watchScan,
 } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
+import { getSession } from "../session";
 import { findHttpUrl, parseHttpUrl } from "../urls";
-import { LadybugRenderer } from "./ladybug/LadybugRenderer";
-import type { LadybugMood } from "./ladybug/LadybugRenderer";
+import { LadybugRenderer } from "@ladybug/mascot";
+import type { LadybugMood } from "@ladybug/mascot";
 import "./Pet.css";
 
 // Hit box, roughly the ladybug's silhouette. Its bottom edge is the ground line.
@@ -196,7 +197,7 @@ const carriesLink = (data: DataTransfer) => data.types.some((type) => LINK_TYPES
 const dropEffectFor = (allowed: DataTransfer["effectAllowed"]): DataTransfer["dropEffect"] =>
   allowed === "link" || allowed === "linkMove" ? "link" : allowed === "move" ? "move" : "copy";
 
-export default function Pet({ layout, callBusy, requestHelp }: { layout: OverlayLayout; callBusy: boolean; requestHelp: () => void }) {
+export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: { layout: OverlayLayout; callBusy: boolean; requestHelp: () => void; onAccountNeeded: () => void }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenRef = useRef(false);
@@ -580,6 +581,12 @@ export default function Pet({ layout, callBusy, requestHelp }: { layout: Overlay
 
   /** Starts a scan the user asked for, replacing any running one. */
   const startScan = (url: string) => {
+    const session = getSession();
+    if (session?.account.status !== "approved") {
+      say(session ? "An admin still has to let you in." : "Sign in so I can watch your back!", "chat", true);
+      onAccountNeeded();
+      return;
+    }
     const gen = stopScan();
     setBubble(null);
     setScan({ phase: "scanning", origin: "manual", id: null, url, status: "queued" });

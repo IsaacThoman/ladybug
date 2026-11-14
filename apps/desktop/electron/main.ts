@@ -266,9 +266,17 @@ async function scanClipboard() {
   else send();
 }
 
+function showAccount() {
+  showOverlay();
+  const send = () => overlayWin?.webContents.send("ladybug:show-account");
+  if (overlayWin?.webContents.isLoading()) overlayWin.webContents.once("did-finish-load", send);
+  else send();
+}
+
 function buildMenu() {
   return Menu.buildFromTemplate([
     { label: "Scan Clipboard URL", click: () => void scanClipboard() },
+    { label: "Account…", click: showAccount },
     { type: "separator" },
     ...(!windowedDev ? [
       { label: "Show / Hide Pet", click: togglePetVisibility },
@@ -305,6 +313,14 @@ ipcMain.on("ladybug:set-pet-held", (_event, held: boolean) => {
 ipcMain.on("ladybug:open-external", (_event, url: unknown) => {
   const safe = typeof url === "string" ? parseHttpUrl(url) : null;
   if (safe) void shell.openExternal(safe);
+});
+
+// The overlay is shown without focus so it never steals the keyboard; the
+// sign-in form asks for it when the user clicks into it.
+ipcMain.on("ladybug:focus", (event) => {
+  if (!overlayWin || event.sender !== overlayWin.webContents) return;
+  if (process.platform === "darwin") app.focus({ steal: true });
+  overlayWin.focus();
 });
 
 ipcMain.on("ladybug:show-menu", (event) => {

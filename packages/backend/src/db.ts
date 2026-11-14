@@ -1,8 +1,10 @@
 import pg from "pg";
 import { SCANS_TABLE_SQL } from "@ladybug/shared";
 import type { ScanReport, ScanResponse, ScanStatus } from "@ladybug/shared";
+import { setupAccounts } from "./accounts.ts";
 import { setupChecks } from "./checks.ts";
 import { setupFingerprints } from "./fingerprints.ts";
+import { setupSettings } from "./settings.ts";
 
 export type Db = pg.Pool;
 
@@ -57,6 +59,8 @@ export async function migrate(db: Db): Promise<DbFeatures> {
   try {
     await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK]);
     await client.query(SCANS_TABLE_SQL);
+    await setupAccounts(client);
+    await setupSettings(client);
     const timescale = await tryFeature(client, "TimescaleDB", setupChecks);
     const vector = await tryFeature(client, "pgvector", setupFingerprints);
     return { timescale, vector };
@@ -76,11 +80,15 @@ const toResponse = (row: ScanRow): ScanResponse => ({
   error: row.error,
 });
 
-export async function insertScan(db: Db, scan: { id: string; inputUrl: string; apiKey: string | null }) {
-  await db.query("INSERT INTO scans (id, input_url, status, api_key) VALUES ($1, $2, 'queued', $3)", [
+export async function insertScan(
+  db: Db,
+  scan: { id: string; inputUrl: string; apiKey: string | null; userId?: string | null },
+) {
+  await db.query("INSERT INTO scans (id, input_url, status, api_key, user_id) VALUES ($1, $2, 'queued', $3, $4)", [
     scan.id,
     scan.inputUrl,
     scan.apiKey,
+    scan.userId ?? null,
   ]);
 }
 
@@ -89,8 +97,12 @@ export async function getScan(db: Db, id: string): Promise<ScanResponse | null> 
   return rows[0] ? toResponse(rows[0]) : null;
 }
 
-export async function listScans(db: Db, limit: number): Promise<ScanResponse[]> {
-  const { rows } = await db.query<ScanRow>("SELECT * FROM scans ORDER BY created_at DESC LIMIT $1", [limit]);
+/** The newest scans one user started (or that their visits started). */
+export async function listScans(db: Db, userId: string, limit: number): Promise<ScanResponse[]> {
+  const { rows } = await db.query<ScanRow>(
+    "SELECT * FROM scans WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+    [userId, limit],
+  );
   return rows.map(toResponse);
 }
 

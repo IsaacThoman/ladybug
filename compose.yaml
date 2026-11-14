@@ -9,6 +9,10 @@
 # Scans run in sandbox containers that the worker starts on this host's Docker
 # (it mounts the Docker socket). Sandboxes sit on an internal network whose only
 # way out is the egress gateway, which refuses private addresses.
+#
+# To run the sandboxes on a Kubernetes cluster instead and keep everything else
+# here, see "Sandboxes only" in infra/README.md and set the SANDBOX_* variables
+# it gives you.
 
 services:
   # The public entry point: the scan report page, with /api, /admin and /health
@@ -54,7 +58,7 @@ services:
       # scan (sandbox scans through the worker) or placeholder (URL heuristics only).
       ANALYZER: ${ANALYZER:-scan}
       ANALYSIS_DELAY_MS: ${ANALYSIS_DELAY_MS:-30000}
-      # Basic auth for /admin and /api/admin. Set it before exposing the domain.
+      # Password for the admin sign-in page (/admin), where accounts are approved. Set it before exposing the domain.
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Comma-separated keys allowed to start scans. Empty = anyone can.
       API_KEYS: ${API_KEYS:-}
@@ -106,16 +110,24 @@ services:
       S3_BUCKET: ${S3_BUCKET:-ladybug-artifacts}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      SANDBOX_PROVIDER: docker
+      # docker: sandboxes run on this host. k8s: on a remote cluster, with the
+      # three settings below it.
+      SANDBOX_PROVIDER: ${SANDBOX_PROVIDER:-docker}
       SANDBOX_IMAGE: ${SANDBOX_IMAGE:-ladybug-sandbox:latest}
+      SANDBOX_KUBECONFIG_B64: ${SANDBOX_KUBECONFIG_B64:-}
+      SANDBOX_IMAGE_PULL_SECRET: ${SANDBOX_IMAGE_PULL_SECRET:-}
+      SANDBOX_ENV_CONFIGMAP: ${SANDBOX_ENV_CONFIGMAP:-}
+      # The rest of this block is for docker.
       SANDBOX_DOCKER_NETWORK: ${SANDBOX_NETWORK:-ladybug-sandboxes}
       GATEWAY_PROXY_URL: http://gateway:8080
       GATEWAY_CA_FILE: /gateway-ca/mitmproxy-ca-cert.pem
-      # Each scan's sandbox takes up to 2 CPUs and 3 GB; size this to the host.
+      # Scans at once. With docker, each sandbox takes up to 2 CPUs and 3 GB of
+      # this host. With k8s, keep it within what the sandbox node pool can hold.
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       # Any OpenAI-compatible Chat Completions endpoint. Unset = signal-only reports.
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      # The default model. Admins can pick another the endpoint offers in /admin (Settings).
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_VISION: ${LLM_VISION:-true}
       SAFE_BROWSING_API_KEY: ${SAFE_BROWSING_API_KEY:-}
@@ -160,7 +172,7 @@ services:
     build:
       context: .
       dockerfile: apps/sandbox/Dockerfile
-    image: ${SANDBOX_IMAGE:-ladybug-sandbox:latest}
+    image: ladybug-sandbox:latest
     entrypoint: ["sleep", "infinity"]
     # The image's own healthcheck polls the sandbox daemon, which doesn't run here.
     healthcheck:

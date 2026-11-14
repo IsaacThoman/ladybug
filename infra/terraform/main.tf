@@ -2,6 +2,9 @@ data "vultr_kubernetes_version" "current" {}
 
 locals {
   kubernetes_version = coalesce(var.kubernetes_version, data.vultr_kubernetes_version.current.latest)
+  # Databases and Object Storage, skipped when the cluster only runs sandboxes.
+  data_services   = var.sandbox_only ? 0 : 1
+  registry_region = coalesce(var.registry_region, var.region)
 }
 
 resource "vultr_vpc" "main" {
@@ -69,6 +72,7 @@ resource "vultr_kubernetes_node_pools" "sandbox" {
 # Managed databases, reachable only over the VPC.
 
 resource "vultr_database" "postgres" {
+  count                   = local.data_services
   label                   = "${var.name}-postgres"
   region                  = var.region
   database_engine         = "pg"
@@ -78,6 +82,7 @@ resource "vultr_database" "postgres" {
 }
 
 resource "vultr_database" "valkey" {
+  count                   = local.data_services
   label                   = "${var.name}-valkey"
   region                  = var.region
   database_engine         = "valkey"
@@ -92,6 +97,8 @@ resource "vultr_database" "valkey" {
 # Object Storage for artifacts.
 
 data "vultr_object_storage_cluster" "main" {
+  count = local.data_services
+
   filter {
     name   = "region"
     values = [var.region]
@@ -99,6 +106,8 @@ data "vultr_object_storage_cluster" "main" {
 }
 
 data "vultr_object_storage_tier" "main" {
+  count = local.data_services
+
   filter {
     name   = "slug"
     values = [var.object_storage_tier_slug]
@@ -106,13 +115,15 @@ data "vultr_object_storage_tier" "main" {
 }
 
 resource "vultr_object_storage" "main" {
+  count      = local.data_services
   label      = "${var.name}-artifacts"
-  cluster_id = data.vultr_object_storage_cluster.main.id
-  tier_id    = data.vultr_object_storage_tier.main.id
+  cluster_id = data.vultr_object_storage_cluster.main[0].id
+  tier_id    = data.vultr_object_storage_tier.main[0].id
 }
 
 resource "vultr_object_storage_bucket" "artifacts" {
-  object_storage_id = vultr_object_storage.main.id
+  count             = local.data_services
+  object_storage_id = vultr_object_storage.main[0].id
   name              = var.artifacts_bucket
 }
 
@@ -121,7 +132,7 @@ resource "vultr_object_storage_bucket" "artifacts" {
 
 resource "vultr_container_registry" "main" {
   name   = var.registry_name
-  region = var.region
+  region = local.registry_region
   plan   = var.registry_plan
   public = false
 }

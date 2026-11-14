@@ -1,6 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
-import { config } from "./config.ts";
 import { isStoreReady } from "./store.ts";
 import { TypesenseError } from "./typesense.ts";
 
@@ -48,29 +46,6 @@ export function pageParams(query: Request["query"]) {
   const page = Math.max(1, Math.floor(Number(query.page) || 1));
   const perPage = Math.min(100, Math.max(1, Math.floor(Number(query.perPage) || 25)));
   return { page, perPage };
-}
-
-const sameSecret = (a: string, b: string) => {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  return left.length === right.length && timingSafeEqual(left, right);
-};
-
-/**
- * Guards the admin UI and API with HTTP Basic auth when ADMIN_PASSWORD is set
- * (any username). Browsers then send the credentials on the admin UI's own
- * fetch and EventSource calls. Without ADMIN_PASSWORD, admin stays open, as in
- * local development.
- */
-export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!config.adminPassword) return next();
-  const [scheme, encoded] = (req.header("authorization") ?? "").split(" ");
-  if (scheme?.toLowerCase() === "basic" && encoded) {
-    const decoded = Buffer.from(encoded, "base64").toString("utf8");
-    if (sameSecret(decoded.slice(decoded.indexOf(":") + 1), config.adminPassword)) return next();
-  }
-  res.setHeader("WWW-Authenticate", 'Basic realm="Ladybug admin", charset="UTF-8"');
-  res.status(401).json({ error: "Admin password required" });
 }
 
 /** 503 until Typesense is reachable and set up. */

@@ -10,6 +10,12 @@ const PATHS: Record<IconName, string> = {
   bell: "M4 11V7.5a4 4 0 0 1 8 0V11l1 1.3H3L4 11zM6.6 13.8a1.5 1.5 0 0 0 2.8 0",
   user: "M8 8a2.6 2.6 0 1 0 0-5.2A2.6 2.6 0 0 0 8 8zM3 13.5c.6-2.4 2.6-3.7 5-3.7s4.4 1.3 5 3.7",
   x: "M4.5 4.5l7 7M11.5 4.5l-7 7",
+  home: "M2.5 7.3L8 2.8l5.5 4.5M4 6.2v7.3h3V10h2v3.5h3V6.2",
+  pulse: "M1.8 8.5h2.6l1.6-4 3.2 8 1.6-4h3.4",
+  database:
+    "M8 2.5c2.8 0 5 .8 5 1.8v7.4c0 1-2.2 1.8-5 1.8s-5-.8-5-1.8V4.3c0-1 2.2-1.8 5-1.8zM3 4.3c0 1 2.2 1.8 5 1.8s5-.8 5-1.8M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8",
+  signout: "M6.5 13.5h-3v-11h3M10 5l3 3-3 3M13 8H6.5",
+  sliders: "M2.5 4.5h3M8.5 4.5h5M2.5 11.5h6M11.5 11.5h2M7 3v3M10 10v3",
 };
 
 export default function Icon({ name, size = 14 }: { name: IconName; size?: number }) {

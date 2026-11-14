@@ -13,16 +13,15 @@
     "test": "node --test electron/*.test.ts"
   },
   "dependencies": {
+    "@ladybug/mascot": "^0.0.0",
     "@ladybug/shared": "^0.0.0",
     "livekit-client": "^2.24.1",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "three": "^0.187.0"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.3.2",
     "electron-builder": "^26.18.0",

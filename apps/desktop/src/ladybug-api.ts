@@ -35,6 +35,10 @@ export type LadybugApi = {
    * clipboard didn't hold one.
    */
   onScanRequested: (callback: (url: string | null) => void) => () => void;
+  /** "Account…" was picked from a menu. */
+  onAccountRequested: (callback: () => void) => () => void;
+  /** Gives the overlay keyboard focus, for typing into the sign-in form. */
+  focusWindow: () => void;
   /** Opens an http(s) URL in the default browser. */
   openExternal: (url: string) => void;
 };

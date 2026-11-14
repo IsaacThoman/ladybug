@@ -1,5 +1,8 @@
 # VKE deployment
 
+There are two ways to use the cluster: run everything on it (below), or run
+[only the sandboxes](#sandboxes-only) on it and keep the rest elsewhere.
+
 Run commands from the repo root. The trusted API, queue worker, web UI and egress
 gateway run in `ladybug`; one disposable browser pod per scan runs on the tainted
 `pool=sandbox` node pool in `sandbox`. The sandbox cannot use DNS or reach the
@@ -10,12 +13,13 @@ internet directly. Its only outbound connection is the gateway on TCP 8080.
 - Terraform >= 1.6, kubectl with kustomize support, Docker/buildx, openssl,
   Python 3, and a Vultr account/API key. Standalone `kustomize` is needed only
   for `build-images.sh --set-images`.
-- A Vultr region with VKE, Managed Postgres/Valkey, Object Storage and Registry;
-  sufficient quota for the node pools and one Load Balancer.
+- A Vultr region with VKE, Managed Postgres/Valkey and Object Storage;
+  sufficient quota for the node pools and one Load Balancer. The Container
+  Registry is in fewer regions: set `registry_region` if yours lacks it.
 - A VKE CNI that enforces NetworkPolicy. The deny test below is a deployment gate:
   do not send untrusted URLs until it passes.
-- An OpenAI-compatible model endpoint (base URL, model and key) and reputation-service keys, if wanted. Set `API_KEYS` to a
-  strong, comma-separated list before exposing the scan submission endpoint.
+- An OpenAI-compatible model endpoint (base URL, model and key) and reputation-service keys, if wanted. Scans need an approved
+  account; `API_KEYS` is only for scripts that start scans without one.
 
 ## Provision and deploy
 
@@ -96,6 +100,82 @@ The gateway is the only selected pod in `ladybug` with restricted egress. Its
 Deployment bypasses the upstream image's root-only usermod/gosu entrypoint and
 runs mitmdump directly as UID 1000 with the mounted CA.
 
+## Sandboxes only
+
+The cluster can run just the sandbox pods and the egress gateway, while the
+server, worker and databases stay where they are, for example the Coolify
+stack from `compose.yaml`. The sandboxes are the heavy part and the only
+untrusted part, so this gets autoscaling and takes hostile pages off the main
+host without moving anything else. No managed databases, Object Storage or
+Load Balancer are created.
+
+```sh
+export VULTR_API_KEY=...
+terraform -chdir=infra/terraform init
+cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+# In terraform.tfvars: sandbox_only = true, system_nodes = 1, and the region,
+# registry name and sandbox_min_nodes / sandbox_max_nodes you want. Set
+# registry_region too if your region has no Container Registry (e.g. atl).
+terraform -chdir=infra/terraform apply
+
+export REGISTRY=$(terraform -chdir=infra/terraform output -raw registry)
+terraform -chdir=infra/terraform output -raw registry_password |
+  docker login "${REGISTRY%%/*}" \
+    --username "$(terraform -chdir=infra/terraform output -raw registry_username)" \
+    --password-stdin
+export TAG=$(git rev-parse --short HEAD)
+IMAGES="sandbox gateway" scripts/build-images.sh --push --latest
+
+TAG="$TAG" infra/k8s/bootstrap.sh --sandbox-only
+export KUBECONFIG="$PWD/infra/k8s/.generated/kubeconfig"
+infra/k8s/test/deny-test.sh
+```
+
+Then give the worker the five settings bootstrap wrote to
+`infra/k8s/.generated/worker.env` (in Coolify: the application's environment
+variables) and redeploy it. Set `WORKER_CONCURRENCY` to what the sandbox pool
+can hold: about 3 scans per 4 vCPU / 8 GB node, so at most 3 × `sandbox_max_nodes`.
+To go back to sandboxes on the Docker host, remove the five settings.
+
+How it fits together:
+
+- **The worker signs in from outside** as the `remote-worker` ServiceAccount
+  (`SANDBOX_KUBECONFIG_B64`). It can create, read and delete pods in `sandbox`
+  and use their proxy subresource, and nothing else.
+- **It reaches each sandbox through the API server's pod proxy**, since pod IPs
+  aren't routable from outside. On VKE that traffic arrives from the
+  `konnectivity-agent` pods in `kube-system`, and the `sandbox-api-proxy`
+  NetworkPolicy lets those reach port 7000. Every screenshot and page
+  snapshot crosses the control plane this way, which is fine for tens of
+  scans at once.
+- **Pods get the gateway's address and public CA from the `sandbox-env`
+  ConfigMap** (`SANDBOX_ENV_CONFIGMAP`), which bootstrap writes.
+- **A pod may wait for a node.** The worker gives a sandbox
+  `SANDBOX_START_TIMEOUT_MS` (default 6 minutes) to become ready, which covers
+  the autoscaler adding a node (about 2 minutes on VKE). The scan's own time
+  limit starts after that.
+- **Revoking the worker:** delete the `remote-worker-token` Secret in `ladybug`
+  and run bootstrap again for a new one.
+
+### Automatic deploys
+
+`.github/workflows/deploy-sandbox-cluster.yml` runs on pushes to `dev` that
+touch the sandbox or the gateway. It builds both images, pushes them, and
+rolls the gateway. Sandbox pods run the `:latest` tag, which Kubernetes pulls
+every time, so the next scan uses the new image. The workflow is skipped
+until the `SANDBOX_REGISTRY` variable is set:
+
+```sh
+gh variable set SANDBOX_REGISTRY --body "$REGISTRY"
+terraform -chdir=infra/terraform output -raw registry_username | gh secret set SANDBOX_REGISTRY_USERNAME
+terraform -chdir=infra/terraform output -raw registry_password | gh secret set SANDBOX_REGISTRY_PASSWORD
+gh secret set SANDBOX_DEPLOYER_KUBECONFIG < infra/k8s/.generated/deployer.kubeconfig
+```
+
+The kubeconfig belongs to the `deployer` ServiceAccount, which can only update
+Deployments in `ladybug`. The worker and the sandbox image deploy separately,
+so they can be a version apart for a minute or two after a push.
+
 ## Verify isolation
 
 The deny test creates a short-lived, non-root curl pod with the same label,
@@ -150,11 +230,9 @@ Vultr console for residual billable resources.
   gVisor/Kata RuntimeClass and test browser compatibility before production.
 - Enforce per-scan egress byte/request/time budgets at the gateway.
 - Pin images by digest, scan them, sign them and enforce signature admission.
-- Add authentication. API keys protect scan creation only, not report reads or
-  artifacts; the admin UI is only blocked at the edge.
-- `/api/pet/stream` broadcasts every alert to every connected pet, and the
-  extension reports every page visited. On a shared public server that means
-  users see each other's alerts. Scope alerts per user before opening it up.
+- Report reads and artifacts are readable by anyone with the scan id; the admin
+  UI (where accounts are approved) is only blocked at the edge, so approve
+  accounts through a port-forward.
 - Rotate the gateway CA deliberately: drain scans, replace `gateway-ca`, restart
   both gateway and worker Deployments, and repeat the deny test. A subPath mount
   does not update in running gateway pods. Bootstrap preserves the existing CA.

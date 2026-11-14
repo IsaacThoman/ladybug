@@ -23,6 +23,8 @@ export type PipelineDeps = {
   onStatus?: (status: ScanStatus, error?: string) => Promise<void>;
   /** Page fingerprints (pgvector). Without it, no "looks like a page we flagged" check. */
   similarity?: SimilarityStore;
+  /** The model to investigate with (the admin's pick). Without it, LLM_MODEL. */
+  llmModel?: () => Promise<string | null>;
 };
 
 /** Worker-side lookups that never touch the target. */
@@ -78,10 +80,13 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
   };
 
   let sandboxId: string | null = null;
-  let finished = false;
+  // Armed once the sandbox is up: the provider bounds the wait for it, which can
+  // include a node scaling up, and that shouldn't eat the scan's own time.
+  let startClock = () => {};
   const timeout = new Promise<never>((_, reject) => {
-    const timer = setTimeout(() => reject(new Error(`scan timed out after ${config.scanTimeoutMs / 1000}s`)), config.scanTimeoutMs);
-    timer.unref();
+    startClock = () => {
+      setTimeout(() => reject(new Error(`scan timed out after ${config.scanTimeoutMs / 1000}s`)), config.scanTimeoutMs).unref();
+    };
   });
 
   try {
@@ -89,12 +94,8 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
       await setStatus("provisioning");
       // Lookups run while the sandbox boots.
       const [sandbox] = await Promise.all([deps.provider.create(scanId), prescan(ctx, ev)]);
-      if (finished) {
-        // Timed out while booting; the outer finally already ran.
-        await deps.provider.destroy(sandbox.id);
-        throw new Error("scan ended before the sandbox was ready");
-      }
       sandboxId = sandbox.id;
+      startClock();
 
       await setStatus("detonating");
       const lastShot = await detonate(ctx, sandbox.client, ev);
@@ -103,7 +104,8 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
       await emitNewSignals();
 
       await setStatus("investigating");
-      await investigate(ctx, sandbox.client, ev, lastShot);
+      const model = deps.llmModel ? await deps.llmModel() : config.llm.model;
+      await investigate(ctx, sandbox.client, ev, lastShot, model);
 
       // Pick up whatever the agent's clicking triggered.
       const [requests, events, files, har] = await Promise.all([
@@ -136,7 +138,6 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
     await ctx.emit({ type: "report", score: report.score, verdict: report.verdict });
     return report;
   } finally {
-    finished = true;
     if (sandboxId) await deps.provider.destroy(sandboxId);
   }
 }

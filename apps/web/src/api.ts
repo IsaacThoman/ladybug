@@ -1,5 +1,6 @@
-import { API_KEY_HEADER, artifactPath, eventsPath } from "@ladybug/shared";
-import type { ApiError, CreateScanResponse, ScanListResponse, ScanResponse } from "@ladybug/shared";
+import { artifactPath, eventsPath } from "@ladybug/shared";
+import type { ApiError, AuthResponse, CreateScanResponse, MeResponse, ScanListResponse, ScanResponse } from "@ladybug/shared";
+import { getSession, setAccountStatus, setSession } from "./session.ts";
 
 export const API_BASE = (import.meta.env.VITE_SERVER_URL ?? "").replace(/\/+$/, "");
 
@@ -23,8 +24,11 @@ export class ApiRequestError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const session = getSession();
+  const headers = new Headers(init?.headers);
+  if (session && !headers.has("authorization")) headers.set("authorization", `Bearer ${session.token}`);
   try {
-    res = await fetch(API_BASE + path, init);
+    res = await fetch(API_BASE + path, { ...init, headers });
   } catch {
     throw new ApiRequestError({ kind: "unreachable" });
   }
@@ -40,6 +44,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     const body = (await res.json()) as Partial<ApiError>;
     if (typeof body.error === "string") message = body.error;
+    // Keep the stored session in line with what the server says about it.
+    if (body.code === "signed_out" && session) setSession(null);
+    else if (body.code === "pending" || body.code === "rejected") setAccountStatus(body.code);
   } catch {
     // Not JSON: keep the generic message.
   }
@@ -58,33 +65,38 @@ export const getScan = (scanId: string, signal?: AbortSignal) =>
 export const listScans = (limit = 20, signal?: AbortSignal) =>
   request<ScanListResponse>(`/api/scans?limit=${limit}`, { signal });
 
-export const createScan = (url: string, apiKey: string) =>
+export const createScan = (url: string) =>
   request<CreateScanResponse>("/api/scans", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(apiKey ? { [API_KEY_HEADER]: apiKey } : {}),
-    },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({ url }),
   });
 
-const API_KEY_STORAGE = "ladybug.apiKey";
-
-export function loadApiKey(): string {
-  try {
-    return window.localStorage.getItem(API_KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
+/** Signs in, or creates an account, and stores the session. */
+export async function signIn(mode: "login" | "signup", username: string, password: string) {
+  const res = await request<AuthResponse>(`/api/auth/${mode}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password, client: "web" }),
+  });
+  setSession({ token: res.token, account: res.account });
 }
 
-export function saveApiKey(key: string) {
-  try {
-    if (key) window.localStorage.setItem(API_KEY_STORAGE, key);
-    else window.localStorage.removeItem(API_KEY_STORAGE);
-  } catch {
-    // Storage blocked: the key lives for this session only.
-  }
+export async function signOut() {
+  const session = getSession();
+  setSession(null);
+  if (!session) return;
+  await fetch(`${API_BASE}/api/auth/logout`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${session.token}` },
+  }).catch(() => {});
+}
+
+/** Picks up an approval (or a revoked session) since the page was opened. */
+export async function refreshAccount() {
+  if (!getSession()) return;
+  const { account } = await request<MeResponse>("/api/auth/me");
+  setAccountStatus(account.status);
 }
 
 export const isAbort = (err: unknown) => err instanceof DOMException && err.name === "AbortError";

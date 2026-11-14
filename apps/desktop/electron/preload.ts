@@ -47,6 +47,14 @@ const api: LadybugApi = {
       ipcRenderer.removeListener("ladybug:scan-url", handler);
     };
   },
+  onAccountRequested: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("ladybug:show-account", handler);
+    return () => {
+      ipcRenderer.removeListener("ladybug:show-account", handler);
+    };
+  },
+  focusWindow: () => ipcRenderer.send("ladybug:focus"),
   openExternal: (url) => ipcRenderer.send("ladybug:open-external", url),
 };
 

@@ -14,6 +14,7 @@ import type {
   RequestsResponse,
   TypeRequest,
 } from "@ladybug/shared";
+import { SANDBOX_TOKEN_HEADER } from "@ladybug/shared";
 import type { BrowserManager } from "./browser.ts";
 import type { Config } from "./config.ts";
 import { runExec } from "./exec.ts";
@@ -47,10 +48,16 @@ function digest(value: string) {
   return createHash("sha256").update(value).digest();
 }
 
+/**
+ * The token arrives as `Authorization: Bearer`, or in X-Sandbox-Token when the
+ * worker comes through the Kubernetes API server's pod proxy, which keeps
+ * Authorization for itself.
+ */
 function authorized(req: IncomingMessage, expected: Buffer) {
-  const header = req.headers.authorization ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return timingSafeEqual(digest(match?.[1]?.trim() ?? ""), expected) && match !== null;
+  const header = req.headers[SANDBOX_TOKEN_HEADER];
+  const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? "")?.[1];
+  const token = (typeof header === "string" ? header : bearer)?.trim();
+  return timingSafeEqual(digest(token ?? ""), expected) && token !== undefined;
 }
 
 async function readJson<T>(req: IncomingMessage, maxBytes: number): Promise<T> {

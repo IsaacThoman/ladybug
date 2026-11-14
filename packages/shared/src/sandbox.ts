@@ -1,6 +1,6 @@
 // Contract for the in-sandbox tool daemon (apps/sandbox). The worker drives
-// it over HTTP. Every route except GET /healthz needs
-// `Authorization: Bearer <SANDBOX_TOKEN>`.
+// it over HTTP. Every route except GET /healthz needs the SANDBOX_TOKEN, as
+// `Authorization: Bearer <token>` or in the X-Sandbox-Token header.
 
 export const SANDBOX_DAEMON_PORT = 7000;
 export const GATEWAY_PORT = 8080;
@@ -20,6 +20,9 @@ export const SANDBOX_ENV = {
   gatewayCaPem: "GATEWAY_CA_PEM",
   port: "DAEMON_PORT",
 } as const;
+
+/** Carries the daemon token where Authorization can't (lowercase, as Node reports header names). */
+export const SANDBOX_TOKEN_HEADER = "x-sandbox-token";
 
 export type HealthzResponse = { ok: true; browser: boolean };
 

@@ -1,7 +1,20 @@
 import type { LogEvent } from "@ladybug/shared";
 
 export type Tone = "good" | "warning" | "critical" | "neutral" | "accent";
-export type IconName = "check" | "alert" | "clock" | "minus" | "globe" | "bell" | "user" | "x";
+export type IconName =
+  | "check"
+  | "alert"
+  | "clock"
+  | "minus"
+  | "globe"
+  | "bell"
+  | "user"
+  | "x"
+  | "home"
+  | "pulse"
+  | "database"
+  | "signout"
+  | "sliders";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
@@ -64,6 +77,8 @@ export function describeEvent(event: LogEvent): { label: string; tone: Tone; ico
       return { label: "Pet alert", tone: "accent", icon: "bell" };
     case "admin":
       return { label: "Admin", tone: "neutral", icon: "user" };
+    case "account":
+      return { label: "Sign-up", tone: "warning", icon: "user" };
     case "error":
       return { label: "Error", tone: "critical", icon: "x" };
   }

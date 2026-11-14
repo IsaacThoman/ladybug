@@ -3,10 +3,16 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
+import { createModelSettings } from "@ladybug/backend";
+import type { ModelSettingsStore } from "@ladybug/backend";
+import { requireAccount, userOf } from "./accounts.ts";
 import { checkVisit } from "./checker.ts";
 import { config } from "./config.ts";
-import { errorHandler, optionalString, requireAdmin, requireStore, requireString } from "./http.ts";
+import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
+import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
+import { authRouter } from "./routes/auth.ts";
+import type { Limiter } from "./routes/auth.ts";
 import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
@@ -24,7 +30,7 @@ const GREETINGS = [
   "Got a sketchy link? Drop it on me.",
 ];
 
-export function createApp(deps: ScanDeps) {
+export function createApp(deps: ScanDeps & { authLimit: Limiter; modelSettings?: ModelSettingsStore }) {
   const app = express();
 
   // How many reverse proxies sit in front, so req.ip (used for rate limits) is the client.
@@ -52,11 +58,16 @@ export function createApp(deps: ScanDeps) {
     res.json(body);
   });
 
+  // Sign-up and sign-in for the extension, the pet and the web page.
+  app.use("/api/auth", authRouter({ accounts: deps.accounts, limit: deps.authLimit, clientIpHeader: deps.clientIpHeader }));
+  const signedIn = requireAccount(deps.accounts);
+
   // Sandbox scans: started by the pet, the web page, or the analyzer below.
   app.use("/api/scans", scansRouter(deps));
 
-  // Called by the browser extension for every page visit.
-  app.post("/api/check", requireStore, async (req, res) => {
+  // Called by the browser extension for every page visit. Alerts go to the same user's pets.
+  app.post("/api/check", signedIn, requireStore, async (req, res) => {
+    const user = userOf(res);
     res.json(
       await checkVisit(
         {
@@ -64,21 +75,26 @@ export function createApp(deps: ScanDeps) {
           title: optionalString(req.body?.title, "title", 500),
         },
         "extension",
+        { userId: user.id, username: user.username },
       ),
     );
   });
 
-  // Desktop pets subscribe here for alerts.
-  app.get("/api/pet/stream", (req, res) => {
-    petChannel.attach(req, res);
+  // Desktop pets subscribe here for their user's alerts.
+  app.get("/api/pet/stream", signedIn, (req, res) => {
+    petChannel.attach(req, res, userOf(res).id);
   });
 
-  app.use("/api/admin", requireAdmin, adminRouter());
+  // Sign-in first: the admin UI calls these while signed out.
+  app.use("/api/admin", adminAuthRouter());
+  const modelSettings = deps.modelSettings ?? createModelSettings(deps.db, deps.redis);
+  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts, modelSettings));
 
-  // Built admin UI (see apps/admin).
+  // Built admin UI (see apps/admin). It's public: it holds no data, and shows
+  // its sign-in page until the API accepts the session.
   if (fs.existsSync(config.adminDist)) {
-    app.use("/admin", requireAdmin, express.static(config.adminDist));
-    app.get("/admin/{*path}", requireAdmin, (_req, res) => {
+    app.use("/admin", express.static(config.adminDist));
+    app.get("/admin/{*path}", (_req, res) => {
       res.sendFile(path.join(config.adminDist, "index.html"));
     });
     app.get("/", (_req, res) => res.redirect("/admin/"));

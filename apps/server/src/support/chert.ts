@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export function readMessagingConfig(env = process.env) {
-  const key = env.CHERT_IMESSAGE_KEY?.trim(), line = env.CHERT_IMESSAGE_LINE_ID?.trim();
+  const key = env.CHERT_API_KEY?.trim(), line = env.CHERT_LINE_ID?.trim();
   const secret = env.CHERT_WEBHOOK_SECRET?.trim(), destination = env.EMERGENCY_NUMBER?.trim();
   if (!key || !line || !secret || !destination) return null;
   if (!/^\+[1-9]\d{6,14}$/.test(destination)) throw new Error("Invalid messaging emergency number");

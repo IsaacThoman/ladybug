@@ -5,11 +5,13 @@ import { readMessagingConfig, sendMessage, SendError, verifySignature } from "./
 
 const config = { key: "messaging-secret", line: "line", secret: "webhook-secret", destination: "+15551234567", tenant: "tenant" };
 
-test("messaging config is independent of FaceTime credentials and requires a fixed international destination", () => {
+test("messaging shares the FaceTime key and line and requires its own webhook secret and a fixed destination", () => {
   assert.equal(readMessagingConfig({}), null);
   assert.equal(readMessagingConfig({ CHERT_API_KEY: "facetime-key" }), null);
-  const env = { CHERT_IMESSAGE_KEY: "message-key", CHERT_IMESSAGE_LINE_ID: "line", CHERT_WEBHOOK_SECRET: "secret", EMERGENCY_NUMBER: "+15551234567" };
-  assert.equal(readMessagingConfig(env)?.key, "message-key");
+  const env = { CHERT_API_KEY: "shared-key", CHERT_LINE_ID: "shared-line", CHERT_WEBHOOK_SECRET: "secret", EMERGENCY_NUMBER: "+15551234567" };
+  assert.equal(readMessagingConfig(env)?.key, "shared-key");
+  assert.equal(readMessagingConfig(env)?.line, "shared-line");
+  assert.equal(readMessagingConfig({ ...env, CHERT_WEBHOOK_SECRET: "" }), null);
   assert.throws(() => readMessagingConfig({ ...env, EMERGENCY_NUMBER: "5551234567" }));
 });
 
@@ -26,7 +28,7 @@ test("modern and legacy signatures cover raw bytes and expire after five minutes
   assert.equal(verifySignature(raw, `t=${ts},v1=aa`, config.secret, now), false);
 });
 
-test("send uses documented messaging fields, fixed contact and separate bearer credentials", async () => {
+test("send uses documented messaging fields, fixed contact and server-side bearer credentials", async () => {
   const chat = await sendMessage(config, "stable-key", "https://bad.example/", async (url, init) => {
     assert.equal(String(url), "https://console.trychert.com/api/v1/send");
     assert.deepEqual(init?.headers, { Authorization: "Bearer messaging-secret", "Content-Type": "application/json", "x-chert-tenant": "tenant" });

@@ -92,11 +92,12 @@ is `electron/call-service.ts`, and the provider lifecycle lives in
 
 ## Risky-site alerts and remote support
 
-Configure these server-only values, separately from the FaceTime credentials:
+Messaging and FaceTime share the server-only `CHERT_API_KEY` and `CHERT_LINE_ID`.
+The key must have access to both messaging and FaceTime. Configure:
 
-- `CHERT_IMESSAGE_KEY`: Chert messaging bearer secret.
+- `CHERT_API_KEY`: shared Chert bearer secret for messaging and FaceTime.
 - `CHERT_TENANT_SLUG`: optional tenant slug for multi-tenant accounts.
-- `CHERT_IMESSAGE_LINE_ID`: assigned iMessage sender line (`phone_line_id`).
+- `CHERT_LINE_ID`: shared assigned sender line (used as `phone_line_id` for messaging).
 - `CHERT_WEBHOOK_SECRET`: the webhook subscription secret, independent of the messaging key.
 - `EMERGENCY_NUMBER`: the same E.164 destination used for FaceTime.
 

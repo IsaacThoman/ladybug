@@ -52,7 +52,7 @@ export default function LoginPage({ onSignedIn, unreachable = false, onRetry }: 
     <div className="login garden-sky">
       <div className="garden-clouds" aria-hidden="true" />
       <main className="login-main">
-        <MascotStage unit={150} mood={mood} followPointer={mood === "calm"} ref={mascotRef}>
+        <MascotStage unit={150} mood={mood} ref={mascotRef}>
           <p className="mascot-bubble" key={mood} aria-hidden="true">
             {says}
           </p>

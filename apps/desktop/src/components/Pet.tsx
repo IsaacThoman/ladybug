@@ -2,12 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { fetchGreeting } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
+import { LadybugRenderer } from "./ladybug/LadybugRenderer";
 import "./Pet.css";
 
-const SIZE = 96;
-const RADIUS = SIZE / 2;
+// Hit box, roughly the ladybug's silhouette. Its bottom edge is the ground line.
+const PET_WIDTH = 92;
+const PET_HEIGHT = 60;
+// The 3D canvas is larger than the hit box so wings, legs and the shadow have
+// room; it is centred horizontally and sits GROUND_PX below the ground line.
+const UNIT_PX = 100; // CSS px per model unit (≈ the bug's length)
+const CANVAS_WIDTH = 180;
+const CANVAS_HEIGHT = 150;
+const GROUND_PX = 14;
 const GRAVITY = 2400; // px/s²
-const ROLL_SPEED = 140; // px/s
+const WALK_SPEED = 70; // px/s
 const BOUNCE = 0.35;
 const GROUND_FRICTION = 6; // 1/s, damps sliding after a throw
 const HOP_VELOCITY = -650; // px/s
@@ -15,14 +23,14 @@ const CLICK_SLOP = 4; // px of movement before a press becomes a drag
 const BUBBLE_MS = 3500;
 const OFFLINE_MESSAGE = "Can't reach the server…";
 
-type Mode = "idle" | "rolling" | "airborne" | "dragging";
+type Mode = "idle" | "walking" | "airborne" | "dragging";
 
 type PhysicsState = {
   x: number;
   y: number;
   vx: number;
   vy: number;
-  angle: number;
+  heading: 1 | -1;
   mode: Mode;
   targetX: number;
   idleUntil: number;
@@ -44,7 +52,7 @@ const randomBetween = (min: number, max: number) => min + Math.random() * (max -
 
 export default function Pet({ layout }: { layout: OverlayLayout }) {
   const petRef = useRef<HTMLDivElement>(null);
-  const spriteRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const layoutRef = useRef(layout);
   const stateRef = useRef<PhysicsState | null>(null);
@@ -60,9 +68,9 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     const { workArea } = layoutRef.current;
     return {
       minX: workArea.x,
-      maxX: workArea.x + workArea.width - SIZE,
+      maxX: workArea.x + workArea.width - PET_WIDTH,
       minY: workArea.y,
-      groundY: workArea.y + workArea.height - SIZE,
+      groundY: workArea.y + workArea.height - PET_HEIGHT,
     };
   };
 
@@ -76,15 +84,23 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
         y: groundY - 300,
         vx: 0,
         vy: 0,
-        angle: 0,
+        heading: 1,
         mode: "airborne",
         targetX: x,
         idleUntil: 0,
       };
     }
 
+    const ladybug = new LadybugRenderer(canvasRef.current!, {
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
+      unitPx: UNIT_PX,
+      groundPx: GROUND_PX,
+    });
+
     let frame = 0;
     let last = performance.now();
+    let prevX = stateRef.current.x;
 
     const tick = (now: number) => {
       const dt = Math.min((now - last) / 1000, 1 / 20);
@@ -97,16 +113,15 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
           s.y = groundY;
           if (now >= s.idleUntil) {
             s.targetX = randomBetween(minX, maxX);
-            s.mode = "rolling";
+            s.heading = s.targetX >= s.x ? 1 : -1;
+            s.mode = "walking";
           }
           break;
 
-        case "rolling": {
+        case "walking": {
           s.y = groundY;
           const dx = s.targetX - s.x;
-          const step = Math.sign(dx) * Math.min(Math.abs(dx), ROLL_SPEED * dt);
-          s.x += step;
-          s.angle += step / RADIUS;
+          s.x += Math.sign(dx) * Math.min(Math.abs(dx), WALK_SPEED * dt);
           if (Math.abs(dx) < 1) {
             s.mode = "idle";
             s.idleUntil = now + randomBetween(1500, 6000);
@@ -118,7 +133,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
           s.vy += GRAVITY * dt;
           s.x += s.vx * dt;
           s.y += s.vy * dt;
-          s.angle += (s.vx * dt) / RADIUS;
+          if (Math.abs(s.vx) > 60) s.heading = s.vx > 0 ? 1 : -1;
 
           if (s.x < minX || s.x > maxX) {
             s.x = Math.min(Math.max(s.x, minX), maxX);
@@ -130,6 +145,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
           }
           if (s.y >= groundY) {
             s.y = groundY;
+            if (s.vy > 200) ladybug.land(s.vy);
             s.vy = -s.vy * BOUNCE;
             s.vx *= 1 - Math.min(1, GROUND_FRICTION * dt);
             if (Math.abs(s.vy) < 120) {
@@ -149,14 +165,19 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       if (petRef.current) {
         petRef.current.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
       }
-      if (spriteRef.current) {
-        spriteRef.current.style.transform = `rotate(${s.angle}rad)`;
-      }
+      // On-screen velocity, so drags (which move x outside this loop) count too.
+      const vx = dt > 0 ? (s.x - prevX) / dt : 0;
+      prevX = s.x;
+      if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
+      ladybug.render({ mode: s.mode, vx, heading: s.heading }, dt);
       frame = requestAnimationFrame(tick);
     };
 
     frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      ladybug.dispose();
+    };
   }, []);
 
   // Hide the speech bubble after a moment.
@@ -218,7 +239,6 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     const dt = Math.max((now - drag.lastT) / 1000, 1 / 240);
     s.vx = (e.clientX - drag.lastX) / dt;
     s.vy = (e.clientY - drag.lastY) / dt;
-    s.angle += (e.clientX - drag.lastX) / RADIUS;
     s.x = Math.min(Math.max(e.clientX - drag.offsetX, minX), maxX);
     s.y = Math.min(Math.max(e.clientY - drag.offsetY, minY), groundY);
     drag.lastX = e.clientX;
@@ -263,7 +283,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     <div
       ref={petRef}
       className={dragging ? "pet dragging" : "pet"}
-      style={{ width: SIZE, height: SIZE }}
+      style={{ width: PET_WIDTH, height: PET_HEIGHT }}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       onPointerDown={onPointerDown}
@@ -273,7 +293,16 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       onContextMenu={onContextMenu}
     >
       {bubble && <div className="pet-bubble">{bubble}</div>}
-      <img ref={spriteRef} className="pet-sprite" src="pulpo.png" alt="" draggable={false} />
+      <canvas
+        ref={canvasRef}
+        className="pet-canvas"
+        style={{
+          width: CANVAS_WIDTH,
+          height: CANVAS_HEIGHT,
+          left: (PET_WIDTH - CANVAS_WIDTH) / 2,
+          top: PET_HEIGHT + GROUND_PX - CANVAS_HEIGHT,
+        }}
+      />
     </div>
   );
 }

@@ -11,18 +11,16 @@
   cursor: grabbing;
 }
 
-.pet-sprite {
+.pet-canvas {
+  position: absolute;
   display: block;
-  width: 100%;
-  height: 100%;
   pointer-events: none;
-  -webkit-user-drag: none;
-  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35));
 }
 
 .pet-bubble {
   position: absolute;
-  bottom: calc(100% + 10px);
+  z-index: 1;
+  bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
   max-width: 220px;

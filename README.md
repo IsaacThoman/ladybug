@@ -8,7 +8,7 @@ npm-workspaces monorepo:
 
 | Path | What |
 | --- | --- |
-| `apps/desktop` | Electron + Vite + React app. A transparent, click-through window covers the whole primary display, and the pet rolls around on top of it. |
+| `apps/desktop` | Electron + Vite + React app. A transparent, click-through window covers the whole primary display, and a 3D ladybug (three.js) walks around on top of it. |
 | `apps/server` | Node + Express backend (TypeScript, run directly with Node's type stripping). |
 | `packages/shared` | Types and constants shared by the server and the desktop app. |
 
@@ -56,4 +56,4 @@ Everything else on the overlay is click-through, so it never gets in the way of 
 | `npm run lint` | ESLint across the repo |
 | `npm run dist -w @ladybug/desktop` | Package the desktop app with electron-builder |
 
-The placeholder pet sprite is the Pulpo smiley.
+The ladybug is built procedurally in `apps/desktop/src/components/ladybug/`: `ladybugModel.ts` is the model, `LadybugRenderer.ts` handles the camera, lighting and animation. The tray icon is still the Pulpo smiley placeholder.

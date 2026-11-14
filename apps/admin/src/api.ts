@@ -1,5 +1,6 @@
 import type {
   AdminAccountsResponse,
+  AdminModelSettings,
   AdminSession,
   AdminSummary,
   CheckResponse,
@@ -95,6 +96,11 @@ export const api = {
   rejectUser: (id: string) => request<unknown>(`/api/admin/users/${id}/reject`, { method: "POST" }),
 
   deleteUser: (id: string) => request<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
+
+  modelSettings: () => request<AdminModelSettings>("/api/admin/settings/model"),
+
+  setModel: (model: string | null) =>
+    request<AdminModelSettings>("/api/admin/settings/model", { method: "PUT", body: JSON.stringify({ model }) }),
 
   check: (url: string) =>
     request<CheckResponse>("/api/admin/check", { method: "POST", body: JSON.stringify({ url }) }),

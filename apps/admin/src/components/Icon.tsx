@@ -15,6 +15,7 @@ const PATHS: Record<IconName, string> = {
   database:
     "M8 2.5c2.8 0 5 .8 5 1.8v7.4c0 1-2.2 1.8-5 1.8s-5-.8-5-1.8V4.3c0-1 2.2-1.8 5-1.8zM3 4.3c0 1 2.2 1.8 5 1.8s5-.8 5-1.8M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8",
   signout: "M6.5 13.5h-3v-11h3M10 5l3 3-3 3M13 8H6.5",
+  sliders: "M2.5 4.5h3M8.5 4.5h5M2.5 11.5h6M11.5 11.5h2M7 3v3M10 10v3",
 };
 
 export default function Icon({ name, size = 14 }: { name: IconName; size?: number }) {

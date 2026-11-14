@@ -3,6 +3,8 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
+import { createModelSettings } from "@ladybug/backend";
+import type { ModelSettingsStore } from "@ladybug/backend";
 import { requireAccount, userOf } from "./accounts.ts";
 import { checkVisit } from "./checker.ts";
 import { config } from "./config.ts";
@@ -26,7 +28,7 @@ const GREETINGS = [
   "Got a sketchy link? Drop it on me.",
 ];
 
-export function createApp(deps: ScanDeps & { authLimit: Limiter }) {
+export function createApp(deps: ScanDeps & { authLimit: Limiter; modelSettings?: ModelSettingsStore }) {
   const app = express();
 
   // How many reverse proxies sit in front, so req.ip (used for rate limits) is the client.
@@ -79,7 +81,8 @@ export function createApp(deps: ScanDeps & { authLimit: Limiter }) {
 
   // Sign-in first: the admin UI calls these while signed out.
   app.use("/api/admin", adminAuthRouter());
-  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts));
+  const modelSettings = deps.modelSettings ?? createModelSettings(deps.db, deps.redis);
+  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts, modelSettings));
 
   // Built admin UI (see apps/admin). It's public: it holds no data, and shows
   // its sign-in page until the API accepts the session.

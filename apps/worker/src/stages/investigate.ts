@@ -144,8 +144,14 @@ async function runToolCall(tools: Map<string, AgentTool>, call: OpenAI.Chat.Comp
  * Fills ev.findings / ev.agent, or sets a flag (llm_skipped / llm_refused /
  * llm_failed) so scoring falls back to hard signals.
  */
-export async function investigate(ctx: ScanContext, sandbox: DaemonClient, ev: Evidence, lastShot: Buffer | null) {
-  const { apiKey, model, baseUrl, vision, tokenBudget } = config.llm;
+export async function investigate(
+  ctx: ScanContext,
+  sandbox: DaemonClient,
+  ev: Evidence,
+  lastShot: Buffer | null,
+  model: string | null,
+) {
+  const { apiKey, baseUrl, vision, tokenBudget } = config.llm;
   if (!apiKey || !model) {
     ev.flags.push("llm_skipped");
     await ctx.emit({ type: "agent_note", text: "No model endpoint configured, so this report uses hard signals only." });

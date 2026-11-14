@@ -44,13 +44,13 @@ npm install
 
 ### 1. Backend
 
-Copy the compose settings first. To get real LLM scans, set `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` in it; the model can be any OpenAI-compatible Chat Completions API with tool calling:
+Copy the compose settings first. To get real LLM scans, set `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` in it; the model can be any OpenAI-compatible Chat Completions API with tool calling. `LLM_MODEL` is only the default: an admin can switch to any other model the endpoint offers on the admin UI's **Settings** tab.
 
 ```sh
 cp .env.example .env
 ```
 
-Without `LLM_API_KEY` and `LLM_MODEL`, scans still run end to end and score from hard signals only; the report is flagged `llm_skipped`. To skip sandbox scans altogether and use the old URL heuristics, set `ANALYZER=placeholder`.
+Without `LLM_API_KEY`, or with no model set or picked, scans still run end to end and score from hard signals only; the report is flagged `llm_skipped`. To skip sandbox scans altogether and use the old URL heuristics, set `ANALYZER=placeholder`.
 
 Either run the whole backend in Docker. This is the same stack a deployment runs (see [Deploy](#deploy)), with ports published on localhost:
 
@@ -117,12 +117,13 @@ To see it work, visit `https://example.com/` (nothing happens), the phishing tes
 - With `npm run stack:up`: <http://localhost:8080/admin/>, or the server directly at <http://localhost:3001/admin/>. If `ADMIN_PASSWORD` is set, it opens on a sign-in page that asks for it. Scripts can still use HTTP Basic (`curl -u :password`).
 - With `npm run dev:server`: `npm run dev:admin`, then <http://localhost:5174/admin/>. It proxies API calls to the server.
 
-It has four tabs:
+It has five tabs:
 
 - **Overview:** stats, a chart of visits checked over the last hour, day or week (from TimescaleDB, see [Postgres and Tiger Data](#postgres-and-tiger-data)), a "check a URL" box that runs the same pipeline as a visit, analyses in progress, recent detections and the latest activity.
 - **Activity log:** every request, decision, analysis, pet alert and admin change. You can search and filter it, click a row for details, and new events appear live.
 - **URL database:** known URLs and hosts, searched in Typesense. You can add rules, flip verdicts, or forget a record so it's analysed again.
 - **Users:** sign-ups waiting for approval (the tab shows how many), and every account with when it was last seen and how many devices are signed in. Approve or turn down requests, revoke access, or delete an account.
+- **Settings:** the model scans investigate with. The worker lists the models its endpoint offers (`GET /models`, minus embedding, speech, image and moderation models) every 5 minutes and publishes them to Valkey, since only it holds `LLM_API_KEY`. The pick is stored in Postgres and the next scan uses it; **Default** goes back to the worker's `LLM_MODEL`.
 
 `npm run dev` starts the server, worker, report page, desktop app, admin UI and extension watcher together. It still needs `npm run services:up`.
 
@@ -222,6 +223,7 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 | `GET /api/admin/summary`, `/events`, `/urls`, `/stream`, `/timeline?range=1h\|24h\|7d` | Admin UI |
 | `POST /api/admin/check`, `POST/PUT/DELETE /api/admin/urls` | Admin UI |
 | `GET /api/admin/users`, `POST /api/admin/users/:id/approve\|reject`, `DELETE /api/admin/users/:id` | Admin UI |
+| `GET/PUT /api/admin/settings/model` | Admin UI |
 | `GET /health` | Everything |
 
 ## Deploy

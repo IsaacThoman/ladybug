@@ -176,6 +176,42 @@ export type CheckTimeline =
   /** Postgres doesn't have the timescaledb extension. */
   | { available: false; range: TimelineRange };
 
+// ---------------------------------------------------------------------------
+// Scan model (admin setting)
+
+/**
+ * The models the worker's LLM endpoint offers. The worker holds the API key,
+ * so it lists them and publishes this to Valkey for the server to read.
+ */
+export type LlmCatalog = {
+  /** The endpoint's base URL (LLM_BASE_URL). */
+  baseUrl: string;
+  /** The worker's LLM_MODEL, used when the admin hasn't picked one. */
+  defaultModel: string | null;
+  /** Model ids, sorted. Empty when listing failed. */
+  models: string[];
+  /** Epoch ms. */
+  fetchedAt: number;
+  /** Why listing failed, if it did. */
+  error?: string;
+};
+
+/** `GET /api/admin/settings/model`. */
+export type AdminModelSettings = {
+  /** The model the admin picked. null = the worker's default (LLM_MODEL). */
+  selected: string | null;
+  /**
+   * What the worker has reported. null when no worker with an LLM_API_KEY has
+   * checked in recently, so there's nothing to pick from.
+   */
+  catalog: LlmCatalog | null;
+};
+
+/** `PUT /api/admin/settings/model`. null goes back to the worker's default. */
+export type UpdateModelRequest = {
+  model: string | null;
+};
+
 /** Server-sent events on /api/admin/stream. */
 export type AdminStreamEvent =
   | { kind: "event"; event: LogEvent }

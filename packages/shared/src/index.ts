@@ -3,6 +3,7 @@
 
 export * from "./scan.ts";
 export * from "./sandbox.ts";
+export * from "./accounts.ts";
 
 export const DEFAULT_SERVER_PORT = 3001;
 /**
@@ -88,6 +89,7 @@ export type LogEventType =
   | "analysis_completed"
   | "alert"
   | "admin"
+  | "account"
   | "error";
 
 export type Decision = "known_safe" | "known_unsafe" | "unknown" | "skipped";
@@ -134,6 +136,19 @@ export type AdminSummary = {
   pending: PendingAnalysis[];
   petsConnected: number;
   analysisDelayMs: number;
+  /** Sign-ups waiting for an admin. */
+  pendingAccounts: number;
+};
+
+/** `GET /api/admin/session`: whether the admin UI should show its sign-in page. */
+export type AdminSession = {
+  /** False when the server has no ADMIN_PASSWORD, so admin is open. */
+  required: boolean;
+  authenticated: boolean;
+};
+
+export type AdminLoginRequest = {
+  password: string;
 };
 
 export type UpdateVerdictRequest = {
@@ -165,3 +180,5 @@ export type CheckTimeline =
 export type AdminStreamEvent =
   | { kind: "event"; event: LogEvent }
   | { kind: "pending"; pending: PendingAnalysis[] };
+
+export type { CallPhase, CallState, PreparedCall, FaceTimeApi } from "./calls.ts";

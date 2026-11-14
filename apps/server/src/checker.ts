@@ -1,5 +1,6 @@
 import type { CheckRequest, CheckResponse } from "@ladybug/shared";
 import { logEvent, sendPetAlert } from "./activity.ts";
+import type { AlertRecipient } from "./activity.ts";
 import { isAnalysisRunning, startAnalysis } from "./analyzer.ts";
 import { recordVisit } from "./checks.ts";
 import { findRecord } from "./store.ts";
@@ -12,16 +13,24 @@ export type CheckOrigin = "extension" | "admin";
  * - known safe: nothing else happens,
  * - known unsafe: the pet raises an alert,
  * - unknown: the pet says it's checking, and an analysis starts.
+ *
+ * Alerts go to the pets of the user who reported the visit. Admin checks
+ * alert every pet.
  */
-export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Promise<CheckResponse> {
+export async function checkVisit(
+  request: CheckRequest,
+  origin: CheckOrigin,
+  recipient: AlertRecipient,
+): Promise<CheckResponse> {
   const target = normalizeUrl(request.url);
   // Log the normalised URL where possible, so credentials never reach the log.
   const loggedUrl = target.ok ? target.url : request.url;
+  const user = recipient === "everyone" ? undefined : recipient.username;
   logEvent({
     type: "request",
-    message: `Visit reported by ${origin}: ${loggedUrl}`,
+    message: `Visit reported by ${user ?? origin}: ${loggedUrl}`,
     url: loggedUrl,
-    details: { origin, title: request.title },
+    details: { origin, title: request.title, ...(user ? { user } : {}) },
   });
 
   if (!target.ok) {
@@ -53,7 +62,7 @@ export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Pr
       details: { recordId: record.id, scope: record.scope, source: record.source, reason: record.reason },
     });
     if (record.verdict === "unsafe") {
-      sendPetAlert("danger", `Careful! ${host} is flagged as unsafe. ${record.reason}.`, url, host);
+      sendPetAlert(recipient, "danger", `Careful! ${host} is flagged as unsafe. ${record.reason}.`, url, host);
     }
     return { status: "known", verdict: record.verdict, record };
   }
@@ -71,9 +80,10 @@ export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Pr
     durationMs,
     details: { alreadyRunning },
   });
-  const analysis = startAnalysis(url, host);
-  if (!alreadyRunning) {
-    sendPetAlert("info", `Hmm, I don't know ${host} yet. Checking it…`, url, host, analysis.scanId);
+  const { analysis, joined } = startAnalysis(url, host, recipient);
+  // Someone else's visit may have started it; this user's pet still needs to hear.
+  if (joined) {
+    sendPetAlert(recipient, "info", `Hmm, I don't know ${host} yet. Checking it…`, url, host, analysis.scanId);
   }
   return { status: "pending", url, etaMs: Math.max(0, analysis.etaAt - Date.now()) };
 }

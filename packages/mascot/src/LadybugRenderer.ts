@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { buildLadybug } from "./ladybugModel";
-import type { LadybugRig } from "./ladybugModel";
+import { buildLadybug } from "./ladybugModel.ts";
+import type { LadybugRig } from "./ladybugModel.ts";
 
 export type LadybugMode = "idle" | "walking" | "airborne" | "dragging";
 
@@ -21,6 +21,11 @@ export type LadybugPose = {
   heading: 1 | -1;
   /** Defaults to "calm". */
   mood?: LadybugMood;
+  /**
+   * While idle, look this way (yaw in radians; positive turns the face to the
+   * right of the screen) instead of glancing around at random.
+   */
+  look?: number;
 };
 
 export type LadybugViewport = {
@@ -186,6 +191,13 @@ export class LadybugRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Call when the canvas changes size. */
+  resize(viewport: LadybugViewport) {
+    this.viewport = viewport;
+    this.renderer.setSize(viewport.width, viewport.height, false);
+    this.framedAnchorZ = Number.NaN;
+  }
+
   /** Startled: antennae go frantic and the body shivers for a moment. */
   startle(seconds = 2.5) {
     this.startleLeft = Math.max(this.startleLeft, seconds);
@@ -239,7 +251,9 @@ export class LadybugRenderer {
     // Facing: three-quarter view while moving, glance around while idle.
     // Looking up at a dragged link, or celebrating, it faces the viewer.
     const facesViewer = mood === "expectant" || mood === "happy";
-    if (mode === "idle" && !facesViewer) {
+    if (mode === "idle" && !facesViewer && pose.look !== undefined) {
+      this.glance = THREE.MathUtils.clamp(pose.look, -0.7, 0.7);
+    } else if (mode === "idle" && !facesViewer) {
       this.glanceIn -= dt;
       if (this.glanceIn <= 0) {
         this.glance =

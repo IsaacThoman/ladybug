@@ -18,3 +18,62 @@ body,
   background: transparent;
   user-select: none;
 }
+
+.facetime {
+  position: absolute;
+  z-index: 10;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  overflow: auto;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  padding: 12px;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+.facetime button { cursor: pointer; padding: 6px 12px; }
+.facetime button:disabled { cursor: default; }
+.facetime section p { margin: 8px 0; }
+.caller-video { display: block; width: 100%; margin-top: 12px; background: #111; }
+.caller-video.hidden { display: none; }
+
+.account-panel {
+  position: absolute;
+  z-index: 10;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  overflow: auto;
+  border-radius: 8px;
+  background: #fff;
+  color: #222;
+  padding: 12px;
+  box-sizing: border-box;
+  font-size: 13px;
+  pointer-events: auto;
+}
+.account-panel p { margin: 0 0 8px; }
+.account-title { font-weight: 600; }
+.account-note { color: #555; }
+.account-panel label { display: block; margin-bottom: 8px; color: #555; font-size: 12px; }
+.account-panel input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font: inherit;
+  color: #222;
+  background: #fff;
+  user-select: text;
+}
+.account-panel input:focus { outline: 2px solid #e5483e; outline-offset: -1px; }
+.account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.account-panel button { cursor: pointer; padding: 6px 12px; }
+.account-panel button:disabled { cursor: default; }
+.account-panel button.link { padding: 0 4px; border: 0; background: none; color: #555; text-decoration: underline; }
+.account-status { padding: 8px 10px; border-radius: 6px; background: #fff3dc; color: #7a5200; }
+.account-status[data-status="rejected"] { background: #fde8e6; color: #b02a2a; }
+.account-error { color: #b02a2a; }

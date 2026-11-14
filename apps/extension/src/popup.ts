@@ -1,6 +1,15 @@
 import type { HealthResponse } from "@ladybug/shared";
-import { getRecent, getSettings, normalizeServerUrl, saveSettings } from "./settings";
-import type { RecentCheck } from "./settings";
+import {
+  getAuth,
+  getRecent,
+  getSettings,
+  normalizeServerUrl,
+  refreshAccount,
+  saveSettings,
+  signIn,
+  signOut,
+} from "./settings";
+import type { Auth, RecentCheck } from "./settings";
 import "./popup.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -12,6 +21,33 @@ const serverUrlEl = $<HTMLInputElement>("server-url");
 const formErrorEl = $<HTMLParagraphElement>("form-error");
 const recentEl = $<HTMLUListElement>("recent");
 const recentEmptyEl = $<HTMLParagraphElement>("recent-empty");
+const signedOutEl = $<HTMLElement>("signed-out");
+const signedInEl = $<HTMLElement>("signed-in");
+const authFormEl = $<HTMLFormElement>("auth-form");
+const usernameEl = $<HTMLInputElement>("username");
+const passwordEl = $<HTMLInputElement>("password");
+const authErrorEl = $<HTMLParagraphElement>("auth-error");
+const accountNameEl = $<HTMLElement>("account-name");
+const accountStatusEl = $<HTMLParagraphElement>("account-status");
+const signOutEl = $<HTMLButtonElement>("sign-out");
+
+const STATUS_TEXT = {
+  pending: "Waiting for an admin to approve your account. Ladybug starts checking pages as soon as they do.",
+  rejected: "An admin turned down this account, so pages aren't checked.",
+} as const;
+
+function renderAuth(auth: Auth | null) {
+  signedOutEl.hidden = auth !== null;
+  signedInEl.hidden = auth === null;
+  if (!auth) return;
+  accountNameEl.textContent = auth.account.username;
+  const status = auth.account.status;
+  accountStatusEl.hidden = status === "approved";
+  if (status !== "approved") {
+    accountStatusEl.dataset.status = status;
+    accountStatusEl.textContent = STATUS_TEXT[status];
+  }
+}
 
 function setStatus(state: "checking" | "ok" | "degraded" | "down", text: string) {
   statusEl.dataset.state = state;
@@ -92,6 +128,43 @@ async function init() {
   serverUrlEl.value = settings.serverUrl;
   void checkServer(settings.serverUrl);
   renderRecent(await getRecent());
+  renderAuth(await getAuth());
+  // An admin may have approved the account since the last look.
+  void refreshAccount(settings.serverUrl).then(renderAuth).catch(() => {});
+
+  authFormEl.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const mode = ((event.submitter as HTMLButtonElement | null)?.dataset.mode ?? "login") as "login" | "signup";
+    const buttons = authFormEl.querySelectorAll("button");
+    buttons.forEach((button) => (button.disabled = true));
+    authErrorEl.hidden = true;
+    void getSettings()
+      .then(({ serverUrl }) => signIn(serverUrl, mode, usernameEl.value, passwordEl.value))
+      .then((auth) => {
+        passwordEl.value = "";
+        renderAuth(auth);
+      })
+      .catch((error: unknown) => {
+        authErrorEl.textContent =
+          error instanceof TypeError || (error instanceof DOMException && error.name === "TimeoutError")
+            ? "Can't reach the server."
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        authErrorEl.hidden = false;
+      })
+      .finally(() => buttons.forEach((button) => (button.disabled = false)));
+  });
+
+  signOutEl.addEventListener("click", () => {
+    void getSettings()
+      .then(({ serverUrl }) => signOut(serverUrl))
+      .then(() => renderAuth(null));
+  });
+
+  chrome.storage.local.onChanged.addListener(() => {
+    void getAuth().then(renderAuth);
+  });
 
   enabledEl.addEventListener("change", () => {
     void saveSettings({ enabled: enabledEl.checked });
@@ -103,6 +176,10 @@ async function init() {
       const serverUrl = normalizeServerUrl(serverUrlEl.value);
       serverUrlEl.value = serverUrl;
       formErrorEl.hidden = true;
+      const previous = settings.serverUrl;
+      settings.serverUrl = serverUrl;
+      // An account belongs to one server: switching servers signs out.
+      if (serverUrl !== previous) void signOut(previous).then(() => renderAuth(null));
       void saveSettings({ serverUrl });
       void checkServer(serverUrl);
     } catch (error) {

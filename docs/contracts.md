@@ -12,14 +12,26 @@ The source of truth is `packages/shared/src/scan.ts` (scan, event, report and HT
 
 | Route | Auth | Returns |
 |---|---|---|
-| `POST /api/scans {url}` | `x-api-key` when `API_KEYS` is set | `202 CreateScanResponse` |
-| `GET /api/scans?limit=20` | none | `ScanListResponse` |
+| `POST /api/auth/signup`, `/login` `{username, password, client?}` | none (10 per minute per IP) | `AuthResponse` (201 / 200) |
+| `POST /api/auth/logout` | bearer | 204 |
+| `GET /api/auth/me` | bearer, any status | `MeResponse` |
+| `POST /api/check {url, title?}` | approved account | `CheckResponse` |
+| `GET /api/pet/stream` | approved account | SSE, `alert` events for this user |
+| `POST /api/scans {url}` | approved account, or `x-api-key` from `API_KEYS` | `202 CreateScanResponse` |
+| `GET /api/scans?limit=20` | approved account | `ScanListResponse`, this user's scans |
 | `GET /api/scans/:id` | none | `ScanResponse` |
 | `GET /api/scans/:id/events` | none | SSE, see `eventsPath` in shared |
 | `GET /api/scans/:id/artifacts/:key` | none | 302 to a presigned URL (or the file in local dev), see `artifactPath` |
+| `GET /api/admin/session` | none | `AdminSession` |
+| `POST /api/admin/login {password}` | none, 10 wrong tries per 15 min | `204`, sets the `ladybug_admin` cookie |
+| `POST /api/admin/logout` | none | `204`, clears the cookie |
 | `GET /api/admin/timeline?range=1h\|24h\|7d` | admin | `CheckTimeline` |
+| `GET /api/admin/users` | admin | `AdminAccountsResponse` |
+| `POST /api/admin/users/:id/approve`, `/reject`, `DELETE /api/admin/users/:id` | admin | `Account` / 204 |
 
-Errors are `ApiError` JSON with 400/401/404/429. Scan ids are UUIDs, so reads don't need a key.
+"Approved account" means `Authorization: Bearer <token>`, the token from sign-in, for a user an admin approved (see `packages/shared/src/accounts.ts`). Refusals carry `ApiError.code`: 401 `signed_out`, 403 `pending` or `rejected`. "Admin" is the `ladybug_admin` cookie from `POST /api/admin/login`, or HTTP Basic auth with `ADMIN_PASSWORD`.
+
+Errors are `ApiError` JSON with 400/401/403/404/409/429. Scan ids are UUIDs, so reads don't need a key.
 
 ## Images
 
@@ -64,7 +76,7 @@ Postgres extensions: `timescaledb` (the `url_checks` hypertable and `url_checks_
 | `S3_ACCESS_KEY_ID` | yes | |
 | `S3_SECRET_ACCESS_KEY` | yes | |
 
-Server only: `PORT` (3001), `API_KEYS` (comma-separated; unset disables auth), `RATE_LIMIT_PER_MINUTE` (default 10 per key), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes and in `compose.yaml`), `CLIENT_IP_HEADER` (trusted header with the client IP, e.g. `cf-connecting-ip` behind a Cloudflare Tunnel), `ADMIN_PASSWORD` (Basic auth for `/admin` and `/api/admin`; unset = open).
+Server only: `PORT` (3001), `API_KEYS` (comma-separated keys that may start scans without an account, for scripts; optional), `RATE_LIMIT_PER_MINUTE` (scans per minute per account or key, default 10), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes and in `compose.yaml`), `CLIENT_IP_HEADER` (trusted header with the client IP, e.g. `cf-connecting-ip` behind a Cloudflare Tunnel), `ADMIN_PASSWORD` (the admin sign-in page's password, where accounts are approved; `/api/admin` then wants the session cookie from `POST /api/admin/login`, or HTTP Basic with any username for scripts; unset = open).
 
 Worker only:
 
@@ -92,6 +104,6 @@ Worker only:
 | `URLHAUS_AUTH_KEY` | yes | abuse.ch Auth-Key (URLhaus + MalwareBazaar) |
 | `WORKER_CONCURRENCY` | | default 10 |
 
-Web and desktop (Vite, build time): `VITE_SERVER_URL` (desktop default `http://localhost:3001` in dev, `PUBLIC_URL` when packaged; web default same origin, Vite dev proxies `/api`), `VITE_WEB_URL` (desktop, default `http://localhost:5175` in dev, `PUBLIC_URL` when packaged), `VITE_API_KEY` (desktop). The extension defaults to `http://localhost:3001` in `--mode development` builds and `PUBLIC_URL` otherwise.
+Web and desktop (Vite, build time): `VITE_SERVER_URL` (desktop default `http://localhost:3001` in dev, `PUBLIC_URL` when packaged; web default same origin, Vite dev proxies `/api`), `VITE_WEB_URL` (desktop, default `http://localhost:5175` in dev, `PUBLIC_URL` when packaged), `VITE_API_KEY` (desktop, optional: sent as `x-api-key` with scans as well as the account token). The extension defaults to `http://localhost:3001` in `--mode development` builds and `PUBLIC_URL` otherwise.
 
 `PUBLIC_URL` (in shared) is `https://ladybugg.garden`: on Kubernetes the `edge` Service (Caddy, automatic HTTPS) serves it, proxying to `web`, which forwards `/api/` to `server`. `SITE_DOMAIN` in `ladybug-config` sets the domain Caddy serves.

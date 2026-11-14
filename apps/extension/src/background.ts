@@ -1,9 +1,10 @@
-import type { CheckRequest, CheckResponse } from "@ladybug/shared";
-import { addRecent, getSettings } from "./settings";
+import type { ApiError, CheckRequest, CheckResponse } from "@ladybug/shared";
+import { addRecent, getAuth, getSettings, setAuth } from "./settings";
 import type { RecentCheck } from "./settings";
 
 // Service worker: reports every top-level page the user visits to the Ladybug
-// server. The server decides whether the desktop pet should raise an alert.
+// server, as the signed-in user. The server decides whether that user's
+// desktop pet should raise an alert.
 
 /** Ignore the same URL in the same tab twice within this window (redirect/SPA noise). */
 const DEDUPE_MS = 3_000;
@@ -59,17 +60,38 @@ async function report(tabId: number, url: string) {
     // Not available yet; the server doesn't need it.
   }
 
+  // Nothing is reported until the user signs in from the popup.
+  const auth = await getAuth();
+  if (!auth) {
+    await setBadge(tabId, { status: "error", error: "Sign in from the Ladybug popup to check pages" });
+    return;
+  }
+
   let result: RecentCheck["result"];
   try {
     const body: CheckRequest = { url, title };
     const res = await fetch(`${settings.serverUrl}/api/check`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    const data = (await res.json()) as CheckResponse | { error: string };
-    result = "error" in data ? { status: "error", error: data.error } : data;
+    const data = (await res.json()) as CheckResponse | ApiError;
+    if ("error" in data && data.code) {
+      // Not allowed (yet). The popup says why; don't fill the list with it.
+      if (data.code === "signed_out") await setAuth(null);
+      else if (auth.account.status !== data.code) {
+        await setAuth({ ...auth, account: { ...auth.account, status: data.code } });
+      }
+      await setBadge(tabId, { status: "error", error: data.error });
+      return;
+    }
+    if ("error" in data) {
+      result = { status: "error", error: data.error };
+    } else {
+      result = data;
+      if (auth.account.status !== "approved") await setAuth({ ...auth, account: { ...auth.account, status: "approved" } });
+    }
   } catch (error) {
     result = {
       status: "error",

@@ -15,7 +15,8 @@
     "express": "^5.3.0",
     "@ladybug/backend": "^0.0.0",
     "bullmq": "^6.7.6",
-    "ioredis": "^5.11.1"
+    "ioredis": "^5.11.1",
+    "livekit-server-sdk": "^2.19.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

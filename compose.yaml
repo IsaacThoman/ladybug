@@ -58,10 +58,19 @@ services:
       # scan (sandbox scans through the worker) or placeholder (URL heuristics only).
       ANALYZER: ${ANALYZER:-scan}
       ANALYSIS_DELAY_MS: ${ANALYSIS_DELAY_MS:-30000}
-      # Basic auth for /admin and /api/admin. Set it before exposing the domain.
+      # Password for the admin sign-in page (/admin), where accounts are approved. Set it before exposing the domain.
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Comma-separated keys allowed to start scans. Empty = anyone can.
       API_KEYS: ${API_KEYS:-}
+      # Outbound FaceTime provider secrets stay on the server. Disabled without client keys.
+      CALL_CLIENT_KEYS: ${CALL_CLIENT_KEYS:-}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      CHERT_API_KEY: ${CHERT_API_KEY:-}
+      CHERT_PROJECT_ID: ${CHERT_PROJECT_ID:-}
+      CHERT_LINE_ID: ${CHERT_LINE_ID:-}
+      EMERGENCY_NUMBER: ${EMERGENCY_NUMBER:-}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-10}
       # Proxies in front of the server: Traefik, then web's nginx.
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
@@ -226,6 +235,8 @@ services:
     restart: unless-stopped
 
 networks:
+  # Explicit for Podman Compose, which does not infer this alongside sandboxes.
+  default: {}
   # Sandboxes join only this network. `internal` means no route out except
   # through containers on it (the gateway). The fixed name is what the worker
   # passes to `docker run --network`.

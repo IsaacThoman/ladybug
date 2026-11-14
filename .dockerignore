@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/dist-electron
+**/release
+**/.env
+**/*.log
+.git
+.playwright-cli
+
+# Only the server image is built here; the other apps just need their
+# package.json so `npm ci` sees the whole workspace.
+apps/desktop/*
+!apps/desktop/package.json
+apps/extension/*
+!apps/extension/package.json

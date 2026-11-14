@@ -76,6 +76,7 @@ export class LadybugRenderer {
   private blink = 0;
   private glance = 0;
   private glanceIn = randomBetween(2, 5);
+  private alarmLeft = 0;
 
   constructor(canvas: HTMLCanvasElement, viewport: LadybugViewport) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -148,6 +149,11 @@ export class LadybugRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Startled: antennae go frantic and the body shivers for a moment. */
+  alarm(seconds = 2.5) {
+    this.alarmLeft = Math.max(this.alarmLeft, seconds);
+  }
+
   /** Squash on landing. `impact` is the downward speed in px/s. */
   land(impact: number) {
     this.squashVelocity -= Math.min(impact / 260, 7);
@@ -163,6 +169,8 @@ export class LadybugRenderer {
     const rig = this.rig;
 
     this.vx += (pose.vx - this.vx) * ease(10, dt);
+    this.alarmLeft = Math.max(0, this.alarmLeft - dt);
+    const alarmed = this.alarmLeft > 0;
 
     // Facing: three-quarter view while moving, glance around while idle.
     if (mode === "idle") {
@@ -212,9 +220,9 @@ export class LadybugRenderer {
     rig.head.rotation.z = this.headTilt;
     rig.head.rotation.x = Math.sin(this.phase * 2) * 0.05 * this.gait;
 
-    // Antennae: lazy sway, springy when moving, frantic when held.
+    // Antennae: lazy sway, springy when moving, frantic when held or alarmed.
     for (const { pivot, side } of rig.antennae) {
-      const wiggle = held ? Math.sin(t * 22 + side) * 0.25 : 0;
+      const wiggle = held || alarmed ? Math.sin(t * 22 + side) * 0.25 : 0;
       pivot.rotation.z = side * (Math.sin(t * 2.2 + side) * 0.1 + stepBob * 0.12) + wiggle;
       pivot.rotation.x = Math.sin(t * 1.7 + side * 2) * 0.12 - (airborne ? 0.3 : 0);
     }
@@ -249,7 +257,8 @@ export class LadybugRenderer {
     // Tilt with horizontal motion when held or flung.
     const tiltGoal = held || airborne ? THREE.MathUtils.clamp(-this.vx / 2400, -0.45, 0.45) : 0;
     this.tilt += (tiltGoal - this.tilt) * ease(8, dt);
-    this.sway.rotation.z = this.tilt;
+    const shiver = alarmed ? Math.sin(t * 45) * 0.05 * Math.min(1, this.alarmLeft) : 0;
+    this.sway.rotation.z = this.tilt + shiver;
 
     // Squash and stretch spring.
     const stiffness = 320;

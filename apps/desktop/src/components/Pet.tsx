@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { fetchGreeting } from "../api";
+import type { AlertLevel } from "@ladybug/shared";
+import { fetchGreeting, subscribeToAlerts } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
 import { LadybugRenderer } from "./ladybug/LadybugRenderer";
 import "./Pet.css";
@@ -20,7 +21,11 @@ const BOUNCE = 0.35;
 const GROUND_FRICTION = 6; // 1/s, damps sliding after a throw
 const HOP_VELOCITY = -650; // px/s
 const CLICK_SLOP = 4; // px of movement before a press becomes a drag
-const BUBBLE_MS = 3500;
+/** "chat" is the click greeting; the rest are alerts from the server. */
+type BubbleTone = "chat" | AlertLevel;
+const BUBBLE_MS: Record<BubbleTone, number> = { chat: 3500, ok: 4000, info: 5000, danger: 12000 };
+/** Keep bubbles at least this far from the screen edges. */
+const BUBBLE_MARGIN = 8;
 const OFFLINE_MESSAGE = "Can't reach the server…";
 
 type Mode = "idle" | "walking" | "airborne" | "dragging";
@@ -35,6 +40,8 @@ type PhysicsState = {
   targetX: number;
   idleUntil: number;
 };
+
+type Bubble = { id: number; text: string; tone: BubbleTone };
 
 type DragState = {
   pointerId: number;
@@ -53,11 +60,25 @@ const randomBetween = (min: number, max: number) => min + Math.random() * (max -
 export default function Pet({ layout }: { layout: OverlayLayout }) {
   const petRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const ladybugRef = useRef<LadybugRenderer | null>(null);
+  const bubbleIdRef = useRef(0);
   const dragRef = useRef<DragState | null>(null);
   const layoutRef = useRef(layout);
   const stateRef = useRef<PhysicsState | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [bubble, setBubble] = useState<string | null>(null);
+  const [bubble, setBubble] = useState<Bubble | null>(null);
+
+  /**
+   * Shows a speech bubble. A danger alert stays up over later info/ok alerts
+   * and greetings, unless `force` (the user clicked the ladybug).
+   */
+  const say = useCallback((text: string, tone: BubbleTone, force = false) => {
+    const next = { id: ++bubbleIdRef.current, text, tone };
+    setBubble((current) =>
+      current?.tone === "danger" && tone !== "danger" && !force ? current : next,
+    );
+  }, []);
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -97,6 +118,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       unitPx: UNIT_PX,
       groundPx: GROUND_PX,
     });
+    ladybugRef.current = ladybug;
 
     let frame = 0;
     let last = performance.now();
@@ -165,6 +187,19 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       if (petRef.current) {
         petRef.current.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
       }
+      // Keep the speech bubble on screen, with its tail pointing at the bug.
+      const bubbleEl = bubbleRef.current;
+      if (bubbleEl) {
+        const width = bubbleEl.offsetWidth;
+        const center = s.x + PET_WIDTH / 2;
+        const { workArea } = layoutRef.current;
+        const left = Math.min(
+          Math.max(center - width / 2, workArea.x + BUBBLE_MARGIN),
+          workArea.x + workArea.width - width - BUBBLE_MARGIN,
+        );
+        bubbleEl.style.left = `${left - s.x}px`;
+        bubbleEl.style.setProperty("--tail-x", `${Math.min(Math.max(center - left, 16), width - 16)}px`);
+      }
       // On-screen velocity, so drags (which move x outside this loop) count too.
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
       prevX = s.x;
@@ -176,6 +211,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     frame = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(frame);
+      ladybugRef.current = null;
       ladybug.dispose();
     };
   }, []);
@@ -183,9 +219,27 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
   // Hide the speech bubble after a moment.
   useEffect(() => {
     if (!bubble) return;
-    const timeout = setTimeout(() => setBubble(null), BUBBLE_MS);
+    const timeout = setTimeout(() => setBubble(null), BUBBLE_MS[bubble.tone]);
     return () => clearTimeout(timeout);
   }, [bubble]);
+
+  // Alerts from the server about sites visited in the browser.
+  useEffect(
+    () =>
+      subscribeToAlerts((alert) => {
+        say(alert.message, alert.level);
+        const s = stateRef.current;
+        if (alert.level === "danger") ladybugRef.current?.alarm(3);
+        if (alert.level === "info") ladybugRef.current?.alarm(1);
+        // Hop to get attention, unless it's busy being dragged or thrown.
+        if (s && alert.level !== "info" && (s.mode === "idle" || s.mode === "walking")) {
+          s.vx = 0;
+          s.vy = alert.level === "danger" ? HOP_VELOCITY : HOP_VELOCITY * 0.6;
+          s.mode = "airborne";
+        }
+      }),
+    [say],
+  );
 
   const isPointInPet = (clientX: number, clientY: number) => {
     const rect = petRef.current?.getBoundingClientRect();
@@ -267,8 +321,8 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
         s.mode = "airborne";
       }
       fetchGreeting()
-        .then(setBubble)
-        .catch(() => setBubble(OFFLINE_MESSAGE));
+        .then((message) => say(message, "chat", true))
+        .catch(() => say(OFFLINE_MESSAGE, "chat", true));
     }
 
     if (!isPointInPet(e.clientX, e.clientY)) window.ladybug.setClickThrough(true);
@@ -292,7 +346,17 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       onPointerCancel={onPointerUp}
       onContextMenu={onContextMenu}
     >
-      {bubble && <div className="pet-bubble">{bubble}</div>}
+      {bubble && (
+        <div
+          key={bubble.id}
+          ref={bubbleRef}
+          className="pet-bubble"
+          data-tone={bubble.tone}
+          role={bubble.tone === "danger" ? "alert" : "status"}
+        >
+          {bubble.text}
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         className="pet-canvas"

@@ -18,16 +18,18 @@
 }
 
 .pet-bubble {
+  --bubble-bg: rgba(255, 255, 255, 0.96);
   position: absolute;
   z-index: 1;
   bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  /* Positioned from the animation loop so it stays on screen. */
+  left: 0;
   max-width: 220px;
+  overflow-wrap: anywhere;
   width: max-content;
   padding: 8px 12px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--bubble-bg);
   color: #1d1d1f;
   font-size: 13px;
   font-weight: 500;
@@ -41,15 +43,48 @@
   content: "";
   position: absolute;
   top: 100%;
-  left: 50%;
+  left: var(--tail-x, 50%);
   transform: translateX(-50%);
   border: 7px solid transparent;
-  border-top-color: rgba(255, 255, 255, 0.95);
+  border-top-color: var(--bubble-bg);
+}
+
+.pet-bubble[data-tone="danger"] {
+  --bubble-bg: #e5483e;
+  max-width: 260px;
+  padding: 10px 14px;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 6px 20px rgba(229, 72, 62, 0.45);
+  animation:
+    bubble-in 0.18s ease-out,
+    bubble-shake 0.5s ease-in-out 0.18s 2;
+}
+
+.pet-bubble[data-tone="ok"] {
+  box-shadow:
+    inset 3px 0 0 #2e9d5b,
+    0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.pet-bubble[data-tone="info"] {
+  box-shadow:
+    inset 3px 0 0 #e5a019,
+    0 4px 14px rgba(0, 0, 0, 0.25);
 }
 
 @keyframes bubble-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 6px);
+    transform: translateY(6px);
+  }
+}
+
+@keyframes bubble-shake {
+  25% {
+    transform: translateX(-3px) rotate(-1.5deg);
+  }
+  75% {
+    transform: translateX(3px) rotate(1.5deg);
   }
 }

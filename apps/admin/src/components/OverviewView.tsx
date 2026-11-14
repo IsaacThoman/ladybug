@@ -3,6 +3,7 @@ import type { EventFilter } from "../api";
 import { useEventFeed } from "../useEventFeed";
 import CheckForm from "./CheckForm";
 import EventList from "./EventList";
+import Greeting from "./Greeting";
 import PendingList from "./PendingList";
 import StatTiles from "./StatTiles";
 import VisitsChart from "./VisitsChart";
@@ -12,10 +13,12 @@ const EVERYTHING: EventFilter = {};
 
 export default function OverviewView({
   summary,
+  summaryError,
   pending,
   live,
 }: {
   summary: AdminSummary | null;
+  summaryError: boolean;
   pending: PendingAnalysis[];
   live: LogEvent[];
 }) {
@@ -25,7 +28,10 @@ export default function OverviewView({
 
   return (
     <div className="stack">
-      <StatTiles summary={summary} running={pending.length} />
+      <div className="overview-top">
+        <Greeting summary={summary} summaryError={summaryError} pending={pending} live={live} />
+        <StatTiles summary={summary} running={pending.length} />
+      </div>
       <VisitsChart refreshKey={lastDecision} />
       <div className="columns">
         <div className="stack">

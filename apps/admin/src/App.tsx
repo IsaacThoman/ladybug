@@ -1,105 +1,53 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AdminSummary, LogEvent } from "@ladybug/shared";
-import { api } from "./api";
-import ActivityView from "./components/ActivityView";
-import Icon from "./components/Icon";
-import OverviewView from "./components/OverviewView";
-import UrlsView from "./components/UrlsView";
-import { useAdminStream } from "./useAdminStream";
+import { Garden } from "@ladybug/garden";
+import { api, onSignedOut } from "./api";
+import Dashboard from "./components/Dashboard";
+import Login from "./components/Login";
 
-const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "activity", label: "Activity log" },
-  { id: "urls", label: "URL database" },
-] as const;
-type TabId = (typeof TABS)[number]["id"];
-
-const SUMMARY_POLL_MS = 3_000;
-const LIVE_LIMIT = 300;
-
-const tabFromHash = (): TabId => {
-  const hash = window.location.hash.slice(1);
-  return TABS.some((tab) => tab.id === hash) ? (hash as TabId) : "overview";
-};
+type Session =
+  | { state: "checking" }
+  | { state: "unreachable" }
+  | { state: "signed-out"; expired: boolean }
+  /** `required` is false when the server has no ADMIN_PASSWORD. */
+  | { state: "signed-in"; required: boolean };
 
 export default function App() {
-  const [tab, setTab] = useState<TabId>(tabFromHash);
-  const [summary, setSummary] = useState<AdminSummary | null>(null);
-  const [summaryError, setSummaryError] = useState(false);
-  const [live, setLive] = useState<LogEvent[]>([]);
-  // Bumped whenever the URL database may have changed.
-  const [urlsVersion, setUrlsVersion] = useState(0);
+  const [session, setSession] = useState<Session>({ state: "checking" });
 
-  const onEvent = useCallback((event: LogEvent) => {
-    setLive((current) => [event, ...current].slice(0, LIVE_LIMIT));
-    if (event.type === "analysis_completed" || event.type === "admin") setUrlsVersion((v) => v + 1);
-  }, []);
-  const { pending, connected } = useAdminStream(onEvent);
-
-  useEffect(() => {
-    const onHash = () => setTab(tabFromHash());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+  const check = useCallback(() => {
+    api
+      .session()
+      .then((s) =>
+        setSession(s.signedIn ? { state: "signed-in", required: s.required } : { state: "signed-out", expired: false }),
+      )
+      .catch(() => setSession({ state: "unreachable" }));
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      api
-        .summary()
-        .then((s) => {
-          if (cancelled) return;
-          setSummary(s);
-          setSummaryError(false);
-        })
-        .catch(() => !cancelled && setSummaryError(true));
-    void load();
-    const timer = setInterval(load, SUMMARY_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [urlsVersion]);
+  useEffect(check, [check]);
 
-  const typesenseOk = !summaryError && summary?.typesense === "ready";
+  // Any admin call answered 401: the session expired or the password changed.
+  useEffect(
+    () =>
+      onSignedOut(() =>
+        setSession((current) => (current.state === "signed-in" ? { state: "signed-out", expired: true } : current)),
+      ),
+    [],
+  );
 
+  const signOut = useCallback(() => {
+    void api.logout().finally(() => setSession({ state: "signed-out", expired: false }));
+  }, []);
+
+  if (session.state === "signed-in") {
+    return <Dashboard passwordRequired={session.required} onSignOut={signOut} />;
+  }
+  if (session.state === "checking") return <Garden />;
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <img src="/admin/favicon.png" alt="" width={26} height={26} />
-          <span>Ladybug Admin</span>
-        </div>
-        <nav className="tabs" aria-label="Sections">
-          {TABS.map((t) => (
-            <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
-              {t.label}
-            </a>
-          ))}
-        </nav>
-        <div className="statuses">
-          <span className="status" data-ok={!summaryError && connected}>
-            <Icon name={!summaryError && connected ? "check" : "x"} size={12} />
-            {summaryError ? "Server unreachable" : connected ? "Live" : "Reconnecting"}
-          </span>
-          <span className="status" data-ok={typesenseOk}>
-            <Icon name={typesenseOk ? "check" : "x"} size={12} />
-            Typesense {typesenseOk ? "ready" : "unavailable"}
-          </span>
-          <span className="status" data-ok={(summary?.petsConnected ?? 0) > 0 ? "true" : "warn"}>
-            <Icon name="bell" size={12} />
-            {summary?.petsConnected ?? 0} pet{summary?.petsConnected === 1 ? "" : "s"} listening
-          </span>
-        </div>
-      </header>
-
-      <main className="content">
-        {tab === "overview" && (
-          <OverviewView summary={summary} pending={pending} live={live} />
-        )}
-        {tab === "activity" && <ActivityView live={live} />}
-        {tab === "urls" && <UrlsView version={urlsVersion} />}
-      </main>
-    </div>
+    <Login
+      unreachable={session.state === "unreachable"}
+      expired={session.state === "signed-out" && session.expired}
+      onRetry={check}
+      onSignedIn={() => setSession({ state: "signed-in", required: true })}
+    />
   );
 }

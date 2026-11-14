@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { Ladybug, SpeechBubble } from "@ladybug/garden";
 import { artifactUrl } from "../api.ts";
 import { useLiveScan } from "../useLiveScan.ts";
 import ErrorState from "./ErrorState.tsx";
@@ -15,9 +16,14 @@ export default function LiveScanPage({ scanId }: { scanId: string }) {
     return (
       <>
         <Header />
-        <main className="loading-state" aria-busy="true">
-          <span className="spinner" aria-hidden="true" />
-          Loading scan…
+        <main className="error-state" aria-busy="true">
+          <div className="error-card panel loading-card">
+            <Ladybug className="card-bug" mood="sniffing" size={96} wander={50}>
+              <SpeechBubble text="Fetching the report…" />
+            </Ladybug>
+            <span className="spinner" aria-hidden="true" />
+            Loading scan…
+          </div>
         </main>
       </>
     );

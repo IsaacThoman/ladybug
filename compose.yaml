@@ -54,7 +54,7 @@ services:
       # scan (sandbox scans through the worker) or placeholder (URL heuristics only).
       ANALYZER: ${ANALYZER:-scan}
       ANALYSIS_DELAY_MS: ${ANALYSIS_DELAY_MS:-30000}
-      # Basic auth for /admin and /api/admin. Set it before exposing the domain.
+      # Password for the admin UI's login page (/admin). Set it before exposing the domain.
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Comma-separated keys allowed to start scans. Empty = anyone can.
       API_KEYS: ${API_KEYS:-}

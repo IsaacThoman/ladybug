@@ -9,6 +9,7 @@ import Header from "./Header.tsx";
 import Link from "./Link.tsx";
 import Findings from "./Findings.tsx";
 import RedirectChain from "./RedirectChain.tsx";
+import ReportBug from "./ReportBug.tsx";
 import { DomainPanel, IocList, ReportSummary, Signals, SimilarPages } from "./ReportDetails.tsx";
 import ScoreGauge from "./ScoreGauge.tsx";
 import ScreenshotFeed from "./ScreenshotFeed.tsx";
@@ -51,33 +52,36 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
         </Link>
       </Header>
       <main className="report">
-        <section className={`topbar verdict-${scan.result?.verdict ?? "none"}`} aria-label="Scan status">
-          <div className="topbar-main">
-            <div className="topbar-url">
-              <span className="eyebrow">
-                {running ? "Scanning" : scan.status === "failed" ? "Scan failed" : "Scanned"}
-                <span className="elapsed" title="Elapsed time">
-                  <ClockIcon /> {elapsed}
+        <div className="topbar-perch">
+          <ReportBug status={scan.status} verdict={scan.result?.verdict ?? null} />
+          <section className={`topbar verdict-${scan.result?.verdict ?? "none"}`} aria-label="Scan status">
+            <div className="topbar-main">
+              <div className="topbar-url">
+                <span className="eyebrow">
+                  {running ? "Scanning" : scan.status === "failed" ? "Scan failed" : "Scanned"}
+                  <span className="elapsed" title="Elapsed time">
+                    <ClockIcon /> {elapsed}
+                  </span>
                 </span>
-              </span>
-              <h1 className="input-url mono" title={scan.inputUrl}>
-                {scan.inputUrl || " "}
-              </h1>
-              {showFinal && (
-                <p className="final-url mono" title={finalUrl}>
-                  <span aria-hidden="true">↳</span> {finalUrl}
-                </p>
-              )}
+                <h1 className="input-url mono" title={scan.inputUrl}>
+                  {scan.inputUrl || " "}
+                </h1>
+                {showFinal && (
+                  <p className="final-url mono" title={finalUrl}>
+                    <span aria-hidden="true">↳</span> {finalUrl}
+                  </p>
+                )}
+              </div>
+              <StatusStepper status={scan.status} reached={reached} error={scan.error} />
             </div>
-            <StatusStepper status={scan.status} reached={reached} error={scan.error} />
-          </div>
-          <ScoreGauge
-            score={scan.result?.score ?? null}
-            verdict={scan.result?.verdict ?? null}
-            confidence={report?.confidence ?? null}
-            pending={running}
-          />
-        </section>
+            <ScoreGauge
+              score={scan.result?.score ?? null}
+              verdict={scan.result?.verdict ?? null}
+              confidence={report?.confidence ?? null}
+              pending={running}
+            />
+          </section>
+        </div>
 
         {notice}
 

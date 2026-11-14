@@ -3,9 +3,10 @@ import path from "node:path";
 import cors from "cors";
 import express from "express";
 import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
+import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
 import { checkVisit } from "./checker.ts";
 import { config } from "./config.ts";
-import { errorHandler, optionalString, requireAdmin, requireStore, requireString } from "./http.ts";
+import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
 import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
@@ -65,12 +66,15 @@ export function createApp(deps: ScanDeps) {
     petChannel.attach(req, res);
   });
 
+  // Session check, login and logout are open; everything else needs a session.
+  app.use("/api/admin", adminAuthRouter());
   app.use("/api/admin", requireAdmin, adminRouter());
 
-  // Built admin UI (see apps/admin).
+  // Built admin UI (see apps/admin). It's open so it can show its login page;
+  // it holds no data of its own, and every /api/admin call is guarded above.
   if (fs.existsSync(config.adminDist)) {
-    app.use("/admin", requireAdmin, express.static(config.adminDist));
-    app.get("/admin/{*path}", requireAdmin, (_req, res) => {
+    app.use("/admin", express.static(config.adminDist));
+    app.get("/admin/{*path}", (_req, res) => {
       res.sendFile(path.join(config.adminDist, "index.html"));
     });
     app.get("/", (_req, res) => res.redirect("/admin/"));

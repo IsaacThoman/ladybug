@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Garden } from "@ladybug/garden";
 import DemoPage from "./components/DemoPage.tsx";
 import ErrorState from "./components/ErrorState.tsx";
 import Header from "./components/Header.tsx";
@@ -23,14 +24,28 @@ export default function App() {
 
   return (
     <div className="app">
+      <Garden vines={route.name === "home"} />
       {route.name === "home" && (
         <>
           <Header>
+            <a href="#how" className="link-button">
+              How it works
+            </a>
             <Link href="/demo" className="button ghost small">
               Demo
             </Link>
           </Header>
           <Home />
+          <footer className="home-foot">
+            <svg className="home-grass" viewBox="0 0 1200 90" preserveAspectRatio="none" aria-hidden="true">
+              <path className="grass-back" d="M0 90V46C140 18 300 30 420 44s260 6 400-14 280-4 380 22v52Z" />
+              <path className="grass-front" d="M0 90V62c160-26 320-14 470 0s300 10 450-10 200-6 280 8v30Z" />
+            </svg>
+            <p>
+              <span className="hand">ladybug keeps an eye on links</span> ·{" "}
+              <Link href="/demo">watch a recorded scan</Link>
+            </p>
+          </footer>
         </>
       )}
       {route.name === "demo" && <DemoPage />}

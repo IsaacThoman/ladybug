@@ -7,6 +7,7 @@ WORKDIR /app
 # npm ci needs every workspace manifest the lockfile references.
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/garden/package.json packages/garden/
 COPY packages/backend/package.json packages/backend/
 COPY apps/admin/package.json apps/admin/
 COPY apps/desktop/package.json apps/desktop/
@@ -20,6 +21,7 @@ FROM manifests AS admin
 RUN npm ci --workspace=@ladybug/admin --ignore-scripts
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+COPY packages/garden packages/garden
 COPY apps/admin apps/admin
 RUN npx --workspace=@ladybug/admin vite build
 

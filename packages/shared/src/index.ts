@@ -136,6 +136,18 @@ export type AdminSummary = {
   analysisDelayMs: number;
 };
 
+/** GET /api/admin/session */
+export type AdminSession = {
+  /** False when the server has no ADMIN_PASSWORD, so admin is open to anyone. */
+  required: boolean;
+  signedIn: boolean;
+};
+
+/** POST /api/admin/login. Sets an HttpOnly session cookie. */
+export type AdminLoginRequest = {
+  password: string;
+};
+
 export type UpdateVerdictRequest = {
   verdict: Verdict;
   reason?: string;

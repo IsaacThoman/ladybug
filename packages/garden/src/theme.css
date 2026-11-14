@@ -1,0 +1,385 @@
+/*
+ * Ladybug's garden: shared colours, type and the pieces every page uses (the
+ * sky, vines, the 3D ladybug and its speech bubble). Daytime in light mode, a
+ * firefly night in dark mode. Apps style their own components with these
+ * tokens.
+ */
+@import "@fontsource-variable/fredoka";
+@import "@fontsource-variable/nunito";
+@import "@fontsource/patrick-hand";
+
+:root {
+  /* Sky */
+  --sky-top: #87b2e9;
+  --sky-mid: #a1c5f0;
+  --sky-low: #cbe1f7;
+  --bloom: rgb(255 255 255 / 0.72);
+  --sparkle: #ffffff;
+  --sparkle-glow: rgb(255 255 255 / 0.9);
+  /* Text set straight on the sky */
+  --on-sky: #1f3d68;
+  --on-sky-2: #36598a;
+
+  /* Paper: cards and panels */
+  --paper: #fffaf2;
+  --paper-2: #f9efdf;
+  --paper-3: #f1e3cc;
+  --paper-edge: #ead9be;
+  /* Text fields, a touch brighter than the paper around them. */
+  --field: #fffdf9;
+  --shadow: 0 1px 2px rgb(38 62 104 / 0.1), 0 14px 34px -16px rgb(38 62 104 / 0.42);
+  --shadow-lift: 0 2px 6px rgb(38 62 104 / 0.14), 0 24px 48px -20px rgb(38 62 104 / 0.5);
+
+  /* Ink: the ladybug's dark brown */
+  --ink: #3b2520;
+  --ink-2: #6b5047;
+  --muted: #8d756b;
+
+  /* The garden */
+  --ladybug: #e5483e;
+  --ladybug-hi: #ee5a50;
+  --ladybug-deep: #b93229;
+  --leaf: #8cc152;
+  --leaf-shade: #74ab3c;
+  --leaf-vein: #c2e39a;
+  --petal: #ffffff;
+  --sun: #f6b93b;
+
+  /* Status, as text on paper (AA) and as soft washes */
+  --good: #3a7d22;
+  --good-mark: #5fae3a;
+  --good-wash: #e4f2d6;
+  --warn: #8a5800;
+  --warn-mark: #f2b134;
+  --warn-wash: #fcefcf;
+  --bad: #b8322a;
+  --bad-mark: #e5483e;
+  --bad-wash: #fde2dc;
+  --info: #2c5c98;
+  --info-wash: #e1ecfa;
+  --neutral-wash: #f2e7d6;
+
+  --focus: #2a6bd1;
+
+  --font-display: "Fredoka Variable", "Fredoka", ui-rounded, system-ui, sans-serif;
+  --font-body: "Nunito Variable", "Nunito", ui-rounded, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-hand: "Patrick Hand", "Chalkboard SE", "Comic Sans MS", cursive;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-sm: 10px;
+  --radius: 18px;
+  --radius-lg: 26px;
+
+  color-scheme: light;
+  color: var(--ink);
+  background: var(--sky-mid);
+  font-family: var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sky-top: #0b1530;
+    --sky-mid: #13254d;
+    --sky-low: #1c3767;
+    --bloom: rgb(148 184 255 / 0.17);
+    --sparkle: #ffe27f;
+    --sparkle-glow: rgb(255 210 90 / 0.8);
+    --on-sky: #f6ecdc;
+    --on-sky-2: #c4d4ef;
+
+    --paper: #1b2442;
+    --paper-2: #222c4f;
+    --paper-3: #2a3560;
+    --paper-edge: #34416d;
+    --field: #141b35;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 16px 36px -16px rgb(0 0 0 / 0.65);
+    --shadow-lift: 0 2px 6px rgb(0 0 0 / 0.35), 0 24px 48px -20px rgb(0 0 0 / 0.75);
+
+    --ink: #f6ecdc;
+    --ink-2: #d4c6b4;
+    --muted: #a99d93;
+
+    --ladybug-deep: #ff8378;
+    --leaf: #5c973a;
+    --leaf-shade: #4a8030;
+    --leaf-vein: #7db55a;
+    --petal: #e9e4f5;
+
+    --good: #93d66f;
+    --good-wash: rgb(108 192 74 / 0.16);
+    --warn: #f6c55c;
+    --warn-wash: rgb(242 177 52 / 0.16);
+    --bad: #ff8b80;
+    --bad-wash: rgb(239 90 79 / 0.18);
+    --info: #9fc3ff;
+    --info-wash: rgb(110 160 230 / 0.18);
+    --neutral-wash: rgb(212 198 180 / 0.1);
+
+    --focus: #9fc3ff;
+
+    color-scheme: dark;
+  }
+}
+
+body {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.hand {
+  font-family: var(--font-hand);
+  font-weight: 400;
+}
+
+/* Sky ---------------------------------------------------------------------- */
+
+.garden {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(42vmax 34vmax at 0% 4%, var(--bloom), transparent 70%),
+    radial-gradient(38vmax 30vmax at 100% 100%, var(--bloom), transparent 70%),
+    linear-gradient(180deg, var(--sky-top), var(--sky-mid) 55%, var(--sky-low));
+}
+
+.sparkle {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--sparkle);
+  box-shadow: 0 0 8px 2px var(--sparkle-glow);
+  opacity: 0.2;
+  animation: twinkle 4.2s ease-in-out infinite;
+}
+
+.sparkle:nth-child(3n) {
+  animation-duration: 5.6s;
+}
+
+.sparkle:nth-child(4n + 1) {
+  animation-duration: 3.4s;
+}
+
+@keyframes twinkle {
+  50% {
+    opacity: 0.95;
+    scale: 1.35;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .sparkle {
+    animation:
+      twinkle 4.2s ease-in-out infinite,
+      drift 11s ease-in-out infinite alternate;
+  }
+
+  .sparkle:nth-child(odd) {
+    animation-direction: normal, alternate-reverse;
+  }
+}
+
+@keyframes drift {
+  to {
+    translate: 18px -26px;
+  }
+}
+
+/* Vines -------------------------------------------------------------------- */
+
+.vine-stem,
+.vine-curl {
+  fill: none;
+  stroke: var(--leaf);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vine-curl {
+  stroke-width: 2.5;
+}
+
+.vine-leaf {
+  fill: var(--leaf);
+}
+
+.vine-vein {
+  fill: none;
+  stroke: var(--leaf-vein);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.vine-flower ellipse {
+  fill: var(--petal);
+}
+
+.vine-flower circle {
+  fill: var(--sun);
+}
+
+.garden-vine {
+  position: absolute;
+  overflow: visible;
+}
+
+/* Kept to the edges, mostly below the fold of a page's first heading. */
+.garden-vine-left {
+  left: 0;
+  top: 44vh;
+  width: clamp(90px, 11vw, 190px);
+}
+
+.garden-vine-right {
+  right: 0;
+  bottom: 0;
+  width: clamp(120px, 15vw, 260px);
+}
+
+/* No gutters to curl into on narrow screens. */
+@media (max-width: 720px) {
+  .garden-vine {
+    display: none;
+  }
+}
+
+/* The ladybug -------------------------------------------------------------- */
+
+.ladybug {
+  position: relative;
+  flex: none;
+  pointer-events: none;
+}
+
+.ladybug-body {
+  position: absolute;
+  inset: 0;
+}
+
+.ladybug-canvas {
+  display: block;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.ladybug[data-status="ready"] .ladybug-canvas {
+  opacity: 1;
+}
+
+.ladybug-fallback {
+  position: absolute;
+  left: 50%;
+  bottom: var(--ladybug-ground);
+  width: calc(var(--ladybug-unit) * 0.9);
+  translate: -50% 0;
+}
+
+.ladybug-say {
+  position: absolute;
+  left: 58%;
+  bottom: calc(var(--ladybug-ground) + var(--ladybug-unit) * 0.6);
+  width: max-content;
+  max-width: 16rem;
+}
+
+/* Speech bubble ------------------------------------------------------------ */
+
+.bubble {
+  --bubble-edge: var(--ladybug);
+  --bubble-fill: var(--paper);
+  --bubble-ink: var(--ladybug-deep);
+  position: relative;
+  margin: 0;
+  padding: 0.3em 0.9em 0.38em;
+  border: 2.5px solid var(--bubble-edge);
+  border-radius: 1.2em;
+  background: var(--bubble-fill);
+  color: var(--bubble-ink);
+  font-family: var(--font-hand);
+  font-size: 1.2rem;
+  line-height: 1.15;
+  box-shadow: 0 8px 18px -10px rgb(30 50 90 / 0.55);
+  transform-origin: 10% 120%;
+  animation: bubble-pop 0.36s cubic-bezier(0.2, 1.5, 0.45, 1) both;
+}
+
+/* Two thought dots trailing toward the bug's head. */
+.bubble::before,
+.bubble::after {
+  content: "";
+  position: absolute;
+  border: 2.5px solid var(--bubble-edge);
+  border-radius: 50%;
+  background: var(--bubble-fill);
+}
+
+.bubble::before {
+  left: 0.5em;
+  bottom: -0.75em;
+  width: 0.55em;
+  height: 0.55em;
+}
+
+.bubble::after {
+  left: 0.05em;
+  bottom: -1.35em;
+  width: 0.32em;
+  height: 0.32em;
+}
+
+.bubble[data-tail="right"] {
+  transform-origin: 90% 120%;
+}
+
+.bubble[data-tail="right"]::before {
+  left: auto;
+  right: 0.5em;
+}
+
+.bubble[data-tail="right"]::after {
+  left: auto;
+  right: 0.05em;
+}
+
+.bubble[data-tone="ok"] {
+  --bubble-edge: var(--good-mark);
+  --bubble-ink: var(--good);
+}
+
+.bubble[data-tone="warn"] {
+  --bubble-edge: var(--warn-mark);
+  --bubble-ink: var(--warn);
+}
+
+.bubble[data-tone="danger"] {
+  --bubble-edge: var(--ladybug-deep);
+  --bubble-fill: var(--ladybug);
+  --bubble-ink: #fff;
+}
+
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    scale: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sparkle,
+  .bubble {
+    animation: none;
+  }
+
+  .sparkle {
+    opacity: 0.6;
+  }
+}

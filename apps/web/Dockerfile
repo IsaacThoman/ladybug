@@ -10,10 +10,12 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
 COPY packages/shared/package.json packages/shared/
+COPY packages/garden/package.json packages/garden/
 COPY packages/backend/package.json packages/backend/
 RUN npm ci --include=dev -w @ladybug/web --include-workspace-root=true --ignore-scripts --no-audit --no-fund
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+COPY packages/garden packages/garden
 COPY apps/web apps/web
 ARG VITE_SERVER_URL=""
 ENV VITE_SERVER_URL=$VITE_SERVER_URL

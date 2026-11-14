@@ -186,6 +186,14 @@ export class LadybugRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Change the canvas size or scale, e.g. at a layout breakpoint. */
+  resize(viewport: LadybugViewport) {
+    this.viewport = viewport;
+    this.renderer.setSize(viewport.width, viewport.height, false);
+    this.framedAnchorZ = Number.NaN;
+    this.frameCamera(FRONT_FEET_Z * Math.cos(this.yaw));
+  }
+
   /** Startled: antennae go frantic and the body shivers for a moment. */
   startle(seconds = 2.5) {
     this.startleLeft = Math.max(this.startleLeft, seconds);

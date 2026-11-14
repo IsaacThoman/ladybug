@@ -1,4 +1,6 @@
 import type {
+  AdminLoginRequest,
+  AdminSession,
   AdminSummary,
   CheckResponse,
   CheckTimeline,
@@ -11,15 +13,33 @@ import type {
   Verdict,
 } from "@ladybug/shared";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const SIGNED_OUT = "ladybug:signed-out";
+
+/** Called when the server says the session is gone, e.g. it expired or the password changed. */
+export function onSignedOut(listener: () => void) {
+  window.addEventListener(SIGNED_OUT, listener);
+  return () => window.removeEventListener(SIGNED_OUT, listener);
+}
+
+async function request<T>(path: string, init?: RequestInit, { auth = true } = {}): Promise<T> {
   const res = await fetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
+  if (res.status === 401 && auth) window.dispatchEvent(new Event(SIGNED_OUT));
   if (res.status === 204) return undefined as T;
   const data: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
+    throw new ApiError(res.status, (data as { error?: string }).error ?? `Request failed (${res.status})`);
   }
   return data as T;
 }
@@ -45,6 +65,17 @@ export type UrlFilter = {
 };
 
 export const api = {
+  session: () => request<AdminSession>("/api/admin/session", undefined, { auth: false }),
+
+  login: (password: string) =>
+    request<void>(
+      "/api/admin/login",
+      { method: "POST", body: JSON.stringify({ password } satisfies AdminLoginRequest) },
+      { auth: false },
+    ),
+
+  logout: () => request<void>("/api/admin/logout", { method: "POST" }, { auth: false }),
+
   summary: () => request<AdminSummary>("/api/admin/summary"),
 
   timeline: (range: TimelineRange) => request<CheckTimeline>(`/api/admin/timeline${query({ range })}`),

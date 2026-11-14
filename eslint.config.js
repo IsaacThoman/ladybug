@@ -17,7 +17,7 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser, ...globals.webextensions } },
   },
   {
-    files: ["apps/{desktop,admin,web}/src/**/*.{ts,tsx}"],
+    files: ["apps/{desktop,admin,web}/src/**/*.{ts,tsx}", "packages/garden/src/**/*.{ts,tsx}"],
     languageOptions: { globals: globals.browser },
     plugins: { "react-hooks": reactHooks, "react-refresh": reactRefresh },
     rules: {

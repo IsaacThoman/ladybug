@@ -12,7 +12,8 @@ const COLORS = {
   spot: "#3a211c",
   dark: "#3b2520",
   cream: "#f7e6cc",
-  eye: "#140b09",
+  /** Soft near-black; with a matte finish the pupils read as dull, not glinting. */
+  eye: "#2a1a15",
   wing: "#e6f1ff",
   brass: "#d6a446",
   handle: "#6b3f2a",
@@ -83,7 +84,7 @@ export function buildLadybug(): LadybugRig {
   const spotMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.spot, roughness: 0.5 }));
   const darkMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.dark, roughness: 0.6 }));
   const creamMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.cream, roughness: 0.55 }));
-  const eyeMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.eye, roughness: 0.12 }));
+  const eyeMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.eye, roughness: 0.9 }));
   const wingMat = mat(
     new THREE.MeshPhysicalMaterial({
       color: COLORS.wing,

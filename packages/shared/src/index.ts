@@ -136,6 +136,17 @@ export type AdminSummary = {
   analysisDelayMs: number;
 };
 
+/** `GET /api/admin/session`: whether the admin UI should show its sign-in page. */
+export type AdminSession = {
+  /** False when the server has no ADMIN_PASSWORD, so admin is open. */
+  required: boolean;
+  authenticated: boolean;
+};
+
+export type AdminLoginRequest = {
+  password: string;
+};
+
 export type UpdateVerdictRequest = {
   verdict: Verdict;
   reason?: string;

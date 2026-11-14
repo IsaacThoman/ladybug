@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import DemoPage from "./components/DemoPage.tsx";
 import ErrorState from "./components/ErrorState.tsx";
+import Footer from "./components/Footer.tsx";
 import Header from "./components/Header.tsx";
 import Home from "./components/Home.tsx";
 import LiveScanPage from "./components/LiveScanPage.tsx";
@@ -22,12 +23,16 @@ export default function App() {
   }, [route.name]);
 
   return (
-    <div className="app">
+    <div className="app garden-sky">
+      <div className="garden-clouds" aria-hidden="true" />
       {route.name === "home" && (
         <>
           <Header>
+            <a href="#how" className="nav-link">
+              How it works
+            </a>
             <Link href="/demo" className="button ghost small">
-              Demo
+              Watch a demo
             </Link>
           </Header>
           <Home />
@@ -36,6 +41,7 @@ export default function App() {
       {route.name === "demo" && <DemoPage />}
       {route.name === "scan" && <LiveScanPage key={route.scanId} scanId={route.scanId} />}
       {route.name === "not_found" && <ErrorState failure={{ kind: "not_found", message: "Page not found" }} />}
+      <Footer />
     </div>
   );
 }

@@ -13,7 +13,6 @@ const COLORS = {
   dark: "#3b2520",
   cream: "#f7e6cc",
   eye: "#140b09",
-  blush: "#ff8a86",
   wing: "#e6f1ff",
 };
 
@@ -70,10 +69,6 @@ export function buildLadybug(): LadybugRig {
   const darkMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.dark, roughness: 0.6 }));
   const creamMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.cream, roughness: 0.55 }));
   const eyeMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.eye, roughness: 0.12 }));
-  const sparkleMat = mat(new THREE.MeshBasicMaterial({ color: "#ffffff" }));
-  const blushMat = mat(
-    new THREE.MeshBasicMaterial({ color: COLORS.blush, transparent: true, opacity: 0.75 }),
-  );
   const wingMat = mat(
     new THREE.MeshPhysicalMaterial({
       color: COLORS.wing,
@@ -189,44 +184,21 @@ export function buildLadybug(): LadybugRig {
   const onHead = (u: THREE.Vector3, lift = 0) =>
     headCenter.clone().addScaledVector(u, HEAD.r + lift);
 
+  // Minimal eyes: a cream patch with a small dark dot. The whole eye group
+  // squashes when blinking.
   const eyes: THREE.Group[] = [];
   for (const side of [1, -1] as const) {
     const u = dir(side * 0.42, 0.22, 0.88);
-
-    const patch = ellipsoid(creamMat, 0.062, 0.07, 0.02);
-    patch.position.copy(onHead(u, -0.006));
-    patch.quaternion.setFromUnitVectors(Z_AXIS, u);
-    head.add(patch);
-
     const eye = new THREE.Group();
-    eye.position.copy(onHead(u, 0.008));
+    eye.position.copy(onHead(u, -0.006));
     eye.quaternion.setFromUnitVectors(Z_AXIS, u);
-    const pupil = ellipsoid(eyeMat, 0.038, 0.045, 0.022);
+    eye.add(ellipsoid(creamMat, 0.066, 0.074, 0.02));
+    const pupil = ellipsoid(eyeMat, 0.013, 0.015, 0.006, smallSphere);
+    pupil.position.set(0, -0.004, 0.019);
     eye.add(pupil);
-    const sparkle = ellipsoid(sparkleMat, 0.012, 0.012, 0.006, smallSphere);
-    sparkle.position.set(0.013, 0.018, 0.02);
-    eye.add(sparkle);
-    const sparkleSmall = ellipsoid(sparkleMat, 0.006, 0.006, 0.004, smallSphere);
-    sparkleSmall.position.set(-0.012, -0.016, 0.019);
-    eye.add(sparkleSmall);
     head.add(eye);
     eyes.push(eye);
-
-    const blushDir = dir(side * 0.62, -0.12, 0.78);
-    const blush = ellipsoid(blushMat, 0.034, 0.022, 0.008, smallSphere);
-    blush.position.copy(onHead(blushDir, 0.001));
-    blush.quaternion.setFromUnitVectors(Z_AXIS, blushDir);
-    head.add(blush);
   }
-
-  // Little smile.
-  const smileGeo = geo(new THREE.TorusGeometry(0.024, 0.0065, 8, 20, Math.PI));
-  const smile = new THREE.Mesh(smileGeo, creamMat);
-  const smileDir = dir(0, -0.14, 1);
-  smile.position.copy(onHead(smileDir, -0.001));
-  smile.quaternion.setFromUnitVectors(Z_AXIS, smileDir);
-  smile.rotateZ(Math.PI);
-  head.add(smile);
 
   // Antennae.
   const antennae: LadybugRig["antennae"] = [];

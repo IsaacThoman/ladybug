@@ -1794,3 +1794,24 @@ p {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------- similar pages ---------- */
+
+.panel-note {
+  margin: -0.25rem 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.similar-item {
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  padding: 0.65rem 0.9rem;
+}
+
+.similar-match {
+  color: var(--text-2);
+  font-size: 0.85rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

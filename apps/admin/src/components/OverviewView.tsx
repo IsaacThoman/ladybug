@@ -5,6 +5,7 @@ import CheckForm from "./CheckForm";
 import EventList from "./EventList";
 import PendingList from "./PendingList";
 import StatTiles from "./StatTiles";
+import VisitsChart from "./VisitsChart";
 
 const DETECTIONS: EventFilter = { types: ["decision", "analysis_completed"], verdict: "unsafe" };
 const EVERYTHING: EventFilter = {};
@@ -20,10 +21,12 @@ export default function OverviewView({
 }) {
   const detections = useEventFeed(DETECTIONS, live, 8);
   const recent = useEventFeed(EVERYTHING, live, 12);
+  const lastDecision = live.find((event) => event.type === "decision")?.id;
 
   return (
     <div className="stack">
       <StatTiles summary={summary} running={pending.length} />
+      <VisitsChart refreshKey={lastDecision} />
       <div className="columns">
         <div className="stack">
           <CheckForm />

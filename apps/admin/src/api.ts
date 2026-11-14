@@ -1,10 +1,12 @@
 import type {
   AdminSummary,
   CheckResponse,
+  CheckTimeline,
   LogEvent,
   LogEventType,
   Page,
   UrlRecord,
+  TimelineRange,
   UrlScope,
   Verdict,
 } from "@ladybug/shared";
@@ -44,6 +46,8 @@ export type UrlFilter = {
 
 export const api = {
   summary: () => request<AdminSummary>("/api/admin/summary"),
+
+  timeline: (range: TimelineRange) => request<CheckTimeline>(`/api/admin/timeline${query({ range })}`),
 
   events: (filter: EventFilter, page: number, perPage: number) =>
     request<Page<LogEvent>>(

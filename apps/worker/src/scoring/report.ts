@@ -82,6 +82,7 @@ export function buildReport(ev: Evidence): ScanReport {
     summary: ev.agent?.summary || fallbackSummary(ev, signals, score),
     screenshots: ev.screenshots,
     domain: ev.domain,
+    ...(ev.similar.length > 0 ? { similar: ev.similar } : {}),
     flags,
     startedAt: ev.startedAt,
     finishedAt: new Date().toISOString(),

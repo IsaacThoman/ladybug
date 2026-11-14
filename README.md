@@ -26,7 +26,7 @@ npm-workspaces monorepo:
 | `apps/sandbox` | Sandbox image: headful Chrome on Xvfb plus an HTTP tool daemon the worker drives. |
 | `apps/web` | Vite + React live scan report page, with a recorded demo at `/demo`. |
 | `packages/shared` | Types and constants shared by all of the above. |
-| `packages/backend` | Node-only helpers for the server and worker: Postgres, Valkey, the artifact store. |
+| `packages/backend` | Node-only helpers for the server and worker: Postgres (with the TimescaleDB and pgvector parts), Valkey, the artifact store. |
 | `infra/` | Vultr deployment: Terraform, kustomize manifests with NetworkPolicies, the mitmproxy egress gateway. See [`infra/README.md`](infra/README.md). |
 | `docs/contracts.md` | Names, ports, labels and environment variables the pieces agree on. |
 | `compose.yaml`, `compose.local.yaml` | The whole backend as a deployable Compose stack (Coolify or any Docker host), and the local override that publishes ports. |
@@ -61,7 +61,7 @@ Or run only the data services in Docker, and the server and worker on your machi
 ```sh
 docker build -f apps/sandbox/Dockerfile -t ladybug-sandbox:dev .
 cp apps/worker/.env.example apps/worker/.env   # set LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
-npm run services:up          # Typesense :8108, Postgres :5432, Valkey :6379
+npm run services:up          # Typesense :8108, Postgres (TimescaleDB) :5432, Valkey :6379
 npm run dev:server           # server on http://localhost:3001
 npm run dev:worker
 ```
@@ -114,7 +114,7 @@ To see it work, visit `https://example.com/` (nothing happens), the phishing tes
 
 It has three tabs:
 
-- **Overview:** stats, a "check a URL" box that runs the same pipeline as a visit, analyses in progress, recent detections and the latest activity.
+- **Overview:** stats, a chart of visits checked over the last hour, day or week (from TimescaleDB, see [Postgres and Tiger Data](#postgres-and-tiger-data)), a "check a URL" box that runs the same pipeline as a visit, analyses in progress, recent detections and the latest activity.
 - **Activity log:** every request, decision, analysis, pet alert and admin change. You can search and filter it, click a row for details, and new events appear live.
 - **URL database:** known URLs and hosts, searched in Typesense. You can add rules, flip verdicts, or forget a record so it's analysed again.
 
@@ -126,7 +126,7 @@ It has three tabs:
 npm run dev:web              # http://localhost:5175
 ```
 
-Paste a URL to scan it, or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs and the score. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
+Paste a URL to scan it, or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs, the score, and earlier flagged scans of near-identical pages. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
 
 To scan one URL without the queue, database or server, printing events as they happen and the report as JSON:
 
@@ -136,7 +136,7 @@ npm run scan -w @ladybug/worker -- https://example.com
 
 ### Config
 
-- `.env` (Compose): `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required), `ADMIN_PASSWORD`, `API_KEYS`, `LLM_*`, `WORKER_CONCURRENCY`, and the local ports
+- `.env` (Compose): `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required), `DATABASE_URL` (to use Tiger Cloud), `ADMIN_PASSWORD`, `API_KEYS`, `LLM_*`, `WORKER_CONCURRENCY`, and the local ports
 - `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_PASSWORD`, `ADMIN_DIST`
 - `apps/worker/.env`: `DATABASE_URL`, `REDIS_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SANDBOX_PROVIDER`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY`
 - `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://ladybugg.garden` for both.
@@ -174,6 +174,21 @@ admin UI    ◀── GET /api/admin/stream (server-sent events) + /api/admin/*
 - **investigating:** an LLM agent drives the sandboxed browser. It follows the flow a victim would with throwaway credentials, inspects downloads, and records findings as it goes, so they appear live. It finishes with a structured report.
 - **scoring:** hard signals plus the agent's score give a final 0–100 and a verdict (under 30 benign, 30–69 suspicious, 70+ malicious). Weights live in `apps/worker/src/scoring/weights.ts`.
 
+Right after the scripted pass, the worker fingerprints the page and looks for earlier flagged pages like it (see below). A match is a hard signal, goes to the agent as context, and is named in the pet's alert: "It's a 93% match for a page I flagged on …".
+
+### Postgres and Tiger Data
+
+Postgres is [TimescaleDB](https://github.com/timescale/timescaledb) with [pgvector](https://github.com/pgvector/pgvector), the same Postgres that [Tiger Cloud](https://www.tigerdata.com/cloud) runs. Compose starts it from the `timescale/timescaledb` image; or point `DATABASE_URL` at a Tiger Cloud service. Besides the `scans` table, it holds:
+
+- **Visit history** (TimescaleDB). Every check the server decides (known safe, known unsafe, unknown) is a row in the `url_checks` hypertable, in 1-day chunks, compressed after 7 days and dropped after 90. The continuous aggregate `url_checks_5m` keeps 5-minute counts per decision. It's real-time, so rows newer than the last refresh still show up. The admin chart reads it with `time_bucket_gapfill`, re-bucketed per range: 5 minutes for the last hour, hourly for a day, 6-hourly for a week.
+- **Page fingerprints** (pgvector). Each finished scan stores a 512-dimension vector of its page in `page_fingerprints`: its words and word pairs (title weighted double) and its form fields, hashed into fixed slots and normalised. Phishing kits are copied verbatim from domain to domain, so a re-hosted kit lands right next to the original. A new scan asks the HNSW index for the nearest suspicious or malicious pages, and a cosine similarity of 0.85 or more counts as a match (`THRESHOLDS.similarPage`). Pages with fewer than 20 distinct words get no fingerprint, so blank and error pages don't match each other. No embedding model or API key is involved.
+
+The server and worker create all of this on startup. If an extension is missing (plain Postgres, or a managed Postgres without it), they log a warning and run without that feature: no chart, or no similarity check. Scans work either way.
+
+**Tiger Cloud.** Create a service (the free plan has both extensions), copy its connection string, and set it as `DATABASE_URL`, `?sslmode=require` included, in `.env` or Coolify. The stack's own `postgres` service still starts, but sits idle. The same `DATABASE_URL` works for `npm run dev:server` and `dev:worker` without Docker.
+
+Switching an existing deployment from `postgres:17-alpine` to the TimescaleDB image keeps its data: both use the same data directory and user, and the compose file preloads TimescaleDB itself.
+
 On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refuses internal addresses and tags each flow with its scan. The sandbox has no DNS, and NetworkPolicies enforce all of this. Locally, sandboxes have normal internet access with the daemon bound to 127.0.0.1.
 
 ### API
@@ -185,7 +200,7 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 | `POST /api/scans` `{ url }`, `GET /api/scans`, `GET /api/scans/:id` | Pet, report page |
 | `GET /api/scans/:id/events` | Report page, pet (SSE, replays from the start) |
 | `GET /api/scans/:id/artifacts/:key` | Report page (screenshots, HAR) |
-| `GET /api/admin/summary`, `/events`, `/urls`, `/stream` | Admin UI |
+| `GET /api/admin/summary`, `/events`, `/urls`, `/stream`, `/timeline?range=1h\|24h\|7d` | Admin UI |
 | `POST /api/admin/check`, `POST/PUT/DELETE /api/admin/urls` | Admin UI |
 | `GET /health` | Everything |
 
@@ -200,7 +215,7 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
    - `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required: strong, URL-safe values)
    - `ADMIN_PASSWORD`, to protect `/admin`
    - `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL`
-   - optionally `API_KEYS`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY` and `WORKER_CONCURRENCY`
+   - optionally `DATABASE_URL` (a Tiger Cloud service instead of the bundled Postgres), `API_KEYS`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY` and `WORKER_CONCURRENCY`
 
    `.env.example` lists them all.
 3. Give service **`web`** the domain, on internal port `8080`: for example `https://ladybugg.garden:8080`. Traefik routes it, and `web` proxies `/api`, `/admin` and `/health` to the server. Don't give any other service a domain.
@@ -233,7 +248,7 @@ Everything else on the overlay is click-through, so it never gets in the way of 
 | `npm run dev:overlay` | All watchers, with the desktop overlay |
 | `npm run dev:server` / `dev:worker` / `dev:web` / `dev:desktop` / `dev:admin` / `dev:extension` | One of them |
 | `npm run typesense` | Start Typesense in Docker |
-| `npm run services:up` / `services:down` | Start Typesense, Postgres and Valkey in Docker / stop them |
+| `npm run services:up` / `services:down` | Start Typesense, Postgres (TimescaleDB) and Valkey in Docker / stop them |
 | `npm run stack:up` / `stack:down` | The whole backend in Docker, ports on localhost |
 | `npm run scan -w @ladybug/worker -- <url>` | One-off sandbox scan, report to stdout |
 | `npm run build` | Typecheck and build every workspace |

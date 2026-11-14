@@ -8,6 +8,8 @@ import type { Evidence } from "./evidence.ts";
 import { lookupDomain } from "./prescan/osint.ts";
 import { safeBrowsing, urlhaus } from "./prescan/reputation.ts";
 import type { SandboxProvider } from "./sandbox/provider.ts";
+import { pageFingerprint } from "./similarity/fingerprint.ts";
+import type { SimilarityStore } from "./similarity/store.ts";
 import { buildReport } from "./scoring/report.ts";
 import { computeSignals } from "./scoring/signals.ts";
 import { checkDownloads, detonate } from "./stages/detonate.ts";
@@ -19,6 +21,8 @@ export type PipelineDeps = {
   emit: EmitFn;
   /** Persist a status change (the DB row). Events are emitted separately. */
   onStatus?: (status: ScanStatus, error?: string) => Promise<void>;
+  /** Page fingerprints (pgvector). Without it, no "looks like a page we flagged" check. */
+  similarity?: SimilarityStore;
 };
 
 /** Worker-side lookups that never touch the target. */
@@ -38,6 +42,23 @@ async function prescan(ctx: ScanContext, ev: Evidence) {
     ...ev.reputationHits.map((h) => `${h.source}: ${h.detail}`),
   ].filter(Boolean);
   if (facts.length) await ctx.emit({ type: "agent_note", text: `Pre-scan: ${facts.join("; ")}.` });
+}
+
+/** Looks for earlier flagged pages that this one closely resembles. */
+async function findSimilar(ctx: ScanContext, ev: Evidence, store: SimilarityStore, fingerprint: number[]) {
+  try {
+    ev.similar = await store.find(ev.scanId, fingerprint);
+  } catch (err) {
+    console.warn(`[worker] ${ev.scanId}: similarity lookup failed`, err);
+    return;
+  }
+  const [best] = ev.similar;
+  if (best) {
+    await ctx.emit({
+      type: "agent_note",
+      text: `This page is a ${Math.round(best.similarity * 100)}% match for ${best.url}, which scanned ${best.verdict} (${best.score}/100).`,
+    });
+  }
 }
 
 export async function runScan(scanId: string, url: string, deps: PipelineDeps): Promise<ScanReport> {
@@ -77,6 +98,8 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
 
       await setStatus("detonating");
       const lastShot = await detonate(ctx, sandbox.client, ev);
+      const fingerprint = pageFingerprint(ev.dom);
+      if (fingerprint && deps.similarity) await findSimilar(ctx, ev, deps.similarity, fingerprint);
       await emitNewSignals();
 
       await setStatus("investigating");
@@ -101,6 +124,11 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
       await emitNewSignals();
       const report = buildReport(ev);
       await ctx.putArtifact("report.json", JSON.stringify(report, null, 2), "application/json");
+      if (fingerprint && deps.similarity) {
+        await deps.similarity.save(report, ev.dom?.title || null, fingerprint).catch((err: unknown) => {
+          console.warn(`[worker] ${scanId}: saving the page fingerprint failed`, err);
+        });
+      }
       return report;
     };
 

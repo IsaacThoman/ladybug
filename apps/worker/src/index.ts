@@ -13,11 +13,13 @@ import {
 import { config } from "./config.ts";
 import { runScan } from "./pipeline.ts";
 import { createProvider } from "./sandbox/index.ts";
+import { pgSimilarityStore } from "./similarity/store.ts";
 
 const JANITOR_INTERVAL_MS = 60_000;
 
 const db = createDb();
-await migrate(db);
+const features = await migrate(db);
+const similarity = features.vector ? pgSimilarityStore(db) : undefined;
 const redis = createRedis();
 const artifacts = createArtifactStore();
 const provider = createProvider();
@@ -38,6 +40,7 @@ const worker = new Worker<ScanJob>(
         artifacts,
         emit: emit(scanId),
         onStatus: (status) => setScanStatus(db, scanId, status),
+        similarity,
       });
       await saveReport(db, scanId, report);
       await publishEvent(redis, scanId, { type: "status", status: "done", at: now() });
@@ -69,7 +72,7 @@ const janitor = setInterval(async () => {
 }, JANITOR_INTERVAL_MS);
 
 console.log(
-  `[worker] ready: provider=${provider.name}, concurrency=${config.concurrency}, llm=${config.llm.apiKey && config.llm.model ? `${config.llm.model} @ ${config.llm.baseUrl}` : "off (set LLM_API_KEY and LLM_MODEL)"}`,
+  `[worker] ready: provider=${provider.name}, concurrency=${config.concurrency}, similarity=${similarity ? "pgvector" : "off"}, llm=${config.llm.apiKey && config.llm.model ? `${config.llm.model} @ ${config.llm.baseUrl}` : "off (set LLM_API_KEY and LLM_MODEL)"}`,
 );
 
 const shutdown = async () => {

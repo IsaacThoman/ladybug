@@ -9,6 +9,7 @@ import type {
   RequestRecord,
   SandboxFile,
   Screenshot,
+  SimilarPage,
 } from "@ladybug/shared";
 import type { ReputationHit } from "./prescan/reputation.ts";
 
@@ -47,6 +48,8 @@ export type Evidence = {
   /** Categories the agent attached to findings. */
   findingCategories: string[];
   agent: AgentAssessment | null;
+  /** Earlier flagged pages whose fingerprint is close to this one (pgvector). */
+  similar: SimilarPage[];
   flags: ReportFlag[];
 };
 
@@ -71,6 +74,7 @@ export function newEvidence(scanId: string, inputUrl: string): Evidence {
     findings: [],
     findingCategories: [],
     agent: null,
+    similar: [],
     flags: [],
   };
 }

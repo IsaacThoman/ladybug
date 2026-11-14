@@ -40,7 +40,9 @@ services:
       PORT: 3001
       TYPESENSE_URL: http://typesense:8108
       TYPESENSE_API_KEY: ${TYPESENSE_API_KEY:?Set TYPESENSE_API_KEY}
-      DATABASE_URL: postgres://${POSTGRES_USER:-ladybug}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ladybug}
+      # Unset = the postgres service below. Set it to a Tiger Cloud service URL to use that instead.
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-ladybug}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ladybug}}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
       REDIS_URL: redis://valkey:6379
       ARTIFACT_STORE: ${ARTIFACT_STORE:-local}
       ARTIFACT_DIR: /app/.artifacts
@@ -82,7 +84,9 @@ services:
     # is host-root-equivalent; the worker never runs untrusted code itself.
     user: root
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-ladybug}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ladybug}
+      # Unset = the postgres service below. Set it to a Tiger Cloud service URL to use that instead.
+      DATABASE_URL: ${DATABASE_URL:-postgres://${POSTGRES_USER:-ladybug}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ladybug}}
+      DATABASE_SSL: ${DATABASE_SSL:-false}
       REDIS_URL: redis://valkey:6379
       ARTIFACT_STORE: ${ARTIFACT_STORE:-local}
       ARTIFACT_DIR: /app/.artifacts
@@ -175,8 +179,15 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # TimescaleDB with pgvector: the Postgres that Tiger Cloud runs. Scan rows,
+  # visit history (a hypertable plus a continuous aggregate) and page
+  # fingerprints live here. A drop-in for the postgres:17-alpine image this
+  # stack used before: same data directory, same user.
   postgres:
-    image: postgres:17-alpine
+    image: timescale/timescaledb:2.32.0-pg17
+    # Set here as well as in the image's config, so a data directory created by
+    # plain Postgres loads TimescaleDB too.
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb", "-c", "timescaledb.telemetry_level=off"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ladybug}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}

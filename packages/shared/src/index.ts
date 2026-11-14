@@ -141,6 +141,26 @@ export type UpdateVerdictRequest = {
   reason?: string;
 };
 
+/** Windows the admin visits chart can show. */
+export const TIMELINE_RANGES = ["1h", "24h", "7d"] as const;
+export type TimelineRange = (typeof TIMELINE_RANGES)[number];
+
+/** Visits checked in one time bucket, by what the server decided. */
+export type TimelineBucket = {
+  /** Bucket start, epoch ms. */
+  at: number;
+  safe: number;
+  unsafe: number;
+  /** Unknown URLs, sent off to be analysed. */
+  unknown: number;
+};
+
+/** GET /api/admin/timeline?range=24h, from the TimescaleDB continuous aggregate. */
+export type CheckTimeline =
+  | { available: true; range: TimelineRange; bucketMs: number; buckets: TimelineBucket[] }
+  /** Postgres doesn't have the timescaledb extension. */
+  | { available: false; range: TimelineRange };
+
 /** Server-sent events on /api/admin/stream. */
 export type AdminStreamEvent =
   | { kind: "event"; event: LogEvent }

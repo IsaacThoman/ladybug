@@ -1,4 +1,5 @@
 import express from "express";
+import { TIMELINE_RANGES } from "@ladybug/shared";
 import type {
   AdminStreamEvent,
   AdminSummary,
@@ -11,6 +12,7 @@ import type {
 import { logEvent } from "../activity.ts";
 import { listPending } from "../analyzer.ts";
 import { checkVisit } from "../checker.ts";
+import { visitTimeline } from "../checks.ts";
 import { config } from "../config.ts";
 import {
   HttpError,
@@ -85,6 +87,11 @@ export function adminRouter() {
       };
     }
     res.json(summary);
+  });
+
+  // Visits per time bucket, from Postgres (TimescaleDB), so it works without Typesense.
+  router.get("/timeline", async (req, res) => {
+    res.json(await visitTimeline(optionalEnum(req.query.range, TIMELINE_RANGES, "range") ?? "24h"));
   });
 
   router.use(requireStore);

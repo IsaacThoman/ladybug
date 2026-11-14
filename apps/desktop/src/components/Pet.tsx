@@ -84,7 +84,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     layoutRef.current = layout;
   }, [layout]);
 
-  // Bounds the pet can move within: the work area, so it sits on the dock/taskbar.
+  // Movement bounds are the display work area or the development window.
   const getBounds = () => {
     const { workArea } = layoutRef.current;
     return {
@@ -129,6 +129,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       last = now;
       const s = stateRef.current!;
       const { minX, maxX, minY, groundY } = getBounds();
+      s.targetX = Math.min(Math.max(s.targetX, minX), maxX);
 
       switch (s.mode) {
         case "idle":
@@ -183,6 +184,10 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
         case "dragging":
           break;
       }
+
+      // Keep the pet visible when its window or display shrinks.
+      s.x = Math.min(Math.max(s.x, minX), maxX);
+      s.y = Math.min(Math.max(s.y, minY), groundY);
 
       if (petRef.current) {
         petRef.current.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;

@@ -59,6 +59,19 @@ On startup the server creates its Typesense collections and seeds two examples:
 npm run dev:desktop          # Vite dev server + Electron
 ```
 
+Development mode uses an opaque, resizable window with normal title-bar controls.
+The ladybug stays inside the window, including when you resize it. The window
+accepts clicks normally and does not stay above other apps. Closing it quits Electron.
+
+To develop with the full-screen, click-through overlay instead:
+
+```sh
+npm run dev:overlay          # all watchers, with the desktop overlay
+npm run dev:desktop:overlay  # desktop overlay only
+```
+
+Packaged builds continue to use the desktop overlay.
+
 Electron downloads its binary the first time the desktop app starts.
 
 ### 3. Browser extension
@@ -137,7 +150,8 @@ Everything else on the overlay is click-through, so it never gets in the way of 
 
 | Command | Does |
 | --- | --- |
-| `npm run dev` | Server, desktop, admin UI and extension in watch mode |
+| `npm run dev` | Server, windowed desktop, admin UI and extension in watch mode |
+| `npm run dev:overlay` | All watchers, with the desktop overlay |
 | `npm run dev:server` / `dev:desktop` / `dev:admin` / `dev:extension` | One of them |
 | `npm run typesense` | Start Typesense in Docker |
 | `docker compose up --build` | Whole backend in Docker |

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Ladybug</title>
+  </head>
+  <body>
+    <header class="header">
+      <img class="logo" src="icons/ladybug-48.png" alt="" width="28" height="28" />
+      <div>
+        <h1>Ladybug</h1>
+        <p id="status" class="status" data-state="checking">Checking server…</p>
+      </div>
+    </header>
+
+    <label class="toggle">
+      <input id="enabled" type="checkbox" />
+      <span>Report the pages I visit</span>
+    </label>
+
+    <form id="server-form" class="server-form">
+      <label for="server-url">Server</label>
+      <div class="row">
+        <input id="server-url" type="url" required spellcheck="false" />
+        <button type="submit">Save</button>
+      </div>
+      <p id="form-error" class="form-error" hidden></p>
+    </form>
+
+    <section>
+      <h2>Recent pages</h2>
+      <ul id="recent" class="recent"></ul>
+      <p id="recent-empty" class="empty" hidden>Nothing reported yet. Visit a page to see it here.</p>
+    </section>
+
+    <script type="module" src="./src/popup.ts"></script>
+  </body>
+</html>

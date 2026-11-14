@@ -10,6 +10,7 @@ import { config } from "./config.ts";
 import type { ScanDeps } from "./scans.ts";
 import { seedUrls } from "./seed.ts";
 import { initStore } from "./store.ts";
+import { callsRouter } from "./calls/router.ts";
 
 const RETRY_MS = 3_000;
 
@@ -63,6 +64,7 @@ void connectStore();
 
 const shutdown = async () => {
   server.close();
+  await callsRouter.shutdown();
   await Promise.allSettled([queue.close(), db.end()]);
   redis.disconnect();
   process.exit(0);

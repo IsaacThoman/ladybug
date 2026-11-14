@@ -12,6 +12,7 @@ import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
 import { isStoreReady } from "./store.ts";
+import { callsRouter } from "./calls/router.ts";
 
 const GREETINGS = [
   "Hi there!",
@@ -29,6 +30,7 @@ export function createApp(deps: ScanDeps) {
   app.set("trust proxy", config.trustProxyHops);
   app.use(cors());
   app.use(express.json({ limit: "16kb" }));
+  app.use("/api/calls", callsRouter);
 
   app.get("/health", (_req, res) => {
     const body: HealthResponse = {

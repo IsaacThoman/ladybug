@@ -26,6 +26,9 @@ export type LadybugApi = {
   setInteractiveRects: (rects: Rect[]) => void;
   /** true while the pet is being dragged, so the overlay stays interactive. */
   setPetHeld: (held: boolean) => void;
+  scanClipboard: () => void;
+  setMenuOpen: (open: boolean) => void;
+  onMenuDismiss: (callback: () => void) => () => void;
   showMenu: () => void;
   /**
    * "Scan clipboard URL" was picked from a menu. `url` is null when the

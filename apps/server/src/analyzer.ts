@@ -9,6 +9,7 @@ import { createScan, waitForScan } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { adminChannel } from "./sse.ts";
 import { saveRecord } from "./store.ts";
+import { notifyUnsafeVisit } from "./support/service.ts";
 import { normaliseScanUrl } from "./validate.ts";
 
 let scanDeps: ScanDeps | null = null;
@@ -21,6 +22,7 @@ export function configureAnalyzer(deps: ScanDeps) {
 const useScans = () => config.analyzer === "scan" && scanDeps !== null;
 
 /** Analyses in progress, keyed by normalised URL. */
+const browserVisits = new Set<string>();
 const pending = new Map<string, PendingAnalysis>();
 /** Who to tell when each analysis finishes, keyed by URL, then user id (or "everyone"). */
 const watchers = new Map<string, Map<string, AlertRecipient>>();
@@ -71,7 +73,8 @@ export function placeholderVerdict(url: string, host: string): { verdict: Verdic
  * remembered in Typesense and pushed to the pets of everyone who visited the
  * URL meanwhile. `joined` is false when this recipient was already waiting.
  */
-export function startAnalysis(url: string, host: string, recipient: AlertRecipient) {
+export function startAnalysis(url: string, host: string, recipient: AlertRecipient, browserVisit = false) {
+  if (browserVisit) browserVisits.add(url);
   const waiting = watchers.get(url) ?? new Map<string, AlertRecipient>();
   const key = recipientKey(recipient);
   const joined = !waiting.has(key);
@@ -167,6 +170,7 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
       details: { analyzer: scanId ? "scan" : "placeholder", recordId: record.id, reason, scanId },
     });
     if (verdict === "unsafe") {
+      if (browserVisits.has(url)) notifyUnsafeVisit(url);
       alertAll("danger", `Watch out! ${host} looks unsafe. ${reason.replace(/\.$/, "")}.`);
     } else {
       alertAll("ok", `All good, ${host} checked out fine.`);
@@ -182,6 +186,7 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
     if (scanId) alertAll("info", `I couldn't finish checking ${host}.`);
   } finally {
     pending.delete(url);
+    browserVisits.delete(url);
     watchers.delete(url);
     broadcastPending();
   }

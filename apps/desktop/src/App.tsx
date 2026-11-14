@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import Account from "./components/Account";
 import FaceTime from "./components/FaceTime";
 import { useOverlayPointer } from "./overlay-pointer";
-import Pet from "./components/Pet";
 import type { OverlayLayout } from "./ladybug-api";
 import { useSession } from "./session";
 
@@ -25,8 +24,7 @@ export default function App() {
   if (!layout) return null;
   return (
     <>
-      <Pet layout={layout} onAccountNeeded={() => setRequested(true)} />
-      <FaceTime layout={layout} />
+      <FaceTime layout={layout} onAccountNeeded={() => setRequested(true)} />
       {showAccount && (
         <Account
           layout={layout}

@@ -11,5 +11,6 @@ export type FaceTimeApi = {
   dial: (id: string) => Promise<void>;
   end: (id: string) => Promise<void>;
   getState: () => Promise<CallState>;
+  onSupportRequest: (callback: () => void) => () => void;
   onState: (callback: (state: CallState) => void) => () => void;
 };

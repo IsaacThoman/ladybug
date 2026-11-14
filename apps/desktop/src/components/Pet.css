@@ -88,3 +88,22 @@
     transform: translateX(3px) rotate(1.5deg);
   }
 }
+
+.pet-menu {
+  box-sizing: border-box;
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: min(180px, 100%);
+  padding: 6px;
+  border-radius: 12px;
+  background: #fff;
+  color: #1d1d1f;
+  box-shadow: 0 4px 18px #0004;
+  overflow: auto;
+}
+.pet-menu button { border: 0; background: transparent; color: inherit; padding: 10px 12px; text-align: left; border-radius: 7px; cursor: pointer; }
+.pet-menu button:hover, .pet-menu button:focus-visible { background: #edf2f7; outline: 2px solid #487fc9; }
+.pet-menu button:disabled { opacity: 0.45; cursor: default; }
+.pet:focus-visible { outline: 2px solid #487fc9; border-radius: 50%; }

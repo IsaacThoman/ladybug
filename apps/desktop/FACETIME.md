@@ -1,6 +1,6 @@
 # Outbound FaceTime calls
 
-Press **facetime** to call the server's `EMERGENCY_NUMBER` using this computer's
+Click the ladybug and select **Request help** to call the server's `EMERGENCY_NUMBER` using this computer's
 camera and microphone. **Hang up** stops local capture immediately and asks the
 server to end the call. No AI model or model-provider API key is needed.
 
@@ -66,7 +66,7 @@ Start the normal backend dependencies with `npm run services:up` if needed.
 Use `npm run dev:overlay` for overlay mode or `npm run dev` for an explicitly
 requested development window. The desktop no longer runs a privileged inbound
 agent worker or requires `chert dev`; outbound calls go through Ladybug's server.
-Camera and microphone capture begins only when **facetime** is pressed.
+Camera and microphone capture begins only when **Request help** is selected or a valid emergency-contact SUPPORT reply arrives.
 
 ```sh
 npm test
@@ -77,7 +77,7 @@ npm run build -w @ladybug/desktop
 
 With the server running and a recipient configured:
 
-1. Press **facetime**, grant device access, and answer on the recipient's phone.
+1. Click the ladybug and select **Request help**, grant device access, and answer on the recipient's phone.
 2. Confirm the phone sees the computer's camera and hears its microphone after
    Chert reports `bridge_ready`.
 3. Confirm Ladybug plays the recipient's audio and displays available video.
@@ -89,3 +89,66 @@ With the server running and a recipient configured:
 The renderer controller is `src/calls/controller.ts`, the desktop HTTP transport
 is `electron/call-service.ts`, and the provider lifecycle lives in
 `apps/server/src/calls/`.
+
+## Risky-site alerts and remote support
+
+Messaging and FaceTime share the server-only `CHERT_API_KEY` and `CHERT_LINE_ID`.
+The key must have access to both messaging and FaceTime. Configure:
+
+- `CHERT_API_KEY`: shared Chert bearer secret for messaging and FaceTime.
+- `CHERT_TENANT_SLUG`: optional tenant slug for multi-tenant accounts.
+- `CHERT_LINE_ID`: shared assigned sender line (used as `phone_line_id` for messaging).
+- `CHERT_WEBHOOK_SECRET`: the webhook subscription secret, independent of the messaging key.
+- `EMERGENCY_NUMBER`: the same E.164 destination used for FaceTime.
+
+Use an iMessage-enabled line with automatic SMS fallback disabled. Register the
+public HTTPS endpoint `https://<your-host>/api/support/chert/webhook` with Chert's
+console or `POST /api/v1/webhook-subscriptions`, selecting
+`events: ["message.received"]`. Store the subscription's signing secret in
+`CHERT_WEBHOOK_SECRET`. Follow Chert's [send contract](https://docs.trychert.com/api/sending)
+and [signed reply contract](https://docs.trychert.com/api/receiving-replies).
+The receiver accepts modern `X-Webhook-Signature` and legacy `x-chert-signature`
+headers and requires a signature timestamp within five minutes.
+
+Browser visits to known unsafe sites and analyses finding unsafe sites queue:
+
+> The user is accessing a website that might not be trustworthy: {url}. If you would like to initiate a FaceTime call for support, reply SUPPORT.
+
+URLs have credentials and fragments removed. Admin checks and manual scans alone
+do not message anyone. Redis reserves one notification per normalized hostname
+per hour, including concurrent visits and server restarts. Subdomains have separate
+limits. The durable outbox retries transient failures up to five times using the
+same idempotency key. Chert currently cannot guarantee duplicate-free sends after
+a lost response, even with that key. A saved provider failure can also prevent a
+retry from making another attempt. Pending/duplicate responses do not open support
+windows; only a confirmed `sent` result with a chat ID does. Messaging failures
+are logged independently and do not block site checks or pet alerts.
+
+A successful send opens a 30-minute support window for that chat and contact.
+Only inbound one-to-one text equal to SUPPORT (ignoring case and surrounding
+whitespace) can consume it. Both the message timestamp and webhook receipt must
+fall inside the window. Events are deduplicated in Redis; each window is consumed
+once. The most recently connected eligible desktop receives the request through
+an authenticated main-process SSE connection. Offline requests are discarded;
+reconnects have no backlog. Busy calls ignore additional requests. Keep one server
+process per call line, as required by the existing call lifecycle.
+
+Clicking the ladybug opens a menu above it with **Request help**, **Scan clipboard
+URL**, and **View report** when available. Arrow keys and Tab move through items;
+Escape closes the menu. Dragging and the right-click menu remain available.
+The call panel appears during calls and offers **Hang up**; terminal status can
+be dismissed. Media elements stay mounted for remote requests. First use may
+prompt for permissions; permission failures appear in the panel without redial.
+
+For Redis integration tests, use a dedicated disposable Redis/Valkey database:
+
+```sh
+TEST_REDIS_URL=redis://localhost:16379/15 npm test -w @ladybug/server
+```
+
+These tests clear that database. For acceptance with the configured test contact,
+visit a known unsafe URL, verify the message, reply SUPPORT, and confirm exactly
+one desktop starts one call. Check that a second reply, an expired reply, a reply
+from another sender, and a reply while offline start no call. Verify menu placement
+at all display edges, keyboard and outside-click dismissal, dragging/throwing,
+link dropping, report access, overlay click-through, and permission failures.

@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import type { PreparedCall } from "@ladybug/shared";
+import { SupportStream } from "../support/stream.ts";
 import { CallService } from "./call-service.ts";
 
 const idle = { phase: "idle", message: "Ready to call", bridgeReady: false } as const;
@@ -11,6 +12,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createCallRouter(options: { service?: CallService; keys?: string[]; leaseMs?: number; now?: () => number } = {}) {
   const router = Router();
+  const support = new SupportStream();
   const calls = options.service ?? new CallService();
   const keys = (options.keys ?? (process.env.CALL_CLIENT_KEYS ?? "").split(",")).map((key) => key.trim()).filter(Boolean).map(digest);
   const now = options.now ?? Date.now;
@@ -31,6 +33,7 @@ export function createCallRouter(options: { service?: CallService; keys?: string
   const route = (handler: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response) => {
     void handler(req, res).catch(() => { if (!res.headersSent) res.status(502).json({ error: "Call service unavailable" }); });
   };
+  router.get("/support/stream", (req, res) => support.attach(req, res));
   router.get("/state", (_req, res) => {
     if (res.locals.callOwner !== owner) { res.json(idle); return; }
     lastSeen = now();
@@ -69,13 +72,14 @@ export function createCallRouter(options: { service?: CallService; keys?: string
   timer.unref();
   const shutdown = async () => {
     clearInterval(timer);
+    support.close();
     await calls.endCurrent();
     const deadline = Date.now() + 15_000;
     while (!finished(calls.getState().phase) && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   };
-  return Object.assign(router, { shutdown, checkLease });
+  return Object.assign(router, { shutdown, checkLease, deliverSupport: (id: string) => finished(calls.getState().phase) && support.deliver(id) });
 }
 
 export const callsRouter = createCallRouter();

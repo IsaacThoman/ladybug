@@ -9,6 +9,12 @@ const api: LadybugApi = {
     dial: (id) => ipcRenderer.invoke("ladybug:call-dial", id),
     end: (id) => ipcRenderer.invoke("ladybug:call-end", id),
     getState: () => ipcRenderer.invoke("ladybug:call-state"),
+    onSupportRequest: (callback) => {
+      const handler = () => callback();
+      ipcRenderer.on("ladybug:support-request", handler);
+      ipcRenderer.send("ladybug:support-ready", true);
+      return () => { ipcRenderer.removeListener("ladybug:support-request", handler); ipcRenderer.send("ladybug:support-ready", false); };
+    },
     onState: (callback) => {
       const handler = (_event: Electron.IpcRendererEvent, state: CallState) => callback(state);
       ipcRenderer.on("ladybug:call-state", handler);
@@ -26,6 +32,13 @@ const api: LadybugApi = {
   },
   setPetRect: (rect) => ipcRenderer.send("ladybug:set-pet-rect", rect),
   setPetHeld: (held) => ipcRenderer.send("ladybug:set-pet-held", held),
+  scanClipboard: () => ipcRenderer.send("ladybug:scan-clipboard"),
+  setMenuOpen: (open) => ipcRenderer.send("ladybug:menu-open", open),
+  onMenuDismiss: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("ladybug:menu-dismiss", handler);
+    return () => { ipcRenderer.removeListener("ladybug:menu-dismiss", handler); };
+  },
   showMenu: () => ipcRenderer.send("ladybug:show-menu"),
   onScanRequested: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, url: string | null) => callback(url);

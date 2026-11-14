@@ -776,7 +776,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
 
   return (
     <>
-    {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Ladybug" data-overlay-interactive
+    {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Ladybugg" data-overlay-interactive
       style={{ maxWidth: layout.workArea.width, maxHeight: layout.workArea.height }}
       onKeyDown={(e) => {
         if (e.key === "Escape") { e.preventDefault(); closeMenu(); return; }
@@ -796,7 +796,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       ref={petRef}
       role="button"
       tabIndex={0}
-      aria-label="Ladybug menu"
+      aria-label="Ladybugg menu"
       aria-haspopup="menu"
       aria-expanded={Boolean(menu)}
       onKeyDown={(e) => {

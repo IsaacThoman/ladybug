@@ -15,9 +15,9 @@ import UsersView from "./UsersView";
 const TABS = [
   { id: "overview", label: "Overview", icon: "home", sub: "What's happening in the garden right now." },
   { id: "activity", label: "Activity log", icon: "pulse", sub: "Every visit, decision and alert, newest first." },
-  { id: "urls", label: "URL database", icon: "database", sub: "Pages and hosts Ladybug already has a verdict for." },
-  { id: "users", label: "Users", icon: "user", sub: "Who can use Ladybug. New accounts wait here until you approve them." },
-  { id: "settings", label: "Settings", icon: "sliders", sub: "How this Ladybug instance runs its scans." },
+  { id: "urls", label: "URL database", icon: "database", sub: "Pages and hosts Ladybugg already has a verdict for." },
+  { id: "users", label: "Users", icon: "user", sub: "Who can use Ladybugg. New accounts wait here until you approve them." },
+  { id: "settings", label: "Settings", icon: "sliders", sub: "How this Ladybugg instance runs its scans." },
 ] as const satisfies readonly { id: string; label: string; icon: IconName; sub: string }[];
 type TabId = (typeof TABS)[number]["id"];
 
@@ -139,8 +139,8 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
     <div className="shell garden-sky">
       <aside className="sidebar">
         <a className="sidebar-brand" href="#overview">
-          <LadybugMark size={28} className="brand-mark" />
-          <span className="brand-name">ladybug</span>
+          <LadybugMark size={34} className="brand-mark" />
+          <span className="brand-name">ladybugg</span>
           <span className="brand-tag">admin</span>
         </a>
 

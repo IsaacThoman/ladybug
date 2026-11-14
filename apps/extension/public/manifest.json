@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Ladybug",
+  "name": "Ladybugg",
   "version": "0.1.0",
-  "description": "Reports the pages you visit to your Ladybug server, so your desktop ladybug can warn you about unsafe sites.",
+  "description": "Reports the pages you visit to your Ladybugg server, so your desktop ladybug can warn you about unsafe sites.",
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "action": {
-    "default_title": "Ladybug",
+    "default_title": "Ladybugg",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/ladybug-16.png",

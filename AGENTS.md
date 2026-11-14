@@ -1,6 +1,6 @@
 # Local development preference
 
-On this machine, use `npm run dev:overlay` when starting Ladybug for development.
+On this machine, use `npm run dev:overlay` when starting Ladybugg for development.
 For the desktop app alone, use `npm run dev:desktop:overlay`.
 Use windowed development mode only when explicitly requested.
 

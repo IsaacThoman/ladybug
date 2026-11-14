@@ -7,7 +7,7 @@ export default function Footer() {
     <footer className="site-footer">
       <GardenHills />
       <div className="site-footer-bar">
-        <span>ladybug keeps an eye on the links in your garden.</span>
+        <span>ladybugg keeps an eye on the links in your garden.</span>
         <nav aria-label="Footer">
           <Link href="/demo">Demo scan</Link>
           <a href="/admin/">Admin</a>

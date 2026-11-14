@@ -2,29 +2,14 @@ import { Suspense, lazy, useId } from "react";
 import type { CSSProperties, ReactNode, Ref } from "react";
 import type { LadybugMood } from "./LadybugRenderer.ts";
 import type { LadybugMascotHandle } from "./LadybugMascot.tsx";
+import markUrl from "./ladybug-mark.png";
 
 // three.js is most of the weight, so the 3D bug loads after the page.
 const LadybugMascot = lazy(() => import("./LadybugMascot.tsx"));
 
-/** The flat ladybug, seen from above: favicon, brand mark, and the no-WebGL fallback. */
+/** The 3D ladybug, rendered facing forward: brand mark, and the no-WebGL fallback. */
 export function LadybugMark({ size = 32, className }: { size?: number; className?: string }) {
-  return (
-    <svg className={className} width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M13.2 4.2C12.4 2.6 11 1.8 9.6 2M18.8 4.2c.8-1.6 2.2-2.4 3.6-2.2" fill="none" stroke="#3b2520" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="16" cy="8.6" r="5.6" fill="#3b2520" />
-      <circle cx="13.6" cy="7.4" r="1.35" fill="#f7e6cc" />
-      <circle cx="18.4" cy="7.4" r="1.35" fill="#f7e6cc" />
-      <circle cx="16" cy="19" r="11" fill="#e5483e" />
-      <path d="M16 8.4V30" stroke="#3a211c" strokeWidth="1.4" />
-      <circle cx="11.2" cy="15.6" r="2.2" fill="#3a211c" />
-      <circle cx="20.8" cy="15.6" r="2.2" fill="#3a211c" />
-      <circle cx="9.8" cy="22.2" r="1.8" fill="#3a211c" />
-      <circle cx="22.2" cy="22.2" r="1.8" fill="#3a211c" />
-      <circle cx="13.2" cy="26.4" r="1.3" fill="#3a211c" />
-      <circle cx="18.8" cy="26.4" r="1.3" fill="#3a211c" />
-      <ellipse cx="11.6" cy="11.8" rx="2.8" ry="1.2" fill="#fff" opacity="0.32" transform="rotate(-28 11.6 11.8)" />
-    </svg>
-  );
+  return <img className={className} src={markUrl} width={size} height={size} alt="" draggable={false} />;
 }
 
 function Leaf() {

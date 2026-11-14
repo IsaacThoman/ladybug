@@ -14,7 +14,7 @@ export function configureChecks(pool: Db, features: DbFeatures) {
 export function recordVisit(check: CheckRow) {
   if (!db) return;
   recordCheck(db, check).catch((error: unknown) => {
-    console.error("[ladybug] failed to record check:", error);
+    console.error("[ladybugg] failed to record check:", error);
   });
 }
 

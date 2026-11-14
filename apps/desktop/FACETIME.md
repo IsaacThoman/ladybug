@@ -21,7 +21,7 @@ CALL_SERVER_URL=http://localhost:3001
 CALL_SERVER_TOKEN=<this installation's token from CALL_CLIENT_KEYS>
 ```
 
-The desktop token is a revocable credential for Ladybug's call API, not a Chert
+The desktop token is a revocable credential for Ladybugg's call API, not a Chert
 or LiveKit key. Supply it privately per installation in Electron's user-data
 `.env` for packaged apps. Do not embed a shared token into a distributed app or
 prefix it with `VITE_`. Remote call servers must use HTTPS; HTTP is allowed only
@@ -65,7 +65,7 @@ provider charges; this adapter makes no model API requests.
 Start the normal backend dependencies with `npm run services:up` if needed.
 Use `npm run dev:overlay` for overlay mode or `npm run dev` for an explicitly
 requested development window. The desktop no longer runs a privileged inbound
-agent worker or requires `chert dev`; outbound calls go through Ladybug's server.
+agent worker or requires `chert dev`; outbound calls go through Ladybugg's server.
 Camera and microphone capture begins only when **Request help** is selected or a valid emergency-contact SUPPORT reply arrives.
 
 ```sh
@@ -80,9 +80,9 @@ With the server running and a recipient configured:
 1. Click the ladybug and select **Request help**, grant device access, and answer on the recipient's phone.
 2. Confirm the phone sees the computer's camera and hears its microphone after
    Chert reports `bridge_ready`.
-3. Confirm Ladybug plays the recipient's audio and displays available video.
+3. Confirm Ladybugg plays the recipient's audio and displays available video.
 4. Press **Hang up** and verify capture stops immediately. Wait for cleanup and repeat.
-5. End the call on the phone and verify Ladybug stops capture.
+5. End the call on the phone and verify Ladybugg stops capture.
 6. Disconnect the desktop from the server and verify local capture stops and
    the server ends the unattended call after its lease expires.
 

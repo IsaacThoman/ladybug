@@ -76,7 +76,7 @@ export default function Home() {
         signInFor(target);
         return;
       } else if (failure.kind === "unreachable") {
-        setError({ message: "Can't reach the ladybug server. Is it running?" });
+        setError({ message: "Can't reach the ladybugg server. Is it running?" });
       } else {
         setError({ message: failure.message });
       }
@@ -96,7 +96,7 @@ export default function Home() {
             Is this link <em>safe?</em>
           </h1>
           <p className="hero-sub">
-            Ladybug opens the page in a disposable sandboxed browser, lets an AI agent poke at it, and scores what it
+            Ladybugg opens the page in a disposable sandboxed browser, lets an AI agent poke at it, and scores what it
             finds.
           </p>
           <form className="scan-form" onSubmit={submit} noValidate>
@@ -222,7 +222,7 @@ function YourScans() {
       {recent.state === "error" && (
         <p className="muted recent-error">
           {recent.failure.kind === "unreachable"
-            ? "Can't reach the ladybug server, so your scans aren't available."
+            ? "Can't reach the ladybugg server, so your scans aren't available."
             : "Couldn't load your scans."}{" "}
           <Link href="/demo">Watch the demo instead.</Link>
         </p>

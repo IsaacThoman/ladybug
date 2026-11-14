@@ -68,7 +68,7 @@ export default function Account({
         </>
       ) : (
         <form onSubmit={submit}>
-          <p className="account-title">Sign in to Ladybug</p>
+          <p className="account-title">Sign in to Ladybugg</p>
           <p className="account-note">
             Once an admin approves your account, I'll warn you about unsafe pages your browser extension reports.
           </p>

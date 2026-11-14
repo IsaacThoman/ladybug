@@ -20,6 +20,9 @@ const COLORS = {
   glass: "#dcf1ff",
 };
 
+/** Shared roughness for the bug itself, so no part of it catches a glossy highlight. */
+const MATTE = 0.9;
+
 const SHELL = { rx: 0.31, ry: 0.25, rz: 0.35, center: new THREE.Vector3(0, 0.17, -0.05) };
 const HEAD = { r: 0.165, center: new THREE.Vector3(0, 0.21, 0.31) };
 /** Where the wing cases are hinged, at the front of the shell. */
@@ -73,22 +76,20 @@ export function buildLadybug(): LadybugRig {
   const mat = <T extends THREE.Material>(m: T) => (materials.push(m), m);
 
   const shellMat = mat(
-    new THREE.MeshPhysicalMaterial({
+    new THREE.MeshStandardMaterial({
       color: COLORS.shell,
-      roughness: 0.45,
-      clearcoat: 0.6,
-      clearcoatRoughness: 0.35,
+      roughness: MATTE,
       side: THREE.DoubleSide,
     }),
   );
-  const spotMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.spot, roughness: 0.5 }));
-  const darkMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.dark, roughness: 0.6 }));
-  const creamMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.cream, roughness: 0.55 }));
-  const eyeMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.eye, roughness: 0.9 }));
+  const spotMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.spot, roughness: MATTE }));
+  const darkMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.dark, roughness: MATTE }));
+  const creamMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.cream, roughness: MATTE }));
+  const eyeMat = mat(new THREE.MeshStandardMaterial({ color: COLORS.eye, roughness: MATTE }));
   const wingMat = mat(
     new THREE.MeshPhysicalMaterial({
       color: COLORS.wing,
-      roughness: 0.2,
+      roughness: MATTE,
       transparent: true,
       opacity: 0.6,
       side: THREE.DoubleSide,

@@ -49,7 +49,7 @@ export default function UsersView({ version }: { version: number }) {
       <section className="card">
         <h2>Waiting for approval</h2>
         <p className="hint">
-          People who signed up from the extension, the pet or the report page. Until you approve them they can sign in,
+          People who signed up from the extension, the pet or the website. Until you approve them they can sign in,
           but nothing they visit is checked and their pet gets no alerts.
         </p>
         {error && <p className="form-error">{error}</p>}

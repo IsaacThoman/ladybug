@@ -132,7 +132,7 @@ It has four tabs:
 npm run dev:web              # http://localhost:5175
 ```
 
-Sign in, then paste a URL to scan it. Your recent scans are listed below. Or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs, the score, and earlier flagged scans of near-identical pages. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
+Paste a URL to scan it. If you're signed out, Scan takes you to the sign-in page first and carries on with the link afterwards. Your recent scans are listed below. Or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs, the score, and earlier flagged scans of near-identical pages. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
 
 To scan one URL without the queue, database or server, printing events as they happen and the report as JSON:
 
@@ -154,7 +154,7 @@ See the `.env.example` files, and [`docs/contracts.md`](docs/contracts.md) for e
 
 Accounts are a username and a password, stored in Postgres (`users`, and one `sessions` row per signed-in device; only scrypt hashes of the passwords and SHA-256 hashes of the tokens are kept).
 
-- Anyone can sign up from the extension popup, the pet's sign-in panel or the report page. New accounts are **pending**: they can sign in, but the server refuses their visits, scans and pet stream with `403` until an admin approves them on the admin UI's **Users** tab. Clients notice on their own when that happens.
+- Anyone can sign up from the extension popup, the pet's sign-in panel or the website's sign-in page (`/signin`, the **Sign in** button at the top). New accounts are **pending**: they can sign in, but the server refuses their visits, scans and pet stream with `403` until an admin approves them on the admin UI's **Users** tab. Clients notice on their own when that happens.
 - Each user's visits alert only their own pets. If two users visit the same unknown URL while it's being analysed, there is still one analysis, and both pets hear the result. The URL database is shared: a page one user's visit flagged is known unsafe for everyone.
 - "Check a URL" in the admin UI alerts every pet, as before.
 - Turning an account down, revoking it or deleting it disconnects its pets at once.

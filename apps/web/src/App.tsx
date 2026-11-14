@@ -5,11 +5,13 @@ import Footer from "./components/Footer.tsx";
 import Header from "./components/Header.tsx";
 import Home from "./components/Home.tsx";
 import LiveScanPage from "./components/LiveScanPage.tsx";
+import SignInPage from "./components/SignInPage.tsx";
 import Link from "./components/Link.tsx";
 import { matchRoute, usePathname } from "./router.ts";
 
 const TITLES = {
   home: "ladybug",
+  signin: "Sign in · ladybug",
   demo: "Demo scan · ladybug",
   scan: "Scan report · ladybug",
   not_found: "Not found · ladybug",
@@ -36,6 +38,12 @@ export default function App() {
             </Link>
           </Header>
           <Home />
+        </>
+      )}
+      {route.name === "signin" && (
+        <>
+          <Header />
+          <SignInPage />
         </>
       )}
       {route.name === "demo" && <DemoPage />}

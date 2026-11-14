@@ -124,6 +124,21 @@ p {
   letter-spacing: -0.015em;
 }
 
+.header-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.92rem;
+}
+
+.header-user {
+  max-width: 14rem;
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .app-header-actions {
   display: flex;
   align-items: center;
@@ -400,10 +415,6 @@ p {
   font-weight: 550;
 }
 
-.form-error.needs-account {
-  color: var(--red-ink);
-}
-
 .key-row {
   display: flex;
   flex-wrap: wrap;
@@ -412,61 +423,6 @@ p {
   gap: 12px 24px;
   margin-top: 1rem;
   padding: 0 1.1rem;
-}
-
-.key-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.key-field input {
-  width: min(18rem, 52vw);
-  padding: 0.4em 0.8em;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: var(--paper);
-  font-size: 0.85rem;
-}
-
-.key-field.is-highlighted input {
-  border-color: var(--red);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 20%, transparent);
-}
-
-.account-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 12px;
-  font-size: 0.9rem;
-  color: var(--ink-2);
-}
-
-/* Signed out: the sign-in fields take the whole row, the demo link wraps below. */
-.account-bar.sign-in {
-  display: grid;
-  flex-basis: 100%;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
-}
-
-.account-bar.sign-in .key-field input {
-  width: 100%;
-}
-
-@media (max-width: 560px) {
-  .account-bar.sign-in {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-}
-
-.account-error {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--red-ink);
-  font-size: 0.85rem;
 }
 
 .account-status {
@@ -483,6 +439,113 @@ p {
   border-color: color-mix(in srgb, var(--red) 40%, transparent);
   background: var(--red-wash);
   color: var(--red-ink);
+}
+
+/* sign in */
+
+.signin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: clamp(8px, 4vh, 48px) 16px 40px;
+}
+
+.signin .mascot-stage {
+  margin-bottom: -14px;
+}
+
+.signin-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(100%, 380px);
+  padding: 28px 28px 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+}
+
+.signin-card h1 {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 580;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.signin-sub {
+  margin: -6px 0 8px;
+  color: var(--ink-2);
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.signin-field {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.signin-field input {
+  padding: 11px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--paper-2);
+  font-size: 0.95rem;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.signin-field input:focus {
+  border-color: color-mix(in srgb, var(--red) 55%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--red) 14%, transparent);
+  outline: none;
+}
+
+.signin-field input[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
+.signin-card .form-error {
+  margin: 0;
+  padding: 0;
+  color: var(--red-ink);
+  font-size: 0.85rem;
+}
+
+.signin-submit {
+  margin-top: 6px;
+  border-radius: 999px;
+}
+
+.signin-switch {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+.signin-switch .link-button {
+  color: var(--red-ink);
+  font-size: inherit;
+  font-weight: 650;
+}
+
+.signin-back {
+  margin-top: 18px;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.signin-back:hover {
+  color: var(--ink);
+  text-decoration: underline;
 }
 
 /* how it works */

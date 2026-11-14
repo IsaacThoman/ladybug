@@ -7,9 +7,8 @@ import { ApiRequestError, createScan, isAbort, listScans, refreshAccount } from 
 import type { ApiFailure } from "../api.ts";
 import { hostOf, timeAgo } from "../format.ts";
 import { navigate } from "../router.ts";
-import { useSession } from "../session.ts";
+import { getSession, useSession } from "../session.ts";
 import { useNow } from "../useNow.ts";
-import AccountBar from "./AccountBar.tsx";
 import Link from "./Link.tsx";
 import VerdictChip from "./VerdictChip.tsx";
 
@@ -34,22 +33,24 @@ function normalizeUrl(raw: string): string | null {
   }
 }
 
+/** Signing in to scan a link: the sign-in page brings it back as ?url=. */
+const signInFor = (target: string) => navigate(`/signin?url=${encodeURIComponent(target)}`);
+
 export default function Home() {
-  const [url, setUrl] = useState("");
+  // Back from signing in with a link that still needs scanning.
+  const [url, setUrl] = useState(() => new URLSearchParams(window.location.search).get("url") ?? "");
   const session = useSession();
   const approved = session?.account.status === "approved";
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<{ message: string; needsAccount?: boolean } | null>(null);
+  const [error, setError] = useState<{ message: string } | null>(null);
   const mascotRef = useRef<LadybugMascotHandle>(null);
   const target = normalizeUrl(url);
 
-  // Picks up an approval since the page was opened.
+  // Picks up an approval since the page was opened, and tidies ?url= away.
   useEffect(() => {
     void refreshAccount().catch(() => {});
+    if (window.location.search) window.history.replaceState(null, "", "/");
   }, []);
-
-  // Signing in clears a "sign in first" error.
-  const shownError = approved && error?.needsAccount ? null : error;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -58,9 +59,9 @@ export default function Home() {
       setError({ message: "That doesn't look like a web address. Try something like https://example.com/login." });
       return;
     }
+    // Signed out: sign in first, then the scan carries on.
     if (!session) {
-      mascotRef.current?.startle();
-      setError({ message: "Sign in below to scan links.", needsAccount: true });
+      signInFor(target);
       return;
     }
     setSubmitting(true);
@@ -70,8 +71,10 @@ export default function Home() {
       navigate(`/scans/${scanId}`);
     } catch (err) {
       const failure: ApiFailure = err instanceof ApiRequestError ? err.failure : { kind: "unreachable" };
-      if (failure.kind === "unauthorized") {
-        setError({ message: failure.message, needsAccount: true });
+      if (failure.kind === "unauthorized" && !getSession()) {
+        // The session ended on the server.
+        signInFor(target);
+        return;
       } else if (failure.kind === "unreachable") {
         setError({ message: "Can't reach the ladybug server. Is it running?" });
       } else {
@@ -82,7 +85,7 @@ export default function Home() {
     }
   };
 
-  const { mood, says } = mascotLine(submitting, shownError !== null, target);
+  const { mood, says } = mascotLine(submitting, error !== null, target);
 
   return (
     <main className="home">
@@ -112,7 +115,7 @@ export default function Home() {
               value={url}
               onChange={(e) => {
                 setUrl(e.target.value);
-                if (error && !error.needsAccount) setError(null);
+                if (error) setError(null);
               }}
               autoFocus
             />
@@ -121,13 +124,12 @@ export default function Home() {
               {submitting ? "Starting…" : "Scan"}
             </button>
           </form>
-          {shownError && (
-            <p className={`form-error${shownError.needsAccount ? " needs-account" : ""}`} role="alert">
-              {shownError.message}
+          {error && (
+            <p className="form-error" role="alert">
+              {error.message}
             </p>
           )}
           <div className="key-row">
-            <AccountBar session={session} highlight={Boolean(shownError?.needsAccount) && !session} />
             <Link href="/demo" className="link-button">
               Watch a recorded scan →
             </Link>
@@ -172,7 +174,13 @@ export default function Home() {
         <section className="recent" aria-label="Your scans">
           <h2 className="section-title">Your scans</h2>
           <p className="section-sub">
-            {session ? "Your scans show up here once your account is approved." : "Sign in to see the links you've scanned."}{" "}
+            {session ? (
+              "Your scans show up here once your account is approved."
+            ) : (
+              <>
+                <Link href="/signin">Sign in</Link> to see the links you've scanned.
+              </>
+            )}{" "}
             <Link href="/demo">Watch the demo meanwhile.</Link>
           </p>
         </section>

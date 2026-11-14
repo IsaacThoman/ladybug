@@ -1,0 +1,54 @@
+name: Deploy sandbox cluster
+
+# Builds and ships the two images that run on the sandbox cluster: the sandbox
+# itself and the egress gateway (see "Sandboxes only" in infra/README.md).
+# Everything else is deployed by whatever hosts the server and worker.
+on:
+  push:
+    branches: [dev]
+    paths:
+      - apps/sandbox/**
+      - infra/gateway/**
+      - packages/shared/**
+      - package.json
+      - package-lock.json
+      - scripts/build-images.sh
+      - .github/workflows/deploy-sandbox-cluster.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-sandbox-cluster
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # Does nothing until the repository variable SANDBOX_REGISTRY is set.
+    if: vars.SANDBOX_REGISTRY != ''
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ${{ vars.SANDBOX_REGISTRY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to the registry
+        env:
+          REGISTRY_USERNAME: ${{ secrets.SANDBOX_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.SANDBOX_REGISTRY_PASSWORD }}
+        run: printf '%s' "$REGISTRY_PASSWORD" | docker login "${REGISTRY%%/*}" --username "$REGISTRY_USERNAME" --password-stdin
+
+      # New scans use the new sandbox image straight away: their pods run
+      # `:latest`, which Kubernetes pulls every time.
+      - name: Build and push the images
+        run: IMAGES="sandbox gateway" TAG="${GITHUB_SHA::12}" scripts/build-images.sh --push --latest
+
+      - name: Roll the gateway
+        env:
+          DEPLOYER_KUBECONFIG: ${{ secrets.SANDBOX_DEPLOYER_KUBECONFIG }}
+        run: |
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          (umask 077 && printf '%s' "$DEPLOYER_KUBECONFIG" > "$KUBECONFIG")
+          kubectl -n ladybug set image deployment/gateway "gateway=$REGISTRY/ladybug-gateway:${GITHUB_SHA::12}"
+          kubectl -n ladybug rollout status deployment/gateway --timeout=300s

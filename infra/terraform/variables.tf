@@ -17,6 +17,12 @@ variable "name" {
   default     = "ladybug"
 }
 
+variable "sandbox_only" {
+  description = "Create only the cluster and the registry: no managed databases or Object Storage. For when the server and worker run elsewhere (e.g. Coolify) and use this cluster just for sandboxes."
+  type        = bool
+  default     = false
+}
+
 variable "kubernetes_version" {
   description = "VKE version. null = the latest Vultr offers."
   type        = string
@@ -24,7 +30,7 @@ variable "kubernetes_version" {
 }
 
 variable "system_plan" {
-  description = "Plan for the always-on system pool (server, worker, web, gateway)."
+  description = "Plan for the always-on system pool (server, worker, web, gateway; just the gateway with sandbox_only)."
   type        = string
   default     = "vc2-2c-4gb"
 }
@@ -58,15 +64,15 @@ variable "postgres_plan" {
 }
 
 variable "valkey_plan" {
-  description = "Managed Valkey plan (same plans list as Postgres)."
+  description = "Managed Valkey plan (same plans list as Postgres; pick one whose supported_engines includes valkey)."
   type        = string
-  default     = "vultr-dbaas-hobbyist-cc-1-25-1"
+  default     = "vultr-dbaas-hobbyist-rp-intel-1-11-1"
 }
 
 variable "object_storage_tier_slug" {
   description = "Object Storage tier. List options: curl -H \"Authorization: Bearer $VULTR_API_KEY\" https://api.vultr.com/v2/object-storage/tiers"
   type        = string
-  default     = "tier_010k_5000m"
+  default     = "tier_008h_0600m"
 }
 
 variable "artifacts_bucket" {
@@ -79,6 +85,12 @@ variable "registry_name" {
   description = "Container Registry name (lowercase letters and digits, globally unique)."
   type        = string
   default     = "ladybug"
+}
+
+variable "registry_region" {
+  description = "Region for the Container Registry, which fewer regions offer (e.g. not atl). null = the same as region. List options: curl https://api.vultr.com/v2/registry/region/list"
+  type        = string
+  default     = null
 }
 
 variable "registry_plan" {

@@ -1,0 +1,115 @@
+# Only for a cluster that runs just the sandboxes and the egress gateway, with
+# the server and worker elsewhere (bootstrap.sh --sandbox-only). Not part of the
+# full deployment's kustomization.
+#
+# The worker signs in from outside as `remote-worker`. It can't reach pod IPs,
+# so it talks to each sandbox daemon through the API server's pod proxy.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: remote-worker
+  namespace: ladybug
+---
+# A token that doesn't expire: the worker holds it as SANDBOX_KUBECONFIG_B64.
+# Delete this Secret to revoke it; bootstrap creates a new one.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: remote-worker-token
+  namespace: ladybug
+  annotations:
+    kubernetes.io/service-account.name: remote-worker
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: remote-worker-sandboxes
+  namespace: sandbox
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [create, get, list, delete]
+  # GET and POST to the sandbox daemon through the API server.
+  - apiGroups: [""]
+    resources: [pods/proxy]
+    verbs: [get, create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: remote-worker-sandboxes
+  namespace: sandbox
+subjects:
+  - kind: ServiceAccount
+    name: remote-worker
+    namespace: ladybug
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: remote-worker-sandboxes
+---
+# For the deploy workflow: roll the gateway to a new image, nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: ladybug
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-token
+  namespace: ladybug
+  annotations:
+    kubernetes.io/service-account.name: deployer
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployer
+  namespace: ladybug
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: ladybug
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: ladybug
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: deployer
+---
+# The API server's pod proxy reaches pods through the konnectivity agents (on
+# VKE, as on most managed clusters). Let those through to the sandbox daemon;
+# sandbox-gateway in network-policies.yaml only admits in-cluster workers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sandbox-api-proxy
+  namespace: sandbox
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ladybug-sandbox
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: konnectivity-agent
+      ports:
+        - protocol: TCP
+          port: 7000

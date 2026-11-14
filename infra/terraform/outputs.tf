@@ -12,39 +12,41 @@ output "cluster_endpoint" {
   value = vultr_kubernetes.main.endpoint
 }
 
+# The database and Object Storage outputs are null with sandbox_only.
+
 output "database_url" {
   description = "Postgres URL over the VPC. Set DATABASE_SSL=true."
-  value       = "postgres://${vultr_database.postgres.user}:${urlencode(vultr_database.postgres.password)}@${vultr_database.postgres.host}:${vultr_database.postgres.port}/${vultr_database.postgres.dbname}"
+  value       = one([for db in vultr_database.postgres : "postgres://${db.user}:${urlencode(db.password)}@${db.host}:${db.port}/${db.dbname}"])
   sensitive   = true
 }
 
 output "redis_url" {
   description = "Valkey URL over the VPC (TLS)."
-  value       = "rediss://${vultr_database.valkey.user}:${urlencode(vultr_database.valkey.password)}@${vultr_database.valkey.host}:${vultr_database.valkey.port}"
+  value       = one([for db in vultr_database.valkey : "rediss://${db.user}:${urlencode(db.password)}@${db.host}:${db.port}"])
   sensitive   = true
 }
 
 output "s3_endpoint" {
-  value = "https://${vultr_object_storage.main.s3_hostname}"
+  value = one([for store in vultr_object_storage.main : "https://${store.s3_hostname}"])
 }
 
 output "s3_bucket" {
-  value = vultr_object_storage_bucket.artifacts.name
+  value = one(vultr_object_storage_bucket.artifacts[*].name)
 }
 
 output "s3_access_key_id" {
-  value     = vultr_object_storage.main.s3_access_key
+  value     = one(vultr_object_storage.main[*].s3_access_key)
   sensitive = true
 }
 
 output "s3_secret_access_key" {
-  value     = vultr_object_storage.main.s3_secret_key
+  value     = one(vultr_object_storage.main[*].s3_secret_key)
   sensitive = true
 }
 
 output "registry" {
   description = "Image prefix, e.g. <registry>/ladybug-server:<tag>."
-  value       = "${var.region}.vultrcr.com/${vultr_container_registry.main.name}"
+  value       = "${local.registry_region}.vultrcr.com/${vultr_container_registry.main.name}"
 }
 
 output "registry_username" {

@@ -4,12 +4,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import * as k8s from "@kubernetes/client-node";
 import { GATEWAY_PORT, SANDBOX_DAEMON_PORT, SANDBOX_ENV } from "@ladybug/shared";
 import { config } from "../config.ts";
+import { apiProxyFetch, podProxyUrl } from "./api-proxy.ts";
 import { DaemonClient } from "./client.ts";
 import { gatewayCaPem, newSandboxToken, waitForDaemon } from "./provider.ts";
 import type { Sandbox, SandboxProvider } from "./provider.ts";
 
 export const SANDBOX_APP_LABEL = "ladybug-sandbox";
-const POD_READY_TIMEOUT_MS = 120_000;
 
 /** "pool=sandbox" by default; set SANDBOX_NODE_SELECTOR="" to schedule anywhere (e.g. a local kind cluster). */
 function nodeSelector(): Record<string, string> | undefined {
@@ -24,6 +24,8 @@ export function sandboxPodSpec(opts: {
   token: string;
   proxyUrl: string | null;
   caPem: string | null;
+  /** A ConfigMap in the pod's namespace that supplies the proxy URL and CA instead. */
+  envConfigMap?: string | null;
 }): k8s.V1Pod {
   const env: k8s.V1EnvVar[] = [
     { name: SANDBOX_ENV.token, value: opts.token },
@@ -59,9 +61,11 @@ export function sandboxPodSpec(opts: {
       containers: [
         {
           name: "sandbox",
+          // No pull policy: Kubernetes then always pulls a `:latest` tag, so a
+          // newly pushed sandbox image is used by the next scan.
           image: config.sandboxImage,
-          imagePullPolicy: "IfNotPresent",
           env,
+          envFrom: opts.envConfigMap ? [{ configMapRef: { name: opts.envConfigMap } }] : undefined,
           ports: [{ containerPort: SANDBOX_DAEMON_PORT, name: "daemon" }],
           readinessProbe: {
             httpGet: { path: "/healthz", port: SANDBOX_DAEMON_PORT },
@@ -85,17 +89,33 @@ export function sandboxPodSpec(opts: {
  * Production provider: one bare Pod per scan in the `sandbox` namespace.
  * The worker owns its lifetime; `activeDeadlineSeconds` and the janitor are
  * backstops for a crashed worker.
+ *
+ * The worker can run in the cluster and talk to each pod's IP, or outside it
+ * (SANDBOX_KUBECONFIG_B64, or a local kubeconfig) and reach the pods through
+ * the API server's pod proxy.
  */
 export class K8sProvider implements SandboxProvider {
-  readonly name = "k8s";
+  readonly name: string;
+  private kc = new k8s.KubeConfig();
   private core: k8s.CoreV1Api;
   private namespace = config.sandboxNamespace;
+  private viaApiProxy: boolean;
 
   constructor() {
-    const kc = new k8s.KubeConfig();
-    if (process.env.KUBERNETES_SERVICE_HOST) kc.loadFromCluster();
-    else kc.loadFromDefault();
-    this.core = kc.makeApiClient(k8s.CoreV1Api);
+    const inCluster = Boolean(process.env.KUBERNETES_SERVICE_HOST) && !config.sandboxKubeconfig;
+    if (config.sandboxKubeconfig) this.kc.loadFromString(config.sandboxKubeconfig);
+    else if (inCluster) this.kc.loadFromCluster();
+    else this.kc.loadFromDefault();
+    this.core = this.kc.makeApiClient(k8s.CoreV1Api);
+    this.viaApiProxy = !inCluster;
+    this.name = this.viaApiProxy ? "k8s (remote, through the API server)" : "k8s";
+  }
+
+  private daemonClient(pod: string, podIp: string, token: string) {
+    if (!this.viaApiProxy) return new DaemonClient(`http://${podIp}:${SANDBOX_DAEMON_PORT}`, token);
+    const server = this.kc.getCurrentCluster()?.server;
+    if (!server) throw new Error("the kubeconfig has no current cluster");
+    return new DaemonClient(podProxyUrl(server, this.namespace, pod), token, apiProxyFetch(this.kc));
   }
 
   /** The sandbox has no DNS, so it gets the gateway as an IP. */
@@ -109,11 +129,19 @@ export class K8sProvider implements SandboxProvider {
   async create(scanId: string): Promise<Sandbox> {
     const name = `sandbox-${scanId.slice(0, 8)}-${randomBytes(3).toString("hex")}`;
     const token = newSandboxToken();
-    const body = sandboxPodSpec({ name, scanId, token, proxyUrl: await this.proxyUrl(), caPem: await gatewayCaPem() });
+    const envConfigMap = config.sandboxEnvConfigMap;
+    const body = sandboxPodSpec({
+      name,
+      scanId,
+      token,
+      proxyUrl: envConfigMap ? null : await this.proxyUrl(),
+      caPem: envConfigMap ? null : await gatewayCaPem(),
+      envConfigMap,
+    });
     await this.core.createNamespacedPod({ namespace: this.namespace, body });
 
     try {
-      const deadline = Date.now() + POD_READY_TIMEOUT_MS;
+      const deadline = Date.now() + config.sandboxStartTimeoutMs;
       let podIp: string | undefined;
       while (Date.now() < deadline) {
         const pod = await this.core.readNamespacedPod({ name, namespace: this.namespace });
@@ -126,8 +154,8 @@ export class K8sProvider implements SandboxProvider {
         }
         await sleep(500);
       }
-      if (!podIp) throw new Error(`sandbox pod ${name} wasn't ready in ${POD_READY_TIMEOUT_MS / 1000}s`);
-      const client = new DaemonClient(`http://${podIp}:${SANDBOX_DAEMON_PORT}`, token);
+      if (!podIp) throw new Error(`sandbox pod ${name} wasn't ready in ${config.sandboxStartTimeoutMs / 1000}s`);
+      const client = this.daemonClient(name, podIp, token);
       await waitForDaemon(client, 30_000);
       return { id: name, client };
     } catch (err) {

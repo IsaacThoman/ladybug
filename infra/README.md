@@ -113,8 +113,8 @@ Load Balancer are created.
 export VULTR_API_KEY=...
 terraform -chdir=infra/terraform init
 cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
-# In terraform.tfvars: sandbox_only = true, system_nodes = 1, and the region,
-# registry name and sandbox_min_nodes / sandbox_max_nodes you want. Set
+# In terraform.tfvars: sandbox_only = true, system_nodes = 1, sandbox_min_nodes
+# = 2, and the region, registry name and sandbox_max_nodes you want. Set
 # registry_region too if your region has no Container Registry (e.g. atl).
 terraform -chdir=infra/terraform apply
 
@@ -133,9 +133,26 @@ infra/k8s/test/deny-test.sh
 
 Then give the worker the five settings bootstrap wrote to
 `infra/k8s/.generated/worker.env` (in Coolify: the application's environment
-variables) and redeploy it. Set `WORKER_CONCURRENCY` to what the sandbox pool
-can hold: about 3 scans per 4 vCPU / 8 GB node, so at most 3 × `sandbox_max_nodes`.
-To go back to sandboxes on the Docker host, remove the five settings.
+variables) and redeploy it. To go back to sandboxes on the Docker host, remove
+the five settings.
+
+Sizing the sandbox pool:
+
+- **Sandboxes per node.** A sandbox reserves 1 vCPU and 2 GB. The default
+  `sandbox_plan` (`vc2-4c-8gb`) fits three per node. `vc2-2c-4gb` fits exactly
+  one, so every sandbox gets its own node and each scan beyond the warm nodes
+  adds one.
+- **`WORKER_CONCURRENCY`.** Set it to what the pool can hold at its largest:
+  sandboxes per node × `sandbox_max_nodes`. Scans past the warm nodes wait
+  about 2 minutes for a new node; idle nodes are removed after about 10.
+- **Keep three nodes in total** (`system_nodes + sandbox_min_nodes >= 3`). VKE
+  runs one Calico Typha per node from three nodes up, and each holds a host
+  port, so the autoscaler can't drain a node while the cluster has exactly
+  three. With a lower floor, the first scale-up leaves an extra sandbox node
+  running for good. `terraform plan` warns about this.
+- **Changing `sandbox_plan` on an existing pool** needs
+  `terraform apply -replace=vultr_kubernetes_node_pools.sandbox`; Vultr can't
+  resize a pool in place.
 
 How it fits together:
 

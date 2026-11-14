@@ -66,6 +66,13 @@ function contextSummary(ev: Evidence) {
       evalCalls: events.dynamicCode.length,
       largeDecodes: events.decodes.length,
     },
+    similarFlaggedPages: ev.similar.map((s) => ({
+      url: s.url,
+      title: s.title,
+      verdict: s.verdict,
+      score: s.score,
+      similarity: s.similarity,
+    })),
     mobile: ev.mobile && { finalUrl: ev.mobile.navigation.finalUrl, title: ev.mobile.dom?.title },
     hardSignalsSoFar: computeSignals(ev).map((s) => `${s.label}: ${s.evidence}`),
   };

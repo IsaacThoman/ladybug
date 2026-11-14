@@ -17,6 +17,8 @@ export const WEIGHTS = {
   abusiveBehaviour: 15,
   obfuscation: 10,
   promptInjection: 20,
+  /** The page's fingerprint is a near match for a page we already flagged. Suspicious on its own. */
+  similarKnownBad: 30,
 } as const;
 
 export const THRESHOLDS = {
@@ -29,6 +31,8 @@ export const THRESHOLDS = {
   dynamicCodeCalls: 3,
   /** A single atob / unescape / fromCharCode payload this large is suspicious. */
   largeDecodeChars: 5_000,
+  /** Cosine similarity of page fingerprints at or above which two pages count as the same kit. */
+  similarPage: 0.85,
 };
 
 /** final = max(floors, round(SIGNAL_SHARE * signalScore + (1 - SIGNAL_SHARE) * llmScore)) */

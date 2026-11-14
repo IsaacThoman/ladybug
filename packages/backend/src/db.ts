@@ -1,8 +1,22 @@
 import pg from "pg";
 import { SCANS_TABLE_SQL } from "@ladybug/shared";
 import type { ScanReport, ScanResponse, ScanStatus } from "@ladybug/shared";
+import { setupChecks } from "./checks.ts";
+import { setupFingerprints } from "./fingerprints.ts";
 
 export type Db = pg.Pool;
+
+/**
+ * Optional Postgres extensions the app uses when they're there. Tiger Cloud
+ * and the timescale/timescaledb image have both; plain Postgres has neither,
+ * and scans still work without them.
+ */
+export type DbFeatures = {
+  /** TimescaleDB: the url_checks hypertable and its continuous aggregate. */
+  timescale: boolean;
+  /** pgvector: page fingerprints for "looks like a page we flagged". */
+  vector: boolean;
+};
 
 type ScanRow = {
   id: string;
@@ -20,8 +34,36 @@ export function createDb(): Db {
   return new pg.Pool({ connectionString, ssl, max: 10 });
 }
 
-export async function migrate(db: Db) {
-  await db.query(SCANS_TABLE_SQL);
+// Any constant works; it just has to be the same in the server and the worker.
+const MIGRATION_LOCK = 0x1adb09;
+
+async function tryFeature(client: pg.PoolClient, name: string, setup: (client: pg.PoolClient) => Promise<void>) {
+  try {
+    await setup(client);
+    return true;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[db] ${name} unavailable, carrying on without it: ${reason}`);
+    return false;
+  }
+}
+
+/**
+ * Creates the schema. The server and the worker both run this on startup, so
+ * it holds an advisory lock: two CREATE EXTENSIONs racing each other fail.
+ */
+export async function migrate(db: Db): Promise<DbFeatures> {
+  const client = await db.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock($1)", [MIGRATION_LOCK]);
+    await client.query(SCANS_TABLE_SQL);
+    const timescale = await tryFeature(client, "TimescaleDB", setupChecks);
+    const vector = await tryFeature(client, "pgvector", setupFingerprints);
+    return { timescale, vector };
+  } finally {
+    await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK]).catch(() => {});
+    client.release();
+  }
 }
 
 const toResponse = (row: ScanRow): ScanResponse => ({

@@ -23,6 +23,12 @@
   --accent-ink: #b8352c;
   --accent-bg: #fde8e6;
 
+  /* Chart marks: the status steps, the same in both modes. */
+  --mark-safe: #0ca30c;
+  --mark-unknown: #fab219;
+  --mark-unsafe: #d03b3b;
+  --chart-baseline: #c3c2b7;
+
   color-scheme: light;
   font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 14px;
@@ -53,6 +59,7 @@
     --neutral-bg: #2a2a28;
     --accent-ink: #ff8c84;
     --accent-bg: #3d1c19;
+    --chart-baseline: #383835;
 
     color-scheme: dark;
   }
@@ -635,4 +642,158 @@ button.small {
 
 .actions button + button {
   margin-left: 6px;
+}
+
+/* Visits chart ------------------------------------------------------------ */
+
+.visits-chart .card-header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.visits-chart .hint {
+  margin-bottom: 0;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 12px 0 4px;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.chart-legend li,
+.tooltip-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-value {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.swatch[data-series="safe"],
+.chart-bar[data-series="safe"] {
+  background: var(--mark-safe);
+  fill: var(--mark-safe);
+}
+
+.swatch[data-series="unknown"],
+.chart-bar[data-series="unknown"] {
+  background: var(--mark-unknown);
+  fill: var(--mark-unknown);
+}
+
+.swatch[data-series="unsafe"],
+.chart-bar[data-series="unsafe"] {
+  background: var(--mark-unsafe);
+  fill: var(--mark-unsafe);
+}
+
+.chart-plot {
+  position: relative;
+  min-height: 200px;
+}
+
+.chart-plot svg {
+  display: block;
+  overflow: visible;
+}
+
+.chart-grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.chart-grid[data-baseline] {
+  stroke: var(--chart-baseline);
+}
+
+.chart-tick {
+  fill: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-bar {
+  transition: opacity 0.12s;
+}
+
+g[data-dim] .chart-bar {
+  opacity: 0.45;
+}
+
+.chart-hit {
+  fill: transparent;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 1;
+  transform: translate(-50%, -100%);
+  display: grid;
+  gap: 3px;
+  min-width: 170px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  pointer-events: none;
+}
+
+.tooltip-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.tooltip-row .legend-value {
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+.chart-empty {
+  position: absolute;
+  inset: 0 0 24px 36px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.link-button {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-ink);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.table td.num {
+  font-variant-numeric: tabular-nums;
 }

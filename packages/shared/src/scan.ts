@@ -86,6 +86,18 @@ export type Iocs = { domains: string[]; ips: string[]; urls: string[]; sha256: s
  */
 export type ReportFlag = "llm_skipped" | "llm_refused" | "llm_failed" | "navigation_failed";
 
+/** An earlier scan whose page looks like this one, found by vector search over page fingerprints. */
+export type SimilarPage = {
+  scanId: string;
+  url: string;
+  title: string | null;
+  verdict: ScanVerdict;
+  score: number;
+  /** Cosine similarity of the two fingerprints, 0–1. */
+  similarity: number;
+  scannedAt: string;
+};
+
 export type ScanReport = {
   scanId: string;
   inputUrl: string;
@@ -106,6 +118,8 @@ export type ScanReport = {
   summary: string;
   screenshots: Screenshot[];
   domain: DomainInfo | null;
+  /** Earlier non-benign scans of near-identical pages, most similar first. Absent on older reports. */
+  similar?: SimilarPage[];
   flags: ReportFlag[];
   startedAt: string;
   finishedAt: string;

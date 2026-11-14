@@ -9,7 +9,7 @@ import Header from "./Header.tsx";
 import Link from "./Link.tsx";
 import Findings from "./Findings.tsx";
 import RedirectChain from "./RedirectChain.tsx";
-import { DomainPanel, IocList, ReportSummary, Signals } from "./ReportDetails.tsx";
+import { DomainPanel, IocList, ReportSummary, Signals, SimilarPages } from "./ReportDetails.tsx";
 import ScoreGauge from "./ScoreGauge.tsx";
 import ScreenshotFeed from "./ScreenshotFeed.tsx";
 import StatusStepper from "./StatusStepper.tsx";
@@ -96,6 +96,7 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
             {showActivity && <ActivityLog items={scan.activity} running={running} />}
             <RedirectChain chain={scan.redirectChain} />
             <Signals signals={scan.signals} />
+            {report?.similar && <SimilarPages pages={report.similar} />}
             {report?.domain && <DomainPanel domain={report.domain} />}
             {report && <IocList iocs={report.iocs} />}
           </div>

@@ -89,10 +89,20 @@ export function startAnalysis(url: string, host: string) {
 /** Sandbox scans give benign / suspicious / malicious; the URL store keeps safe / unsafe. */
 export function verdictFromReport(report: ScanReport): { verdict: Verdict; reason: string } {
   const summary = report.summary.length > 200 ? `${report.summary.slice(0, 200)}…` : report.summary;
+  const match = report.verdict === "benign" ? undefined : report.similar?.[0];
+  const lookalike = match ? `It's a ${Math.round(match.similarity * 100)}% match for a page I flagged on ${hostOf(match.url)}. ` : "";
   return {
     verdict: report.verdict === "benign" ? "safe" : "unsafe",
-    reason: `Sandbox scan: ${report.verdict}, score ${report.score}/100. ${summary}`.trim(),
+    reason: `Sandbox scan: ${report.verdict}, score ${report.score}/100. ${lookalike}${summary}`.trim(),
   };
+}
+
+function hostOf(url: string) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 /** Runs a sandbox scan and waits for its report. */

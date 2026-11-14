@@ -165,3 +165,23 @@ test("text similarity", () => {
   assert.equal(textSimilarity("the quick brown fox", "the quick brown fox"), 1);
   assert.ok(textSimilarity("the quick brown fox", "lorem ipsum dolor sit") < 0.1);
 });
+
+test("a near match for a flagged page adds the similarity signal and lands in the report", () => {
+  const similar = [
+    {
+      scanId: "11111111-1111-4111-8111-111111111111",
+      url: "https://old-phish.example/login",
+      title: "Sign in",
+      verdict: "malicious" as const,
+      score: 88,
+      similarity: 0.93,
+      scannedAt: "2026-11-01T10:00:00.000Z",
+    },
+  ];
+  const ev = evidence({ similar });
+  assert.ok(ids(ev).includes("similar_known_bad"));
+  const report = buildReport(ev);
+  assert.deepEqual(report.similar, similar);
+  assert.match(report.signals.find((s) => s.id === "similar_known_bad")!.evidence, /93% match with https:\/\/old-phish\.example\/login/);
+  assert.equal(buildReport(evidence()).similar, undefined);
+});

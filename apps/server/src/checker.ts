@@ -1,6 +1,7 @@
 import type { CheckRequest, CheckResponse } from "@ladybug/shared";
 import { logEvent, sendPetAlert } from "./activity.ts";
 import { isAnalysisRunning, startAnalysis } from "./analyzer.ts";
+import { recordVisit } from "./checks.ts";
 import { findRecord } from "./store.ts";
 import { normalizeUrl } from "./urls.ts";
 
@@ -39,6 +40,7 @@ export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Pr
   const durationMs = Math.round(performance.now() - started);
 
   if (record) {
+    recordVisit({ url, host, decision: record.verdict === "safe" ? "known_safe" : "known_unsafe", origin, durationMs });
     const match = record.scope === "host" ? `host-wide record for ${record.host}` : "exact URL";
     logEvent({
       type: "decision",
@@ -56,6 +58,7 @@ export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Pr
     return { status: "known", verdict: record.verdict, record };
   }
 
+  recordVisit({ url, host, decision: "unknown", origin, durationMs });
   const alreadyRunning = isAnalysisRunning(url);
   logEvent({
     type: "decision",

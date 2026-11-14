@@ -4,6 +4,7 @@ import { SCAN_QUEUE } from "@ladybug/shared";
 import type { ScanJob } from "@ladybug/shared";
 import { createArtifactStore, createDb, createRedis, migrate } from "@ladybug/backend";
 import { configureAnalyzer } from "./analyzer.ts";
+import { configureChecks } from "./checks.ts";
 import { createApp } from "./app.ts";
 import { config } from "./config.ts";
 import type { ScanDeps } from "./scans.ts";
@@ -12,9 +13,11 @@ import { initStore } from "./store.ts";
 
 const RETRY_MS = 3_000;
 
-// Scans: Postgres for scan rows, Valkey for the queue and event streams.
+// Postgres for scan rows (and, with TimescaleDB, visit history), Valkey for
+// the queue and event streams.
 const db = createDb();
-await migrate(db);
+const features = await migrate(db);
+configureChecks(db, features);
 const redis = createRedis();
 const queue = new Queue<ScanJob>(SCAN_QUEUE, { connection: createRedis({ forBullmq: true }) });
 const deps: ScanDeps = {
@@ -30,7 +33,9 @@ const deps: ScanDeps = {
 configureAnalyzer(deps);
 
 const server = createApp(deps).listen(config.port, () => {
-  console.log(`[server] listening on http://localhost:${config.port} (analyzer: ${config.analyzer})`);
+  console.log(
+    `[server] listening on http://localhost:${config.port} (analyzer: ${config.analyzer}, timescaledb: ${features.timescale ? "on" : "off"})`,
+  );
   if (config.apiKeys.length === 0) console.warn("[server] API_KEYS is not set: anyone can start scans");
 });
 

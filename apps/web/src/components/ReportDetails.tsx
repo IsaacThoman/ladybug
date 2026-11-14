@@ -1,6 +1,7 @@
 import { useState } from "react";
-import type { DomainInfo, Iocs, ReportFlag, ScanReport, ScoreSignal } from "@ladybug/shared";
+import type { DomainInfo, Iocs, ReportFlag, ScanReport, ScoreSignal, SimilarPage } from "@ladybug/shared";
 import { humanize } from "../format.ts";
+import Link from "./Link.tsx";
 
 const FLAG_COPY: Record<ReportFlag, string> = {
   llm_skipped: "No model key was configured, so this score comes from hard signals only.",
@@ -69,6 +70,43 @@ export function Signals({ signals }: { signals: ScoreSignal[] }) {
               <span style={{ width: `${(s.weight / max) * 100}%` }} />
             </div>
             <p className="signal-evidence">{s.evidence}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+};
+
+/** Earlier flagged scans of pages that look like this one (pgvector nearest neighbours). */
+export function SimilarPages({ pages }: { pages: SimilarPage[] }) {
+  if (pages.length === 0) return null;
+  return (
+    <section className="panel" aria-label="Similar flagged pages">
+      <h2 className="panel-title">
+        Similar pages <span className="count">{pages.length}</span>
+      </h2>
+      <p className="panel-note">Earlier flagged scans whose page fingerprint is a near match for this one.</p>
+      <ul className="recent-list similar-list">
+        {pages.map((p) => (
+          <li key={p.scanId}>
+            <Link href={`/scans/${p.scanId}`} className="recent-item similar-item">
+              <span className={`recent-score ${p.verdict}`} title={`${p.verdict}, ${p.score}/100`}>
+                {p.score}
+              </span>
+              <span className="recent-url">
+                <span className="recent-host">{p.title || hostOf(p.url)}</span>
+                <span className="mono recent-full">{p.url}</span>
+              </span>
+              <span className="similar-match">{Math.round(p.similarity * 100)}% match</span>
+            </Link>
           </li>
         ))}
       </ul>

@@ -17,6 +17,7 @@ The source of truth is `packages/shared/src/scan.ts` (scan, event, report and HT
 | `GET /api/scans/:id` | none | `ScanResponse` |
 | `GET /api/scans/:id/events` | none | SSE, see `eventsPath` in shared |
 | `GET /api/scans/:id/artifacts/:key` | none | 302 to a presigned URL (or the file in local dev), see `artifactPath` |
+| `GET /api/admin/timeline?range=1h\|24h\|7d` | admin | `CheckTimeline` |
 
 Errors are `ApiError` JSON with 400/401/404/429. Scan ids are UUIDs, so reads don't need a key.
 
@@ -49,8 +50,10 @@ Shared by server and worker:
 
 | Var | Secret | Meaning |
 |---|---|---|
-| `DATABASE_URL` | yes | Postgres URL |
+| `DATABASE_URL` | yes | Postgres URL. In Compose, unset = the bundled TimescaleDB; a Tiger Cloud service URL (with `?sslmode=require`) works as is |
 | `DATABASE_SSL` | | `true` for Vultr Managed Postgres |
+
+Postgres extensions: `timescaledb` (the `url_checks` hypertable and `url_checks_5m` continuous aggregate) and `vector` (`page_fingerprints`). Both are optional: without one, its feature is off and everything else works.
 | `REDIS_URL` | yes | Valkey URL (`rediss://` for managed Valkey) |
 | `ARTIFACT_STORE` | | `s3` or `local` (default `local`) |
 | `ARTIFACT_DIR` | | local store directory (default `.artifacts` at the repo root) |

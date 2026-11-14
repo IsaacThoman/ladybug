@@ -81,6 +81,17 @@ export function computeSignals(ev: Evidence): ScoreSignal[] {
     });
   }
 
+  if (ev.similar.length > 0) {
+    const [best] = ev.similar;
+    const more = ev.similar.length > 1 ? ` (and ${ev.similar.length - 1} more)` : "";
+    add({
+      id: "similar_known_bad",
+      label: "Looks like a page we already flagged",
+      weight: WEIGHTS.similarKnownBad,
+      evidence: `${Math.round(best.similarity * 100)}% match with ${best.url}, scanned ${best.verdict} (${best.score}/100) on ${best.scannedAt.slice(0, 10)}${more}`,
+    });
+  }
+
   const brand = ev.agent?.brandImpersonation;
   if (brand || ev.domain?.lookalike) {
     add({

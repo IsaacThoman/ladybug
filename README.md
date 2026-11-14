@@ -1,4 +1,4 @@
-# ladybug
+# ladybugg
 
 A desktop pet that lives on top of your screen and warns you about unsafe websites.
 

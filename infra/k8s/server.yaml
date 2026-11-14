@@ -68,17 +68,12 @@ kind: Service
 metadata:
   name: server
   namespace: ladybug
-  # Configure the Vultr LB's HTTP health check to GET /health on port 3001.
-  # Confirm the annotations supported by the cluster's cloud controller first.
+  # Internal only: the public reaches it through edge → web (nginx proxies /api).
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app.kubernetes.io/name: server
   ports:
-    - name: http
-      port: 80
-      targetPort: http
-    # nginx also uses this port on the ClusterIP (server:3001).
     - name: api
       port: 3001
       targetPort: http

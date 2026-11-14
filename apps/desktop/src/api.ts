@@ -2,6 +2,7 @@ import {
   API_KEY_HEADER,
   DEFAULT_SERVER_PORT,
   DEFAULT_WEB_PORT,
+  PUBLIC_URL,
   eventsPath,
   isTerminalStatus,
 } from "@ladybug/shared";
@@ -14,9 +15,13 @@ import type {
   ScanResponse,
 } from "@ladybug/shared";
 
+// Packaged builds use the hosted server, where the report pages share the
+// API's origin. `npm run dev` talks to the local server and report page.
 const SERVER_URL =
-  import.meta.env.VITE_SERVER_URL ?? `http://localhost:${DEFAULT_SERVER_PORT}`;
-export const WEB_URL = import.meta.env.VITE_WEB_URL ?? `http://localhost:${DEFAULT_WEB_PORT}`;
+  import.meta.env.VITE_SERVER_URL ??
+  (import.meta.env.DEV ? `http://localhost:${DEFAULT_SERVER_PORT}` : PUBLIC_URL);
+export const WEB_URL =
+  import.meta.env.VITE_WEB_URL ?? (import.meta.env.DEV ? `http://localhost:${DEFAULT_WEB_PORT}` : PUBLIC_URL);
 const API_KEY = import.meta.env.VITE_API_KEY;
 
 /** The server couldn't be reached at all. */

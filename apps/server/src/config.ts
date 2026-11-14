@@ -28,6 +28,8 @@ export const config = {
     .map((key) => key.trim())
     .filter(Boolean),
   rateLimitPerMinute: numberFromEnv("RATE_LIMIT_PER_MINUTE", 10),
+  /** Reverse proxies in front of the server: 2 on Kubernetes (edge, then the web nginx). */
+  trustProxyHops: numberFromEnv("TRUST_PROXY_HOPS", 1),
   /** Built admin UI, served at /admin when it exists. */
   adminDist:
     process.env.ADMIN_DIST ?? path.resolve(import.meta.dirname, "../../admin/dist"),

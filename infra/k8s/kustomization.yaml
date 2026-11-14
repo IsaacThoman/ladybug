@@ -10,6 +10,7 @@ resources:
   - server.yaml
   - worker.yaml
   - web.yaml
+  - edge.yaml
 configurations:
   - image-fields.yaml
 # bootstrap.sh overrides these with the Terraform registry and TAG.

@@ -11,7 +11,7 @@ internet directly. Its only outbound connection is the gateway on TCP 8080.
   Python 3, and a Vultr account/API key. Standalone `kustomize` is needed only
   for `build-images.sh --set-images`.
 - A Vultr region with VKE, Managed Postgres/Valkey, Object Storage and Registry;
-  sufficient quota for the node pools and two Load Balancers.
+  sufficient quota for the node pools and one Load Balancer.
 - A VKE CNI that enforces NetworkPolicy. The deny test below is a deployment gate:
   do not send untrusted URLs until it passes.
 - An OpenAI-compatible model endpoint (base URL, model and key) and reputation-service keys, if wanted. Set `API_KEYS` to a
@@ -37,11 +37,28 @@ scripts/build-images.sh --push
 cp infra/k8s/secrets.example.env infra/k8s/secrets.env
 # Fill in the four local keys in secrets.env. Use literal, unquoted env values.
 # The model endpoint's URL and name go in the ConfigMap:
+# SITE_DOMAIN defaults to ladybugg.garden.
 LLM_BASE_URL=https://api.example.com/v1 LLM_MODEL=your-model TAG="$TAG" infra/k8s/bootstrap.sh
 export KUBECONFIG="$PWD/infra/k8s/.generated/kubeconfig"
 infra/k8s/test/deny-test.sh
-kubectl -n ladybug get services
+kubectl -n ladybug get service edge   # point the domain's A record at EXTERNAL-IP
 ```
+
+### Public domain
+
+Everything public is served from one origin, `https://ladybugg.garden` by
+default (`SITE_DOMAIN` in the bootstrap environment). That's the URL packaged
+desktop apps and release builds of the extension use by default.
+
+- The `edge` Deployment runs Caddy behind the cluster's only Load Balancer
+  (TCP 80/443, proxy protocol on). Caddy gets and renews the Let's Encrypt
+  certificate itself once the domain's A record points at the edge IP, and
+  keeps it on the `edge-data` volume so restarts don't re-issue.
+- It proxies everything to `web`, whose nginx serves the report page and
+  forwards `/api/` and `/health` to `server`. Both are ClusterIP Services.
+- It answers 404 for `/admin` and `/api/admin`, which have no authentication.
+  Use `kubectl -n ladybug port-forward svc/server 3001`, then
+  <http://localhost:3001/admin/>.
 
 The build script builds all five images for `linux/amd64`; without `--push` it
 loads them locally. Pass `--set-images` to update the checked-in kustomize image
@@ -66,12 +83,9 @@ rendered deployment. `kubectl apply -k infra/k8s` is also supported after editin
 the base images and ConfigMap and creating the Secrets through bootstrap.
 Changes to `envFrom` values need a server/worker rollout; bootstrap restarts them.
 
-The server LoadBalancer exposes port 80 -> 3001 and also port 3001 for the
-`server:3001` upstream used by nginx. Web exposes port 80 -> 8080. Configure the
-Vultr LB health check to HTTP `/health` for the server, using the annotations
-supported by your installed cloud controller. No unverified annotation is set.
-The web `/health` proxies to the server; web pod probes use `/` so API outages
-do not restart nginx. `/api/` disables proxy buffering/cache and keeps SSE
+The server Service exposes port 3001 (the `server:3001` upstream used by nginx);
+web exposes port 80 -> 8080. The web `/health` proxies to the server; web pod
+probes use `/` so API outages do not restart nginx. `/api/` disables proxy buffering/cache and keeps SSE
 connections open for an hour.
 
 Workers have no HTTP health endpoint. Their readiness probe checks Valkey PING;
@@ -120,8 +134,8 @@ kubectl -n ladybug scale deployment/worker --replicas=0
 kubectl -n sandbox get pods
 # Back up any reports/artifacts you need. Remove LoadBalancer Services while the
 # cluster controller can still deprovision their external load balancers.
-kubectl -n ladybug delete service server web --ignore-not-found
-# Confirm their Vultr load balancers have disappeared, then remove infrastructure.
+kubectl -n ladybug delete service edge --ignore-not-found
+# Confirm its Vultr load balancer has disappeared, then remove infrastructure.
 terraform -chdir=infra/terraform destroy
 ```
 
@@ -136,8 +150,11 @@ Vultr console for residual billable resources.
   gVisor/Kata RuntimeClass and test browser compatibility before production.
 - Enforce per-scan egress byte/request/time budgets at the gateway.
 - Pin images by digest, scan them, sign them and enforce signature admission.
-- Use private Load Balancers, TLS and authenticated access; API keys currently
-  protect scan creation, not report reads or artifacts.
+- Add authentication. API keys protect scan creation only, not report reads or
+  artifacts; the admin UI is only blocked at the edge.
+- `/api/pet/stream` broadcasts every alert to every connected pet, and the
+  extension reports every page visited. On a shared public server that means
+  users see each other's alerts. Scope alerts per user before opening it up.
 - Rotate the gateway CA deliberately: drain scans, replace `gateway-ca`, restart
   both gateway and worker Deployments, and repeat the deny test. A subPath mount
   does not update in running gateway pods. Bootstrap preserves the existing CA.

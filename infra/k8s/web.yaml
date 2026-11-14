@@ -62,7 +62,8 @@ metadata:
   name: web
   namespace: ladybug
 spec:
-  type: LoadBalancer
+  # Internal only: the edge (Caddy) is the public entry point.
+  type: ClusterIP
   selector:
     app.kubernetes.io/name: web
   ports:

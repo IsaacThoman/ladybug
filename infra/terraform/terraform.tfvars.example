@@ -11,7 +11,9 @@ artifacts_bucket = "ladybug-artifacts-demo"
 # databases or Object Storage are created. See infra/README.md.
 # sandbox_only      = true
 # system_nodes      = 1
-# sandbox_min_nodes = 1
+# sandbox_min_nodes = 2
+# One sandbox per node instead of three (smaller, cheaper nodes):
+# sandbox_plan      = "vc2-2c-4gb"
 
 # The Container Registry isn't offered everywhere (e.g. not in atl).
 # registry_region = "ewr"

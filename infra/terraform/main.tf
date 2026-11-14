@@ -136,3 +136,13 @@ resource "vultr_container_registry" "main" {
   plan   = var.registry_plan
   public = false
 }
+
+# VKE runs one Calico Typha per node from three nodes up, each holding a host
+# port, so no node can be drained while the cluster has exactly three. A lower
+# floor leaves an extra sandbox node running after the first scale-up.
+check "scale_down_floor" {
+  assert {
+    condition     = var.system_nodes + var.sandbox_min_nodes >= 3
+    error_message = "system_nodes + sandbox_min_nodes is below 3. The cluster autoscaler can't shrink a VKE cluster below three nodes once it has reached three, so sandbox_min_nodes won't be honored after the first scale-up."
+  }
+}

@@ -41,13 +41,13 @@ variable "system_nodes" {
 }
 
 variable "sandbox_plan" {
-  description = "Plan for the sandbox pool. 4 vCPU / 8 GB fits ~3 sandboxes per node."
+  description = "Plan for the sandbox pool. 4 vCPU / 8 GB (vc2-4c-8gb) fits 3 sandboxes per node; 2 vCPU / 4 GB (vc2-2c-4gb) fits one, so every sandbox gets its own node."
   type        = string
   default     = "vc2-4c-8gb"
 }
 
 variable "sandbox_min_nodes" {
-  description = "Keep this high enough for the demo batch so the autoscaler isn't on the critical path."
+  description = "Sandbox nodes kept running. Keep system_nodes + sandbox_min_nodes at 3 or more: once a VKE cluster has had three nodes, the autoscaler can't shrink it below three."
   type        = number
   default     = 2
 }

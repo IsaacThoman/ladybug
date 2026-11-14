@@ -98,3 +98,35 @@ test("desktop proxy controls a server call without provider credentials and stop
     assert.ok(f.requests.some((r) => r.url.endsWith("/end")));
   } finally { f.finish(); await f.calls.poll(); await desktop.poll(); await f.close(); }
 });
+
+test("support stream authenticates, selects only the newest connected desktop, drops offline and busy requests", async () => {
+  const f = await fixture();
+  const streams: { reader: ReadableStreamDefaultReader<Uint8Array>; abort: AbortController }[] = [];
+  const connect = async (token: string) => {
+    const abort = new AbortController();
+    const response = await fetch(`${f.url}/api/calls/support/stream`, { headers: { Authorization: `Bearer ${token}` }, signal: abort.signal });
+    assert.equal(response.status, 200);
+    const reader = response.body!.getReader(); await reader.read();
+    streams.push({ reader, abort }); return reader;
+  };
+  try {
+    assert.equal((await f.api("/support/stream", undefined, "wrong")).status, 401);
+    assert.equal(f.router.deliverSupport(randomUUID()), false);
+    const old = await connect("desktop-one"), latest = await connect("desktop-two");
+    const id = randomUUID(); assert.equal(f.router.deliverSupport(id), true);
+    const chunk = await latest.read(); assert.match(new TextDecoder().decode(chunk.value), new RegExp(id));
+    const oldPending = old.read();
+    const prepared = await (await f.api("/prepare", { requestId: randomUUID() })).json() as PreparedCall;
+    assert.equal(f.router.deliverSupport(randomUUID()), false);
+    await f.api(`/${prepared.id}/end`, {}); f.finish(); await f.calls.poll();
+    streams[1].abort.abort(); await new Promise((r) => setTimeout(r, 10));
+    const next = randomUUID(); assert.equal(f.router.deliverSupport(next), true);
+    const received = new TextDecoder().decode((await oldPending).value);
+    assert.ok(!received.includes(id)); assert.ok(received.includes(next));
+    streams[0].abort.abort(); await new Promise((r) => setTimeout(r, 10));
+    assert.equal(f.router.deliverSupport(randomUUID()), false);
+    const reconnected = await connect("desktop-one");
+    const fresh = randomUUID(); f.router.deliverSupport(fresh);
+    assert.match(new TextDecoder().decode((await reconnected.read()).value), new RegExp(fresh));
+  } finally { for (const stream of streams) { stream.abort.abort(); await stream.reader.cancel().catch(() => {}); } await f.close(); }
+});

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import type {
   DragEvent as ReactDragEvent,
   MouseEvent as ReactMouseEvent,
@@ -7,7 +7,6 @@ import type {
 import type { AlertLevel, PetAlert, ScanEvent, ScanStatus, ScanVerdict } from "@ladybug/shared";
 import {
   createScan,
-  fetchGreeting,
   getScan,
   OfflineError,
   reportUrl,
@@ -197,7 +196,19 @@ const carriesLink = (data: DataTransfer) => data.types.some((type) => LINK_TYPES
 const dropEffectFor = (allowed: DataTransfer["effectAllowed"]): DataTransfer["dropEffect"] =>
   allowed === "link" || allowed === "linkMove" ? "link" : allowed === "move" ? "move" : "copy";
 
-export default function Pet({ layout }: { layout: OverlayLayout }) {
+export default function Pet({ layout, callBusy, requestHelp }: { layout: OverlayLayout; callBusy: boolean; requestHelp: () => void }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuOpenRef = useRef(false);
+  const [reportId, setReportId] = useState<string | null>(null);
+  const closeMenu = () => { menuOpenRef.current = false; setMenu(null); petRef.current?.focus(); };
+  const toggleMenu = () => {
+    if (menuOpenRef.current) { closeMenu(); return; }
+    const rect = petRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    menuOpenRef.current = true;
+    setMenu({ x: rect.x + PET_WIDTH / 2, y: rect.y - 8 });
+  };
   const petRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -293,7 +304,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
             ? WALK_SPEED * 0.35
             : WALK_SPEED;
 
-      switch (s.mode) {
+      if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
           // Hold still while a link is dragged over it.
@@ -518,6 +529,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
         return;
       }
       remember(reactedScansRef.current, id);
+      if (verdict !== "failed") setReportId(id);
       setScan({ phase: "done", id, verdict, score, fromAlert: false });
       react(verdict);
     };
@@ -623,6 +635,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       if (reactedScansRef.current.has(scanId)) return;
       remember(reactedScansRef.current, scanId);
     }
+    if (scanId) setReportId(scanId);
     if (level === "danger") ladybug?.startle(3);
     if (!alertCanTakeOver(scan, level)) {
       // Busy with the user's own scan: flash a warning without dropping it.
@@ -665,6 +678,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     if (!drag.moved) {
       const distance = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
       if (distance < CLICK_SLOP) return;
+      closeMenu();
       drag.moved = true;
       s.mode = "dragging";
       setDragging(true);
@@ -696,29 +710,35 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       s.vy = Math.max(-2500, Math.min(2500, s.vy));
       s.mode = "airborne";
       setDragging(false);
-    } else if (scan.phase === "scanning" || (scan.phase === "done" && scan.id)) {
-      // Click during or after a scan: open the full report.
-      if (scan.id) window.ladybug.openExternal(reportUrl(scan.id));
-      if (scan.phase === "done") {
-        setScan({ phase: "idle" });
-        setBubble(null);
-      }
-    } else {
-      // Click: hop and say hi. This also dismisses an alert.
-      if (s.mode !== "airborne") {
-        s.vx = 0;
-        s.vy = HOP_VELOCITY;
-        s.mode = "airborne";
-      }
-      if (scan.phase !== "idle") setScan({ phase: "idle" });
-      fetchGreeting()
-        .then((message) => say(message, "chat", true))
-        .catch(() => say(OFFLINE_MESSAGE, "chat", true));
+    } else if (e.type !== "pointercancel") {
+      toggleMenu();
     }
   };
 
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el || !menu) return;
+    const area = layout.workArea;
+    el.style.left = `${Math.max(area.x, Math.min(menu.x - el.offsetWidth / 2, area.x + area.width - el.offsetWidth))}px`;
+    el.style.top = `${Math.max(area.y, Math.min(menu.y - el.offsetHeight, area.y + area.height - el.offsetHeight))}px`;
+    el.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  }, [menu, layout, reportId]);
+
+  useEffect(() => {
+    if (!menu) return;
+    window.ladybug.setMenuOpen(true);
+    const dismiss = () => { menuOpenRef.current = false; setMenu(null); };
+    const pointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target) && !petRef.current?.contains(event.target)) dismiss();
+    };
+    const unsubscribe = window.ladybug.onMenuDismiss(dismiss);
+    document.addEventListener("pointerdown", pointer, true);
+    return () => { window.ladybug.setMenuOpen(false); unsubscribe(); document.removeEventListener("pointerdown", pointer, true); };
+  }, [menu]);
+
   const onContextMenu = (e: ReactMouseEvent) => {
     e.preventDefault();
+    closeMenu();
     window.ladybug.showMenu();
   };
 
@@ -748,8 +768,34 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     : (bubble ?? scanBubble(scan));
 
   return (
+    <>
+    {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Ladybug" data-overlay-interactive
+      style={{ maxWidth: layout.workArea.width, maxHeight: layout.workArea.height }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") { e.preventDefault(); closeMenu(); return; }
+        if (["ArrowDown", "ArrowUp", "Home", "End", "Tab"].includes(e.key)) {
+          e.preventDefault();
+          const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+          const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const index = e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (current + (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey) ? -1 : 1) + buttons.length) % buttons.length;
+          buttons[index]?.focus();
+        }
+      }}>
+      <button role="menuitem" disabled={callBusy} onClick={() => { closeMenu(); requestHelp(); }}>Request help</button>
+      <button role="menuitem" onClick={() => { closeMenu(); window.ladybug.scanClipboard(); }}>Scan clipboard URL</button>
+      {reportId && <button role="menuitem" onClick={() => { closeMenu(); window.ladybug.openExternal(reportUrl(reportId)); }}>View report</button>}
+    </div>}
     <div
       ref={petRef}
+      role="button"
+      tabIndex={0}
+      aria-label="Ladybug menu"
+      aria-haspopup="menu"
+      aria-expanded={Boolean(menu)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleMenu(); }
+        if (e.key === "Escape") closeMenu();
+      }}
       className={dragging ? "pet dragging" : "pet"}
       style={{ width: PET_WIDTH, height: PET_HEIGHT }}
       data-overlay-interactive
@@ -785,5 +831,6 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
         }}
       />
     </div>
+    </>
   );
 }

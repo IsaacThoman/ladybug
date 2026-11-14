@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { OverlayLayout, Rect } from "../src/ladybug-api";
 import { parseHttpUrl, urlFromClipboardText } from "../src/urls";
+import { SupportSubscription } from "./support-stream";
 import { CallService } from "./call-service";
 import { loadCallEnv } from "./call-config";
 
@@ -54,6 +55,23 @@ let interactiveRects: Rect[] = [];
 let petHeld = false;
 let ignoringMouse = true;
 const calls = new CallService();
+const support = new SupportSubscription(() => {
+  if (overlayWin && !overlayWin.isDestroyed() && ["idle", "ended", "error"].includes(calls.getState().phase)) {
+    showOverlay();
+    overlayWin.webContents.send("ladybug:support-request");
+  }
+});
+ipcMain.on("ladybug:support-ready", (event, ready: boolean) => {
+  if (event.sender !== overlayWin?.webContents || event.senderFrame !== event.sender.mainFrame) return;
+  if (ready) support.start(); else support.stop();
+});
+ipcMain.on("ladybug:scan-clipboard", (event) => {
+  if (event.sender === overlayWin?.webContents) void scanClipboard();
+});
+ipcMain.on("ladybug:menu-open", (event, open: boolean) => {
+  if (event.sender !== overlayWin?.webContents) return;
+  if (open) overlayWin?.focus();
+});
 calls.subscribe((state) => {
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.webContents.send("ladybug:call-state", state);
 });
@@ -156,7 +174,9 @@ function createOverlayWindow() {
     else overlayWin?.showInactive();
   });
 
+  overlayWin.on("blur", () => overlayWin?.webContents.send("ladybug:menu-dismiss"));
   const endMedia = () => {
+    support.stop();
     void calls.endCurrent();
   };
   overlayWin.webContents.on("render-process-gone", endMedia);

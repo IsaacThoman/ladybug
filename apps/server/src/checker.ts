@@ -3,6 +3,7 @@ import { logEvent, sendPetAlert } from "./activity.ts";
 import { isAnalysisRunning, startAnalysis } from "./analyzer.ts";
 import { recordVisit } from "./checks.ts";
 import { findRecord } from "./store.ts";
+import { notifyUnsafeVisit } from "./support/service.ts";
 import { normalizeUrl } from "./urls.ts";
 
 export type CheckOrigin = "extension" | "admin";
@@ -53,6 +54,7 @@ export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Pr
       details: { recordId: record.id, scope: record.scope, source: record.source, reason: record.reason },
     });
     if (record.verdict === "unsafe") {
+      if (origin === "extension") notifyUnsafeVisit(url);
       sendPetAlert("danger", `Careful! ${host} is flagged as unsafe. ${record.reason}.`, url, host);
     }
     return { status: "known", verdict: record.verdict, record };
@@ -71,7 +73,7 @@ export async function checkVisit(request: CheckRequest, origin: CheckOrigin): Pr
     durationMs,
     details: { alreadyRunning },
   });
-  const analysis = startAnalysis(url, host);
+  const analysis = startAnalysis(url, host, origin === "extension");
   if (!alreadyRunning) {
     sendPetAlert("info", `Hmm, I don't know ${host} yet. Checking it…`, url, host, analysis.scanId);
   }

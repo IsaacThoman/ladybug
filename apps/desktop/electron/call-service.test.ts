@@ -51,6 +51,7 @@ function controllerFixture() {
   const published = deferred<void>();
   const actions: string[] = [];
   const api: FaceTimeApi = {
+    onSupportRequest: () => () => {},
     prepare: async () => { actions.push("prepare"); return { id: "session", url: "wss://example", token: "device-only", bridgeIdentity: "bridge" }; },
     dial: async () => { actions.push("dial"); }, end: async () => { actions.push("end"); },
     getState: async () => ({ phase: "idle", message: "", bridgeReady: false }),

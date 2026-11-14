@@ -33,7 +33,8 @@ const deps: ScanDeps = {
 };
 configureAnalyzer(deps);
 
-const server = createApp(deps).listen(config.port, () => {
+const app = createApp(deps);
+const server = app.listen(config.port, () => {
   console.log(
     `[server] listening on http://localhost:${config.port} (analyzer: ${config.analyzer}, timescaledb: ${features.timescale ? "on" : "off"})`,
   );
@@ -63,6 +64,7 @@ async function connectStore() {
 void connectStore();
 
 const shutdown = async () => {
+  app.locals.support.stop();
   server.close();
   await callsRouter.shutdown();
   await Promise.allSettled([queue.close(), db.end()]);

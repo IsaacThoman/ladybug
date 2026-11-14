@@ -8,6 +8,7 @@ import { createScan, waitForScan } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { adminChannel } from "./sse.ts";
 import { saveRecord } from "./store.ts";
+import { notifyUnsafeVisit } from "./support/service.ts";
 import { normaliseScanUrl } from "./validate.ts";
 
 let scanDeps: ScanDeps | null = null;
@@ -20,6 +21,7 @@ export function configureAnalyzer(deps: ScanDeps) {
 const useScans = () => config.analyzer === "scan" && scanDeps !== null;
 
 /** Analyses in progress, keyed by normalised URL. */
+const browserVisits = new Set<string>();
 const pending = new Map<string, PendingAnalysis>();
 
 export const listPending = () =>
@@ -58,7 +60,8 @@ export function placeholderVerdict(url: string, host: string): { verdict: Verdic
  * Starts analysing a URL unless it's already being analysed. The result is
  * remembered in Typesense and pushed to the desktop pet.
  */
-export function startAnalysis(url: string, host: string) {
+export function startAnalysis(url: string, host: string, browserVisit = false) {
+  if (browserVisit) browserVisits.add(url);
   const existing = pending.get(url);
   if (existing) return existing;
 
@@ -145,6 +148,7 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis) {
       details: { analyzer: scanId ? "scan" : "placeholder", recordId: record.id, reason, scanId },
     });
     if (verdict === "unsafe") {
+      if (browserVisits.has(url)) notifyUnsafeVisit(url);
       sendPetAlert("danger", `Watch out! ${host} looks unsafe. ${reason.replace(/\.$/, "")}.`, url, host, scanId);
     } else {
       sendPetAlert("ok", `All good, ${host} checked out fine.`, url, host, scanId);
@@ -160,6 +164,7 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis) {
     if (scanId) sendPetAlert("info", `I couldn't finish checking ${host}.`, url, host, scanId);
   } finally {
     pending.delete(url);
+    browserVisits.delete(url);
     broadcastPending();
   }
 }

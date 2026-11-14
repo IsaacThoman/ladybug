@@ -41,7 +41,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, "public")
   : RENDERER_DIST;
 
-const ICON_PATH = path.join(process.env.VITE_PUBLIC, "pulpo.png");
+const ICON_PATH = path.join(process.env.VITE_PUBLIC, "icon.png");
 
 const HOVER_POLL_MS = 16;
 
@@ -128,7 +128,7 @@ function createOverlayWindow() {
 
   overlayWin = new BrowserWindow({
     ...(windowedDev ? { width: 960, height: 640, minWidth: 480, minHeight: 360 } : bounds),
-    title: windowedDev ? "Ladybug — Development" : "Ladybug",
+    title: windowedDev ? "Ladybugg — Development" : "Ladybugg",
     show: false,
     transparent: !windowedDev,
     backgroundColor: windowedDev ? "#e8edf2" : "#00000000",
@@ -282,14 +282,14 @@ function buildMenu() {
       { label: "Show / Hide Pet", click: togglePetVisibility },
       { type: "separator" as const },
     ] : []),
-    { label: "Quit Ladybug", role: "quit" },
+    { label: "Quit Ladybugg", role: "quit" },
   ]);
 }
 
 function createTray() {
   const icon = nativeImage.createFromPath(ICON_PATH).resize({ width: 18, height: 18 });
   tray = new Tray(icon);
-  tray.setToolTip("Ladybug");
+  tray.setToolTip("Ladybugg");
   tray.setContextMenu(buildMenu());
 }
 

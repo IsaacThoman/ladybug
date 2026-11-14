@@ -2,7 +2,7 @@ import type { ApiError, CheckRequest, CheckResponse } from "@ladybug/shared";
 import { addRecent, getAuth, getSettings, setAuth } from "./settings";
 import type { RecentCheck } from "./settings";
 
-// Service worker: reports every top-level page the user visits to the Ladybug
+// Service worker: reports every top-level page the user visits to the Ladybugg
 // server, as the signed-in user. The server decides whether that user's
 // desktop pet should raise an alert.
 
@@ -18,14 +18,14 @@ function badgeFor(result: RecentCheck["result"]): Badge {
   switch (result.status) {
     case "known":
       return result.verdict === "unsafe"
-        ? { text: "!", color: "#d93025", title: "Ladybug: this page is flagged as unsafe" }
-        : { text: "", color: "#000", title: "Ladybug: known safe" };
+        ? { text: "!", color: "#d93025", title: "Ladybugg: this page is flagged as unsafe" }
+        : { text: "", color: "#000", title: "Ladybugg: known safe" };
     case "pending":
-      return { text: "…", color: "#e8a317", title: "Ladybug: checking this page" };
+      return { text: "…", color: "#e8a317", title: "Ladybugg: checking this page" };
     case "skipped":
-      return { text: "", color: "#000", title: `Ladybug: not checked (${result.reason})` };
+      return { text: "", color: "#000", title: `Ladybugg: not checked (${result.reason})` };
     case "error":
-      return { text: "?", color: "#80868b", title: `Ladybug: ${result.error}` };
+      return { text: "?", color: "#80868b", title: `Ladybugg: ${result.error}` };
   }
 }
 
@@ -63,7 +63,7 @@ async function report(tabId: number, url: string) {
   // Nothing is reported until the user signs in from the popup.
   const auth = await getAuth();
   if (!auth) {
-    await setBadge(tabId, { status: "error", error: "Sign in from the Ladybug popup to check pages" });
+    await setBadge(tabId, { status: "error", error: "Sign in from the Ladybugg popup to check pages" });
     return;
   }
 

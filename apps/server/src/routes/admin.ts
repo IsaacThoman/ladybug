@@ -3,6 +3,7 @@ import { TIMELINE_RANGES } from "@ladybug/shared";
 import type {
   AccountStatus,
   AdminAccountsResponse,
+  AdminModelSettings,
   AdminStreamEvent,
   AdminSummary,
   Decision,
@@ -11,7 +12,7 @@ import type {
   Verdict,
   VerdictSource,
 } from "@ladybug/shared";
-import type { AccountStore } from "@ladybug/backend";
+import type { AccountStore, ModelSettingsStore } from "@ladybug/backend";
 import { publicAccount } from "../accounts.ts";
 import { logEvent } from "../activity.ts";
 import { listPending } from "../analyzer.ts";
@@ -60,7 +61,7 @@ const DECISIONS = [
   "skipped",
 ] as const satisfies readonly Decision[];
 
-export function adminRouter(accounts: AccountStore) {
+export function adminRouter(accounts: AccountStore, models: ModelSettingsStore) {
   const router = express.Router();
 
   // Live activity: every logged event, plus the list of running analyses.
@@ -136,6 +137,44 @@ export function adminRouter(accounts: AccountStore) {
       details: { userId: user.id, user: user.username },
     });
     res.status(204).end();
+  });
+
+  // The model scans investigate with: one of those the worker's endpoint offers.
+  // Postgres and Valkey, so these work without Typesense too.
+  const modelSettings = async (): Promise<AdminModelSettings> => {
+    const [selected, catalog] = await Promise.all([models.selected(), models.catalog()]);
+    return { selected, catalog };
+  };
+
+  router.get("/settings/model", async (_req, res) => {
+    res.json(await modelSettings());
+  });
+
+  router.put("/settings/model", async (req, res) => {
+    const raw: unknown = req.body?.model;
+    const catalog = await models.catalog();
+    if (raw === null) {
+      await models.select(null);
+      const fallback = catalog?.defaultModel;
+      logEvent({
+        type: "admin",
+        message: `Admin set the scan model back to the default${fallback ? ` (${fallback})` : ""}`,
+        details: { model: null, default: fallback ?? null },
+      });
+      res.json(await modelSettings());
+      return;
+    }
+    const model = requireString(raw, "model", 200);
+    if (!catalog) throw new HttpError(409, "No worker has reported its models yet, so there's nothing to pick from");
+    if (!catalog.models.includes(model)) throw new HttpError(400, `${model} isn't one of the models ${catalog.baseUrl} offers`);
+    const previous = await models.selected();
+    await models.select(model);
+    logEvent({
+      type: "admin",
+      message: `Admin switched the scan model to ${model}`,
+      details: { model, previous: previous ?? catalog.defaultModel },
+    });
+    res.json(await modelSettings());
   });
 
   router.use(requireStore);

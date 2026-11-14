@@ -8,6 +8,7 @@ import { useAdminStream, useNow } from "../useAdminStream";
 import ActivityView from "./ActivityView";
 import Icon from "./Icon";
 import OverviewView from "./OverviewView";
+import SettingsView from "./SettingsView";
 import UrlsView from "./UrlsView";
 import UsersView from "./UsersView";
 
@@ -16,6 +17,7 @@ const TABS = [
   { id: "activity", label: "Activity log", icon: "pulse", sub: "Every visit, decision and alert, newest first." },
   { id: "urls", label: "URL database", icon: "database", sub: "Pages and hosts Ladybug already has a verdict for." },
   { id: "users", label: "Users", icon: "user", sub: "Who can use Ladybug. New accounts wait here until you approve them." },
+  { id: "settings", label: "Settings", icon: "sliders", sub: "How this Ladybug instance runs its scans." },
 ] as const satisfies readonly { id: string; label: string; icon: IconName; sub: string }[];
 type TabId = (typeof TABS)[number]["id"];
 
@@ -78,6 +80,8 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
   const [urlsVersion, setUrlsVersion] = useState(0);
   // Bumped when someone signs up or an admin changes an account.
   const [usersVersion, setUsersVersion] = useState(0);
+  // Bumped when an admin (maybe in another tab) changes a setting.
+  const [settingsVersion, setSettingsVersion] = useState(0);
   const mascotRef = useRef<LadybugMascotHandle>(null);
   const now = useNow(1_000);
 
@@ -85,6 +89,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
     setLive((current) => [event, ...current].slice(0, LIVE_LIMIT));
     if (event.type === "analysis_completed" || event.type === "admin") setUrlsVersion((v) => v + 1);
     if (event.type === "account" || event.type === "admin") setUsersVersion((v) => v + 1);
+    if (event.type === "admin") setSettingsVersion((v) => v + 1);
   }, []);
   const { pending, connected } = useAdminStream(onEvent);
 
@@ -197,6 +202,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
         {tab === "activity" && <ActivityView live={live} />}
         {tab === "urls" && <UrlsView version={urlsVersion} />}
         {tab === "users" && <UsersView version={usersVersion} />}
+        {tab === "settings" && <SettingsView version={settingsVersion} />}
       </main>
     </div>
   );

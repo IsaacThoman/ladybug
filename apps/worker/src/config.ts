@@ -1,7 +1,10 @@
 const env = process.env;
 
 export const config = {
-  /** Any OpenAI-compatible Chat Completions endpoint. Unset key or model = signal-only reports. */
+  /**
+   * Any OpenAI-compatible Chat Completions endpoint. `model` is the default; the
+   * admin's pick (Settings) wins. No key, or no model at all = signal-only reports.
+   */
   llm: {
     baseUrl: env.LLM_BASE_URL || "https://api.openai.com/v1",
     apiKey: env.LLM_API_KEY || null,

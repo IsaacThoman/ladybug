@@ -84,7 +84,7 @@ Worker only:
 |---|---|---|
 | `LLM_BASE_URL` | | OpenAI-compatible Chat Completions base URL, default `https://api.openai.com/v1` |
 | `LLM_API_KEY` | yes | unset = signal-only reports |
-| `LLM_MODEL` | | model name at that endpoint; unset = signal-only reports |
+| `LLM_MODEL` | | default model name at that endpoint, until an admin picks one in the admin UI; neither = signal-only reports |
 | `LLM_VISION` | | `false` for text-only models (screenshots aren't sent) |
 | `LLM_REASONING_EFFORT` | | optional `reasoning_effort` for endpoints that support it |
 | `LLM_TOKEN_BUDGET` | | stop investigating past this many tokens, default 400000 |

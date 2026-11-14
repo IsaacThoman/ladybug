@@ -13,7 +13,8 @@ export type IconName =
   | "home"
   | "pulse"
   | "database"
-  | "signout";
+  | "signout"
+  | "sliders";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",

@@ -23,6 +23,8 @@ export type PipelineDeps = {
   onStatus?: (status: ScanStatus, error?: string) => Promise<void>;
   /** Page fingerprints (pgvector). Without it, no "looks like a page we flagged" check. */
   similarity?: SimilarityStore;
+  /** The model to investigate with (the admin's pick). Without it, LLM_MODEL. */
+  llmModel?: () => Promise<string | null>;
 };
 
 /** Worker-side lookups that never touch the target. */
@@ -102,7 +104,8 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
       await emitNewSignals();
 
       await setStatus("investigating");
-      await investigate(ctx, sandbox.client, ev, lastShot);
+      const model = deps.llmModel ? await deps.llmModel() : config.llm.model;
+      await investigate(ctx, sandbox.client, ev, lastShot, model);
 
       // Pick up whatever the agent's clicking triggered.
       const [requests, events, files, har] = await Promise.all([

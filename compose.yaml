@@ -125,6 +125,7 @@ services:
       # Any OpenAI-compatible Chat Completions endpoint. Unset = signal-only reports.
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      # The default model. Admins can pick another the endpoint offers in /admin (Settings).
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_VISION: ${LLM_VISION:-true}
       SAFE_BROWSING_API_KEY: ${SAFE_BROWSING_API_KEY:-}

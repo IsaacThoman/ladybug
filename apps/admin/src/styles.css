@@ -610,8 +610,26 @@ button.small {
   gap: 8px;
 }
 
-.inline-form input {
+.inline-form input,
+.inline-form select {
   flex: 1;
+}
+
+/* Settings ---------------------------------------------------------------- */
+
+.setting-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--ink-2);
+}
+
+.setting-meta {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
 }
 
 .rule-form {

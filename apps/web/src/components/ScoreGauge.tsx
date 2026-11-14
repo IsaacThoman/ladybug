@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { Confidence, Verdict } from "@ladybug/shared";
+import type { Confidence, ScanVerdict } from "@ladybug/shared";
 
 type Props = {
   score: number | null;
-  verdict: Verdict | null;
+  verdict: ScanVerdict | null;
   confidence: Confidence | null;
   /** Scan still running: pulse while waiting for a score. */
   pending: boolean;

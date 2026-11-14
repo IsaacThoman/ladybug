@@ -3,7 +3,9 @@ FROM node:24-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
+COPY apps/admin/package.json apps/admin/
 COPY apps/desktop/package.json apps/desktop/
+COPY apps/extension/package.json apps/extension/
 COPY apps/sandbox/package.json apps/sandbox/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/

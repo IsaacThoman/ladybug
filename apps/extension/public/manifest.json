@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Ladybug",
+  "version": "0.1.0",
+  "description": "Reports the pages you visit to your Ladybug server, so your desktop ladybug can warn you about unsafe sites.",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Ladybug",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/ladybug-16.png",
+      "32": "icons/ladybug-32.png",
+      "48": "icons/ladybug-48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/ladybug-16.png",
+    "32": "icons/ladybug-32.png",
+    "48": "icons/ladybug-48.png",
+    "128": "icons/ladybug-128.png"
+  },
+  "permissions": ["webNavigation", "storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"]
+}

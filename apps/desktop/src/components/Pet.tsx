@@ -4,8 +4,16 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import type { ScanEvent, ScanStatus, Verdict } from "@ladybug/shared";
-import { createScan, fetchGreeting, getScan, OfflineError, reportUrl, watchScan } from "../api";
+import type { AlertLevel, PetAlert, ScanEvent, ScanStatus, ScanVerdict } from "@ladybug/shared";
+import {
+  createScan,
+  fetchGreeting,
+  getScan,
+  OfflineError,
+  reportUrl,
+  subscribeToAlerts,
+  watchScan,
+} from "../api";
 import type { OverlayLayout } from "../ladybug-api";
 import { findHttpUrl, parseHttpUrl } from "../urls";
 import { LadybugRenderer } from "./ladybug/LadybugRenderer";
@@ -28,13 +36,19 @@ const GROUND_FRICTION = 6; // 1/s, damps sliding after a throw
 const HOP_VELOCITY = -650; // px/s
 const ALARM_JUMP_VELOCITY = -1000; // px/s
 const CLICK_SLOP = 4; // px of movement before a press becomes a drag
-const BUBBLE_MS = 3500;
+/** "chat" is the pet's own chatter; the rest match server alert levels. */
+type BubbleTone = "chat" | AlertLevel;
+const BUBBLE_MS: Record<BubbleTone, number> = { chat: 3500, ok: 4000, info: 5000, danger: 12000 };
+/** Keep bubbles at least this far from the screen edges. */
+const BUBBLE_MARGIN = 8;
 const REACTION_MS = 30_000;
 const ERROR_MS = 6000;
 // Chromium repeats dragover while a drag hovers, even if the cursor is still.
 // If they stop without a dragleave (the overlay went click-through mid-drag),
 // the drag has left.
 const DRAG_HOVER_STALE_MS = 400;
+/** How many scan ids to remember for de-duplicating reactions. */
+const SEEN_SCANS_LIMIT = 100;
 const OFFLINE_MESSAGE = "Can't reach the server…";
 const NO_CLIPBOARD_URL_MESSAGE = "There's no link on the clipboard.";
 const NOT_A_LINK_MESSAGE = "That's not a link I can check.";
@@ -77,16 +91,35 @@ type DragState = {
   lastT: number;
 };
 
+/** "manual": the user dropped a link or scanned the clipboard. "alert": the server started it. */
+type ScanOrigin = "manual" | "alert";
+
 type ScanState =
   | { phase: "idle" }
   /** `id` is null until the server accepts the scan. */
-  | { phase: "scanning"; id: string | null; url: string; status: ScanStatus }
-  | { phase: "done"; id: string; verdict: Verdict | "failed"; score: number | null }
+  | { phase: "scanning"; origin: ScanOrigin; id: string | null; url: string; status: ScanStatus }
+  /**
+   * A verdict reaction. `fromAlert` reactions came from a server alert, whose
+   * own bubble says what happened, and last only as long as that bubble.
+   */
+  | {
+      phase: "done";
+      id: string | null;
+      verdict: ScanVerdict | "failed";
+      score: number | null;
+      fromAlert: boolean;
+    }
   | { phase: "error"; message: string };
 
-type Bubble = { text: string; tone?: "safe" | "warn" | "danger"; key: string };
+type Bubble = { key: string; text: string; tone: BubbleTone };
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
+
+/** Adds to a bounded set of recently seen scan ids. */
+function remember(set: Set<string>, id: string) {
+  set.add(id);
+  if (set.size > SEEN_SCANS_LIMIT) set.delete(set.values().next().value!);
+}
 
 function moodFor(scan: ScanState, dropHover: boolean): LadybugMood {
   if (dropHover) return "expectant";
@@ -103,21 +136,35 @@ function scanBubble(scan: ScanState): Bubble | null {
     case "idle":
       return null;
     case "scanning":
-      return { text: STATUS_MESSAGES[scan.status], key: `status-${scan.status}` };
+      return { text: STATUS_MESSAGES[scan.status], tone: "chat", key: `status-${scan.status}` };
     case "error":
-      return { text: scan.message, key: "error" };
-    case "done":
+      return { text: scan.message, tone: "chat", key: "error" };
+    case "done": {
+      if (scan.fromAlert) return null;
+      const score = scan.score === null ? "" : ` (${scan.score})`;
       switch (scan.verdict) {
         case "benign":
-          return { text: `Looks safe! (score ${scan.score})`, tone: "safe", key: "done" };
+          return { text: `Looks safe!${score}`, tone: "ok", key: "done" };
         case "suspicious":
-          return { text: `Hmm, something's off… (${scan.score})`, tone: "warn", key: "done" };
+          return { text: `Hmm, something's off…${score}`, tone: "info", key: "done" };
         case "malicious":
-          return { text: `Don't open that! (${scan.score})`, tone: "danger", key: "done" };
+          return { text: `Don't open that!${score}`, tone: "danger", key: "done" };
         case "failed":
-          return { text: "I couldn't check that one.", key: "done" };
+          return { text: "I couldn't check that one.", tone: "chat", key: "done" };
       }
+    }
   }
+}
+
+/**
+ * Whether a server alert may replace the current scan state. A scan the user
+ * started is never interrupted, and a fresh danger reaction only gives way to
+ * another danger.
+ */
+function alertCanTakeOver(scan: ScanState, level: AlertLevel) {
+  if (scan.phase === "scanning" && scan.origin === "manual") return false;
+  if (scan.phase === "done" && scan.verdict === "malicious") return level === "danger";
+  return true;
 }
 
 /** A short aside for live events worth reacting to, if any. */
@@ -153,6 +200,8 @@ const dropEffectFor = (allowed: DataTransfer["effectAllowed"]): DataTransfer["dr
 export default function Pet({ layout }: { layout: OverlayLayout }) {
   const petRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const bubbleIdRef = useRef(0);
   const dragRef = useRef<DragState | null>(null);
   const layoutRef = useRef(layout);
   const stateRef = useRef<PhysicsState | null>(null);
@@ -161,6 +210,13 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
   /** Bumped per scan, so callbacks from a replaced scan are ignored. */
   const scanGenRef = useRef(0);
   const unwatchRef = useRef<(() => void) | null>(null);
+  /** Scans the pet has followed, so a repeat alert doesn't follow them again. */
+  const followedScansRef = useRef(new Set<string>());
+  /**
+   * Scans the pet has already reacted to. A scan's result can arrive both on
+   * its own event stream and as a server alert; only the first one reacts.
+   */
+  const reactedScansRef = useRef(new Set<string>());
   const lastDragOverRef = useRef(0);
   const [dragging, setDragging] = useState(false);
   const [dropHover, setDropHover] = useState(false);
@@ -177,7 +233,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     moodRef.current = mood;
   }, [mood]);
 
-  // Bounds the pet can move within: the work area, so it sits on the dock/taskbar.
+  // Movement bounds are the display work area or the development window.
   const getBounds = () => {
     const { workArea } = layoutRef.current;
     return {
@@ -226,6 +282,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       const s = stateRef.current!;
       const mood = moodRef.current;
       const { minX, maxX, minY, groundY } = getBounds();
+      s.targetX = Math.min(Math.max(s.targetX, minX), maxX);
       // Sniffing and nervous bugs potter about nearby instead of crossing the screen.
       const pottering = mood === "sniffing" || mood === "nervous";
       const speed = s.backing
@@ -306,6 +363,10 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
           break;
       }
 
+      // Keep the pet visible when its window or display shrinks.
+      s.x = Math.min(Math.max(s.x, minX), maxX);
+      s.y = Math.min(Math.max(s.y, minY), groundY);
+
       if (petRef.current) {
         petRef.current.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
       }
@@ -314,6 +375,19 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
         reportedX = s.x;
         reportedY = s.y;
         window.ladybug.setPetRect({ x: s.x, y: s.y, width: PET_WIDTH, height: PET_HEIGHT });
+      }
+      // Keep the speech bubble on screen, with its tail pointing at the bug.
+      const bubbleEl = bubbleRef.current;
+      if (bubbleEl) {
+        const width = bubbleEl.offsetWidth;
+        const center = s.x + PET_WIDTH / 2;
+        const { workArea } = layoutRef.current;
+        const left = Math.min(
+          Math.max(center - width / 2, workArea.x + BUBBLE_MARGIN),
+          workArea.x + workArea.width - width - BUBBLE_MARGIN,
+        );
+        bubbleEl.style.left = `${left - s.x}px`;
+        bubbleEl.style.setProperty("--tail-x", `${Math.min(Math.max(center - left, 16), width - 16)}px`);
       }
       // On-screen velocity, so drags (which move x outside this loop) count too.
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
@@ -334,17 +408,20 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
   // Hide the speech bubble after a moment.
   useEffect(() => {
     if (!bubble) return;
-    const timeout = setTimeout(() => setBubble(null), BUBBLE_MS);
+    const timeout = setTimeout(() => setBubble(null), BUBBLE_MS[bubble.tone]);
     return () => clearTimeout(timeout);
   }, [bubble]);
 
   // Hold a verdict reaction (or an error) for a while, then calm down.
   useEffect(() => {
     if (scan.phase !== "done" && scan.phase !== "error") return;
-    const timeout = setTimeout(
-      () => setScan({ phase: "idle" }),
-      scan.phase === "done" ? REACTION_MS : ERROR_MS,
-    );
+    const ms =
+      scan.phase === "error"
+        ? ERROR_MS
+        : scan.fromAlert
+          ? BUBBLE_MS[scan.verdict === "benign" ? "ok" : "danger"]
+          : REACTION_MS;
+    const timeout = setTimeout(() => setScan({ phase: "idle" }), ms);
     return () => clearTimeout(timeout);
   }, [scan]);
 
@@ -370,10 +447,19 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
 
   useEffect(() => () => unwatchRef.current?.(), []);
 
-  const say = (text: string) => setBubble({ text, key: `${Date.now()}` });
+  /**
+   * Shows a speech bubble. A danger bubble stays up over later chatter and
+   * info/ok alerts, unless `force` (the user did something).
+   */
+  const say = (text: string, tone: BubbleTone = "chat", force = false) => {
+    const next = { key: `say-${++bubbleIdRef.current}`, text, tone };
+    setBubble((current) =>
+      current?.tone === "danger" && tone !== "danger" && !force ? current : next,
+    );
+  };
 
   /** One-shot physical reaction to a verdict. */
-  const react = (verdict: Verdict | "failed") => {
+  const react = (verdict: ScanVerdict | "failed") => {
     const s = stateRef.current;
     const ladybug = ladybugRef.current;
     if (!s || !ladybug) return;
@@ -408,70 +494,92 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     }
   };
 
-  /** Starts a scan, replacing any running one. */
-  const startScan = (url: string) => {
-    const gen = ++scanGenRef.current;
+  /** Stops following the current scan. Returns the generation for the next one. */
+  const stopScan = () => {
     unwatchRef.current?.();
     unwatchRef.current = null;
-    setBubble(null);
-    setScan({ phase: "scanning", id: null, url, status: "queued" });
-    const current = () => gen === scanGenRef.current;
+    return ++scanGenRef.current;
+  };
 
-    const finish = (id: string, verdict: Verdict | "failed", score: number | null) => {
+  /** Follows a scan's events until its verdict, then reacts. */
+  const watch = (gen: number, id: string) => {
+    const current = () => gen === scanGenRef.current;
+    remember(followedScansRef.current, id);
+
+    const finish = (verdict: ScanVerdict | "failed", score: number | null) => {
       if (!current()) return;
-      setScan({ phase: "done", id, verdict, score });
+      if (reactedScansRef.current.has(id)) {
+        // Its alert got here first and already reacted; just fill in the details.
+        if (verdict !== "failed") {
+          setScan((prev) =>
+            prev.phase === "done" && prev.id === id ? { ...prev, verdict, score } : prev,
+          );
+        }
+        return;
+      }
+      remember(reactedScansRef.current, id);
+      setScan({ phase: "done", id, verdict, score, fromAlert: false });
       react(verdict);
     };
 
+    let report: { verdict: ScanVerdict; score: number } | null = null;
+    let offline = false;
+    unwatchRef.current = watchScan(
+      id,
+      (event) => {
+        if (!current()) return;
+        offline = false;
+        const remark = eventRemark(event);
+        if (remark) say(remark);
+        if (event.type === "report") {
+          report = { verdict: event.verdict, score: event.score };
+        } else if (event.type === "status") {
+          if (event.status === "failed") {
+            finish("failed", null);
+          } else if (event.status === "done") {
+            if (report) {
+              finish(report.verdict, report.score);
+            } else {
+              // No report event (e.g. the stream expired); read the stored one.
+              getScan(id)
+                .then((res) =>
+                  res.report
+                    ? finish(res.report.verdict, res.report.score)
+                    : finish("failed", null),
+                )
+                .catch(() => finish("failed", null));
+            }
+          } else {
+            const status = event.status;
+            setScan((prev) =>
+              prev.phase === "scanning" && prev.id === id ? { ...prev, status } : prev,
+            );
+          }
+        }
+      },
+      () => {
+        // EventSource retries on its own; just mention it once per outage.
+        if (!current() || offline) return;
+        offline = true;
+        say(OFFLINE_MESSAGE);
+      },
+    );
+  };
+
+  /** Starts a scan the user asked for, replacing any running one. */
+  const startScan = (url: string) => {
+    const gen = stopScan();
+    setBubble(null);
+    setScan({ phase: "scanning", origin: "manual", id: null, url, status: "queued" });
+
     createScan(url)
       .then((id) => {
-        if (!current()) return;
-        setScan({ phase: "scanning", id, url, status: "queued" });
-        let report: { verdict: Verdict; score: number } | null = null;
-        let offline = false;
-        unwatchRef.current = watchScan(
-          id,
-          (event) => {
-            if (!current()) return;
-            offline = false;
-            const remark = eventRemark(event);
-            if (remark) say(remark);
-            if (event.type === "report") {
-              report = { verdict: event.verdict, score: event.score };
-            } else if (event.type === "status") {
-              if (event.status === "failed") {
-                finish(id, "failed", null);
-              } else if (event.status === "done") {
-                if (report) {
-                  finish(id, report.verdict, report.score);
-                } else {
-                  // No report event (e.g. the stream expired); read the stored one.
-                  getScan(id)
-                    .then((res) =>
-                      res.report
-                        ? finish(id, res.report.verdict, res.report.score)
-                        : finish(id, "failed", null),
-                    )
-                    .catch(() => finish(id, "failed", null));
-                }
-              } else {
-                const status = event.status;
-                setScan((prev) =>
-                  prev.phase === "scanning" && prev.id === id ? { ...prev, status } : prev,
-                );
-              }
-            }
-          },
-          () => {
-            // EventSource retries on its own; just mention it once per outage.
-            if (!current() || offline) return;
-            offline = true;
-            say(OFFLINE_MESSAGE);
-          },
-        );
+        if (gen !== scanGenRef.current) return;
+        setScan({ phase: "scanning", origin: "manual", id, url, status: "queued" });
+        watch(gen, id);
       })
       .catch((err: unknown) => {
-        if (!current()) return;
+        if (gen !== scanGenRef.current) return;
         const message =
           err instanceof OfflineError
             ? OFFLINE_MESSAGE
@@ -484,10 +592,52 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
 
   const onScanRequested = useEffectEvent((url: string | null) => {
     if (url) startScan(url);
-    else say(NO_CLIPBOARD_URL_MESSAGE);
+    else say(NO_CLIPBOARD_URL_MESSAGE, "chat", true);
   });
 
   useEffect(() => window.ladybug.onScanRequested((url) => onScanRequested(url)), []);
+
+  // Alerts from the server about sites visited in the browser. Unknown sites
+  // get a sandbox scan, which the pet follows as if the user had dropped the link.
+  const onAlert = useEffectEvent((alert: PetAlert) => {
+    const { level, scanId } = alert;
+    const ladybug = ladybugRef.current;
+    say(alert.message, level);
+
+    if (level === "info") {
+      // "Checking it…" (or "couldn't finish"): follow the scan if it's new to us.
+      ladybug?.startle(1);
+      const known =
+        scanId !== undefined &&
+        (followedScansRef.current.has(scanId) || reactedScansRef.current.has(scanId));
+      if (scanId && !known && alertCanTakeOver(scan, level)) {
+        const gen = stopScan();
+        setScan({ phase: "scanning", origin: "alert", id: scanId, url: alert.url, status: "queued" });
+        watch(gen, scanId);
+      }
+      return;
+    }
+
+    // danger / ok. The scan's own stream may have reported this result already.
+    if (scanId) {
+      if (reactedScansRef.current.has(scanId)) return;
+      remember(reactedScansRef.current, scanId);
+    }
+    if (level === "danger") ladybug?.startle(3);
+    if (!alertCanTakeOver(scan, level)) {
+      // Busy with the user's own scan: flash a warning without dropping it.
+      if (level === "danger") ladybug?.alarm();
+      return;
+    }
+    // Keep watching if this is the scan being followed; its stream fills in the score.
+    const following = scan.phase === "scanning" && scanId !== undefined && scan.id === scanId;
+    if (!following) stopScan();
+    const verdict: ScanVerdict = level === "danger" ? "malicious" : "benign";
+    setScan({ phase: "done", id: scanId ?? null, verdict, score: null, fromAlert: true });
+    react(verdict);
+  });
+
+  useEffect(() => subscribeToAlerts((alert) => onAlert(alert)), []);
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -546,21 +696,24 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       s.vy = Math.max(-2500, Math.min(2500, s.vy));
       s.mode = "airborne";
       setDragging(false);
-    } else if (scan.phase === "scanning" || scan.phase === "done") {
+    } else if (scan.phase === "scanning" || (scan.phase === "done" && scan.id)) {
       // Click during or after a scan: open the full report.
       if (scan.id) window.ladybug.openExternal(reportUrl(scan.id));
-      if (scan.phase === "done") setScan({ phase: "idle" });
+      if (scan.phase === "done") {
+        setScan({ phase: "idle" });
+        setBubble(null);
+      }
     } else {
-      // Click: hop and say hi.
+      // Click: hop and say hi. This also dismisses an alert.
       if (s.mode !== "airborne") {
         s.vx = 0;
         s.vy = HOP_VELOCITY;
         s.mode = "airborne";
       }
-      if (scan.phase === "error") setScan({ phase: "idle" });
+      if (scan.phase !== "idle") setScan({ phase: "idle" });
       fetchGreeting()
-        .then(say)
-        .catch(() => say(OFFLINE_MESSAGE));
+        .then((message) => say(message, "chat", true))
+        .catch(() => say(OFFLINE_MESSAGE, "chat", true));
     }
   };
 
@@ -587,11 +740,11 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
     setDropHover(false);
     const url = linkFromDrop(e.dataTransfer);
     if (url) startScan(url);
-    else say(NOT_A_LINK_MESSAGE);
+    else say(NOT_A_LINK_MESSAGE, "chat", true);
   };
 
   const shown: Bubble | null = dropHover
-    ? { text: DROP_MESSAGE, key: "drop" }
+    ? { text: DROP_MESSAGE, tone: "chat", key: "drop" }
     : (bubble ?? scanBubble(scan));
 
   return (
@@ -610,7 +763,13 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       onDrop={onDrop}
     >
       {shown && (
-        <div key={shown.key} className={shown.tone ? `pet-bubble ${shown.tone}` : "pet-bubble"}>
+        <div
+          key={shown.key}
+          ref={bubbleRef}
+          className="pet-bubble"
+          data-tone={shown.tone}
+          role={shown.tone === "danger" ? "alert" : "status"}
+        >
           {shown.text}
         </div>
       )}

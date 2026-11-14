@@ -1,5 +1,5 @@
 import { isTerminalStatus } from "@ladybug/shared";
-import type { Finding, ScanEvent, ScanReport, ScanResponse, ScanStatus, ScoreSignal, Verdict } from "@ladybug/shared";
+import type { Finding, ScanEvent, ScanReport, ScanResponse, ScanStatus, ScoreSignal, ScanVerdict } from "@ladybug/shared";
 
 export type LiveScreenshot = { artifactKey: string; label: string; at: string | null };
 export type LiveFinding = Finding & { id: string; at: string | null };
@@ -24,7 +24,7 @@ export type ScanState = {
   signals: ScoreSignal[];
   redirectChain: string[];
   /** From the `report` event; the full report may follow later. */
-  result: { score: number; verdict: Verdict } | null;
+  result: { score: number; verdict: ScanVerdict } | null;
   report: ScanReport | null;
   eventCount: number;
 };

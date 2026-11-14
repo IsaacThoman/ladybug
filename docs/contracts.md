@@ -83,4 +83,4 @@ Worker only:
 | `URLHAUS_AUTH_KEY` | yes | abuse.ch Auth-Key (URLhaus + MalwareBazaar) |
 | `WORKER_CONCURRENCY` | | default 10 |
 
-Web and desktop (Vite, build time): `VITE_SERVER_URL` (desktop default `http://localhost:3001`; web default same origin, Vite dev proxies `/api`), `VITE_WEB_URL` (desktop, default `http://localhost:5174`), `VITE_API_KEY` (desktop).
+Web and desktop (Vite, build time): `VITE_SERVER_URL` (desktop default `http://localhost:3001`; web default same origin, Vite dev proxies `/api`), `VITE_WEB_URL` (desktop, default `http://localhost:5175`), `VITE_API_KEY` (desktop).

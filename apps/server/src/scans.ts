@@ -38,6 +38,38 @@ function scanId(req: Request, res: Response): string | null {
   return id;
 }
 
+/** Stores and queues a scan for an already-validated URL. */
+export async function createScan(deps: ScanDeps, url: string, apiKey: string | null, id: string = randomUUID()) {
+  await insertScan(deps.db, { id, inputUrl: url, apiKey });
+  await deps.queue.add("scan", { scanId: id, url }, { jobId: id, removeOnComplete: 1000, removeOnFail: 1000 });
+  return id;
+}
+
+/**
+ * Follows a scan's event stream until it finishes, then returns the stored
+ * scan. Throws if it doesn't finish within timeoutMs.
+ */
+export async function waitForScan(deps: ScanDeps, scanId: string, timeoutMs: number) {
+  const subscriber = deps.createSubscriber();
+  const deadline = Date.now() + timeoutMs;
+  let lastId = "0";
+  try {
+    while (Date.now() < deadline) {
+      const entries = await readEvents(subscriber, scanId, lastId, Math.min(SSE_BLOCK_MS, deadline - Date.now()));
+      for (const entry of entries) {
+        lastId = entry.id;
+        if (entry.event.type === "status" && isTerminalStatus(entry.event.status)) {
+          const scan = await getScan(deps.db, scanId);
+          if (scan) return scan;
+        }
+      }
+    }
+  } finally {
+    subscriber.disconnect();
+  }
+  throw new Error(`scan ${scanId} didn't finish within ${Math.round(timeoutMs / 1000)}s`);
+}
+
 export function scansRouter(deps: ScanDeps) {
   const router = Router();
 
@@ -59,10 +91,7 @@ export function scansRouter(deps: ScanDeps) {
     const parsed = normaliseScanUrl(req.body?.url);
     if ("error" in parsed) return fail(res, 400, parsed.error);
 
-    const id = randomUUID();
-    await insertScan(deps.db, { id, inputUrl: parsed.url, apiKey });
-    await deps.queue.add("scan", { scanId: id, url: parsed.url }, { jobId: id, removeOnComplete: 1000, removeOnFail: 1000 });
-    const body: CreateScanResponse = { scanId: id };
+    const body: CreateScanResponse = { scanId: await createScan(deps, parsed.url, apiKey) };
     res.status(202).json(body);
   });
 

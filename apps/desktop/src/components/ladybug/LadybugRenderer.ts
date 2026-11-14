@@ -94,6 +94,7 @@ export class LadybugRenderer {
   private blink = 0;
   private glance = 0;
   private glanceIn = randomBetween(2, 5);
+  private startleLeft = 0;
 
   private mood: LadybugMood = "calm";
   /** Seconds since the mood last changed. */
@@ -185,6 +186,11 @@ export class LadybugRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Startled: antennae go frantic and the body shivers for a moment. */
+  startle(seconds = 2.5) {
+    this.startleLeft = Math.max(this.startleLeft, seconds);
+  }
+
   /** Squash on landing. `impact` is the downward speed in px/s. */
   land(impact: number) {
     this.squashVelocity -= Math.min(impact / 260, 7);
@@ -213,6 +219,8 @@ export class LadybugRenderer {
     const rig = this.rig;
 
     this.vx += (pose.vx - this.vx) * ease(10, dt);
+    this.startleLeft = Math.max(0, this.startleLeft - dt);
+    const startled = this.startleLeft > 0;
 
     if (mood !== this.mood) {
       this.mood = mood;
@@ -304,11 +312,11 @@ export class LadybugRenderer {
       this.expect * 0.45 -
       this.alarmed * 0.12;
 
-    // Antennae: lazy sway, springy when moving, frantic when held. Sniffing
+    // Antennae: lazy sway, springy when moving, frantic when held or startled. Sniffing
     // makes them twitch; nervous sweeps them back; alarmed stands them up
     // stiff and quivering; expectant perks them forward.
     for (const { pivot, side } of rig.antennae) {
-      const frantic = held ? Math.sin(t * 22 + side) * 0.25 : 0;
+      const frantic = held || startled ? Math.sin(t * 22 + side) * 0.25 : 0;
       const twitch =
         this.sniff * Math.max(0, Math.sin(t * 2.6 + side * 1.3)) ** 3 * Math.sin(t * 34 + side);
       const quiver = this.alarmed * Math.sin(t * 41 + side) * 0.07;
@@ -340,8 +348,10 @@ export class LadybugRenderer {
       eye.scale.y += (eyeOpen - eye.scale.y) * ease(40, dt);
       eye.scale.x = wide;
     }
-    // The smile flattens, then turns into a frown.
-    rig.mouth.scale.y = 1 - 2 * Math.max(this.nervous, this.alarmed) * 0.85;
+    // Worry shows as a small frown; the calm face has no mouth.
+    const frown = Math.max(this.nervous * 0.75, this.alarmed);
+    rig.frown.visible = frown > 0.02;
+    rig.frown.scale.setScalar(frown);
 
     // Wing cases pop open and the wings buzz while in the air, or flare in alarm.
     this.flare = Math.max(0, this.flare - dt);
@@ -377,7 +387,10 @@ export class LadybugRenderer {
     // alarmed: trembling.
     const tiltGoal = held || airborne ? THREE.MathUtils.clamp(-this.vx / 2400, -0.45, 0.45) : 0;
     this.tilt += (tiltGoal - this.tilt) * ease(8, dt);
-    const tremble = this.nervous * 0.7 + this.alarmed * (0.3 + flashing * 0.7);
+    const tremble =
+      this.nervous * 0.7 +
+      this.alarmed * (0.3 + flashing * 0.7) +
+      (startled ? 1.6 * Math.min(1, this.startleLeft) : 0);
     this.sway.rotation.z = this.tilt + Math.sin(t * 53) * 0.03 * tremble;
     this.sway.position.x = (Math.sin(t * 61) * 0.006 + Math.sin(t * 37) * 0.004) * tremble;
 

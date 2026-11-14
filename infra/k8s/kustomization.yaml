@@ -6,6 +6,7 @@ resources:
   - rbac.yaml
   - configmap.yaml
   - gateway.yaml
+  - typesense.yaml
   - server.yaml
   - worker.yaml
   - web.yaml

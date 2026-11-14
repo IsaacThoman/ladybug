@@ -1,34 +1,59 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { Queue } from "bullmq";
-import { DEFAULT_SERVER_PORT, SCAN_QUEUE } from "@ladybug/shared";
+import { SCAN_QUEUE } from "@ladybug/shared";
 import type { ScanJob } from "@ladybug/shared";
 import { createArtifactStore, createDb, createRedis, migrate } from "@ladybug/backend";
+import { configureAnalyzer } from "./analyzer.ts";
 import { createApp } from "./app.ts";
+import { config } from "./config.ts";
+import type { ScanDeps } from "./scans.ts";
+import { seedUrls } from "./seed.ts";
+import { initStore } from "./store.ts";
 
-const port = Number(process.env.PORT ?? DEFAULT_SERVER_PORT);
-const apiKeys = (process.env.API_KEYS ?? "")
-  .split(",")
-  .map((key) => key.trim())
-  .filter(Boolean);
+const RETRY_MS = 3_000;
 
+// Scans: Postgres for scan rows, Valkey for the queue and event streams.
 const db = createDb();
 await migrate(db);
 const redis = createRedis();
 const queue = new Queue<ScanJob>(SCAN_QUEUE, { connection: createRedis({ forBullmq: true }) });
-
-const app = createApp({
+const deps: ScanDeps = {
   db,
   redis,
   queue,
   artifacts: createArtifactStore(),
   createSubscriber: () => createRedis(),
-  apiKeys,
-  rateLimitPerMinute: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 10),
+  apiKeys: config.apiKeys,
+  rateLimitPerMinute: config.rateLimitPerMinute,
+};
+configureAnalyzer(deps);
+
+const server = createApp(deps).listen(config.port, () => {
+  console.log(`[server] listening on http://localhost:${config.port} (analyzer: ${config.analyzer})`);
+  if (config.apiKeys.length === 0) console.warn("[server] API_KEYS is not set: anyone can start scans");
 });
 
-const server = app.listen(port, () => {
-  console.log(`[server] listening on http://localhost:${port}`);
-  if (apiKeys.length === 0) console.warn("[server] API_KEYS is not set: anyone can start scans");
-});
+// Typesense may still be starting (e.g. under docker compose), so keep trying.
+async function connectStore() {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await initStore();
+      await seedUrls();
+      console.log(`[server] connected to Typesense at ${config.typesenseUrl}`);
+      return;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (attempt === 1 || attempt % 10 === 0) {
+        console.warn(
+          `[server] Typesense not ready at ${config.typesenseUrl} (${reason}); retrying every ${RETRY_MS / 1000}s`,
+        );
+      }
+      await sleep(RETRY_MS);
+    }
+  }
+}
+
+void connectStore();
 
 const shutdown = async () => {
   server.close();

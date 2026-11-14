@@ -83,7 +83,12 @@ else
   echo "Keeping the existing gateway-ca (CA rotation must be deliberate)."
 fi
 
+# Keep the Typesense key stable across bootstraps; generate one the first time.
+typesense_key=$(kubectl -n ladybug get secret ladybug-secrets --ignore-not-found \
+  -o jsonpath='{.data.TYPESENSE_API_KEY}' | base64 -d)
+[[ -n "$typesense_key" ]] || typesense_key=$(openssl rand -hex 24)
 {
+  printf 'TYPESENSE_API_KEY=%s\n' "$typesense_key"
   printf 'DATABASE_URL=%s\n' "$database_url"
   printf 'REDIS_URL=%s\n' "$redis_url"
   printf 'S3_ACCESS_KEY_ID=%s\n' "$s3_access_key_id"
@@ -92,11 +97,11 @@ fi
 kubectl -n ladybug create secret generic ladybug-secrets \
   --from-env-file="$scratch/managed.env" --from-env-file="$secrets_file" \
   --dry-run=client -o yaml | kubectl apply -f -
-unset database_url redis_url s3_access_key_id s3_secret_access_key
+unset database_url redis_url s3_access_key_id s3_secret_access_key typesense_key
 
 # A generated copy keeps the checked-in templates and their placeholders intact.
 # Start with raw resources so a previous --set-images cannot override this TAG.
-for file in namespaces network-policies rbac configmap gateway server worker web image-fields; do
+for file in namespaces network-policies rbac configmap gateway typesense server worker web image-fields; do
   cp "$k8s_dir/$file.yaml" "$generated_dir/$file.yaml"
 done
 kubectl -n ladybug create configmap ladybug-config --dry-run=client -o yaml \
@@ -114,7 +119,7 @@ registry, tag = sys.argv[1:]
 json.dump({
     "apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
     "resources": [f"{name}.yaml" for name in
-                  ("namespaces", "network-policies", "rbac", "configmap", "gateway", "server", "worker", "web")],
+                  ("namespaces", "network-policies", "rbac", "configmap", "gateway", "typesense", "server", "worker", "web")],
     "configurations": ["image-fields.yaml"],
     "patches": [{"path": "configmap-values.yaml"}],
     "images": [{"name": f"ladybug-{name}", "newName": f"{registry}/ladybug-{name}", "newTag": tag}

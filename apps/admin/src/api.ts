@@ -1,0 +1,75 @@
+import type {
+  AdminSummary,
+  CheckResponse,
+  LogEvent,
+  LogEventType,
+  Page,
+  UrlRecord,
+  UrlScope,
+  Verdict,
+} from "@ladybug/shared";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (res.status === 204) return undefined as T;
+  const data: unknown = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
+  }
+  return data as T;
+}
+
+const query = (params: Record<string, string | number | undefined>) => {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  const text = search.toString();
+  return text ? `?${text}` : "";
+};
+
+export type EventFilter = {
+  q?: string;
+  types?: LogEventType[];
+  verdict?: Verdict;
+};
+
+export type UrlFilter = {
+  q?: string;
+  verdict?: Verdict;
+};
+
+export const api = {
+  summary: () => request<AdminSummary>("/api/admin/summary"),
+
+  events: (filter: EventFilter, page: number, perPage: number) =>
+    request<Page<LogEvent>>(
+      `/api/admin/events${query({
+        q: filter.q,
+        type: filter.types?.join(","),
+        verdict: filter.verdict,
+        page,
+        perPage,
+      })}`,
+    ),
+
+  urls: (filter: UrlFilter, page: number, perPage: number) =>
+    request<Page<UrlRecord>>(`/api/admin/urls${query({ ...filter, page, perPage })}`),
+
+  addUrl: (body: { url: string; scope: UrlScope; verdict: Verdict; reason?: string }) =>
+    request<UrlRecord>("/api/admin/urls", { method: "POST", body: JSON.stringify(body) }),
+
+  setVerdict: (id: string, verdict: Verdict) =>
+    request<UrlRecord>(`/api/admin/urls/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ verdict }),
+    }),
+
+  deleteUrl: (id: string) => request<void>(`/api/admin/urls/${id}`, { method: "DELETE" }),
+
+  check: (url: string) =>
+    request<CheckResponse>("/api/admin/check", { method: "POST", body: JSON.stringify({ url }) }),
+};

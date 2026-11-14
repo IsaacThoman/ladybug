@@ -4,7 +4,9 @@ metadata:
   name: server
   namespace: ladybug
 spec:
-  replicas: 2
+  # One replica: running analyses and the pet alert stream live in this
+  # process's memory, so a pet on one replica would miss another's alerts.
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: server

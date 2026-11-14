@@ -15,7 +15,8 @@ export type ScanStatus = (typeof SCAN_STATUSES)[number];
 export const TERMINAL_STATUSES: readonly ScanStatus[] = ["done", "failed"];
 export const isTerminalStatus = (status: ScanStatus) => TERMINAL_STATUSES.includes(status);
 
-export type Verdict = "benign" | "suspicious" | "malicious";
+/** A scan's verdict. The URL store keeps a coarser safe / unsafe `Verdict`. */
+export type ScanVerdict = "benign" | "suspicious" | "malicious";
 export type Confidence = "low" | "medium" | "high";
 export type Severity = "info" | "low" | "medium" | "high";
 
@@ -96,7 +97,7 @@ export type ScanReport = {
   signalScore: number;
   /** From the agent. null when the agent didn't produce one. */
   llmScore: number | null;
-  verdict: Verdict;
+  verdict: ScanVerdict;
   confidence: Confidence;
   categories: string[];
   findings: Finding[];
@@ -119,7 +120,7 @@ export type ScanEvent =
   | { type: "tool_call"; tool: string; summary: string; at: string }
   | { type: "signal"; signal: ScoreSignal; at: string }
   | { type: "redirect_chain"; chain: string[]; at: string }
-  | { type: "report"; score: number; verdict: Verdict; at: string };
+  | { type: "report"; score: number; verdict: ScanVerdict; at: string };
 
 export type ScanEventType = ScanEvent["type"];
 
@@ -141,7 +142,7 @@ export type ScanResponse = {
 
 export type ScanListItem = Omit<ScanResponse, "report"> & {
   score: number | null;
-  verdict: Verdict | null;
+  verdict: ScanVerdict | null;
   finalUrl: string | null;
 };
 /** GET /api/scans?limit=20 — most recent first. */
@@ -197,7 +198,7 @@ CREATE INDEX IF NOT EXISTS scans_created_at_idx ON scans (created_at DESC);
 `;
 
 /** Verdict thresholds: under 30 benign, 30–69 suspicious, 70+ malicious. */
-export function verdictForScore(score: number): Verdict {
+export function verdictForScore(score: number): ScanVerdict {
   if (score >= 70) return "malicious";
   if (score >= 30) return "suspicious";
   return "benign";

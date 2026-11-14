@@ -1,7 +1,9 @@
 import { useCallback } from "react";
+import { Mascot } from "@ladybug/mascot/web";
 import { artifactUrl } from "../api.ts";
 import { useLiveScan } from "../useLiveScan.ts";
 import ErrorState from "./ErrorState.tsx";
+import { PageEnd } from "./Garden.tsx";
 import Header from "./Header.tsx";
 import ReportView from "./ReportView.tsx";
 
@@ -16,9 +18,12 @@ export default function LiveScanPage({ scanId }: { scanId: string }) {
       <>
         <Header />
         <main className="loading-state" aria-busy="true">
-          <span className="spinner" aria-hidden="true" />
+          <div className="state-mascot">
+            <Mascot mood="sniffing" look={null} fallback={<span className="spinner" aria-hidden="true" />} />
+          </div>
           Loading scan…
         </main>
+        <PageEnd />
       </>
     );
   }

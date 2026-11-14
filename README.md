@@ -20,12 +20,13 @@ npm-workspaces monorepo:
 | --- | --- |
 | `apps/desktop` | Electron + Vite + React app. A transparent, click-through window covers the whole primary display, and a 3D ladybug (three.js) walks around on top of it. It listens to the server for alerts. |
 | `apps/server` | Node + Express backend (TypeScript, run directly with Node's type stripping). Checks URLs, runs analyses, logs activity, serves the admin UI. |
-| `apps/admin` | Vite + React admin UI: stats, live activity log, running analyses, and the URL database. |
+| `apps/admin` | Vite + React admin UI: a login page, stats, live activity log, running analyses, and the URL database. |
 | `apps/extension` | Chrome extension (Manifest V3) that reports each page you visit to the server. |
 | `apps/worker` | Scan worker: sandbox lifecycle, pre-scan lookups, scripted detonation, the LLM agent loop, scoring. |
 | `apps/sandbox` | Sandbox image: headful Chrome on Xvfb plus an HTTP tool daemon the worker drives. |
 | `apps/web` | Vite + React live scan report page, with a recorded demo at `/demo`. |
 | `packages/shared` | Types and constants shared by all of the above. |
+| `packages/mascot` | The 3D ladybug: the desktop pet's three.js model and renderer, plus the React pieces the report page and admin UI use (the bug on its leaf, and the hills and clouds of its garden). |
 | `packages/backend` | Node-only helpers for the server and worker: Postgres (with the TimescaleDB and pgvector parts), Valkey, the artifact store. |
 | `infra/` | Vultr deployment: Terraform, kustomize manifests with NetworkPolicies, the mitmproxy egress gateway. See [`infra/README.md`](infra/README.md). |
 | `docs/contracts.md` | Names, ports, labels and environment variables the pieces agree on. |
@@ -109,12 +110,12 @@ To see it work, visit `https://example.com/` (nothing happens), the phishing tes
 
 ### 4. Admin UI
 
-- With `npm run stack:up`: <http://localhost:8080/admin/>, or the server directly at <http://localhost:3001/admin/>. If `ADMIN_PASSWORD` is set it asks for it; any username works.
+- With `npm run stack:up`: <http://localhost:8080/admin/>, or the server directly at <http://localhost:3001/admin/>. If `ADMIN_PASSWORD` is set, it opens on a login page at `/admin/login`. Signing in sets an `HttpOnly` session cookie for 7 days; changing `ADMIN_PASSWORD` signs everyone out. After 10 wrong passwords from one address, logins are refused for 15 minutes. Scripts can skip the page and send the password with HTTP Basic auth (any username).
 - With `npm run dev:server`: `npm run dev:admin`, then <http://localhost:5174/admin/>. It proxies API calls to the server.
 
 It has three tabs:
 
-- **Overview:** stats, a chart of visits checked over the last hour, day or week (from TimescaleDB, see [Postgres and Tiger Data](#postgres-and-tiger-data)), a "check a URL" box that runs the same pipeline as a visit, analyses in progress, recent detections and the latest activity.
+- **Overview:** the ladybug in its garden, reacting to live activity the way the pets do (sniffing while links are analysed, alarmed at an unsafe one), next to the stats. Then a chart of visits checked over the last hour, day or week (from TimescaleDB, see [Postgres and Tiger Data](#postgres-and-tiger-data)), a "check a URL" box that runs the same pipeline as a visit, analyses in progress, recent detections and the latest activity.
 - **Activity log:** every request, decision, analysis, pet alert and admin change. You can search and filter it, click a row for details, and new events appear live.
 - **URL database:** known URLs and hosts, searched in Typesense. You can add rules, flip verdicts, or forget a record so it's analysed again.
 
@@ -200,6 +201,7 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 | `POST /api/scans` `{ url }`, `GET /api/scans`, `GET /api/scans/:id` | Pet, report page |
 | `GET /api/scans/:id/events` | Report page, pet (SSE, replays from the start) |
 | `GET /api/scans/:id/artifacts/:key` | Report page (screenshots, HAR) |
+| `GET /api/admin/session`, `POST /api/admin/login` `{ password }`, `POST /api/admin/logout` | Admin login page (open) |
 | `GET /api/admin/summary`, `/events`, `/urls`, `/stream`, `/timeline?range=1h\|24h\|7d` | Admin UI |
 | `POST /api/admin/check`, `POST/PUT/DELETE /api/admin/urls` | Admin UI |
 | `GET /health` | Everything |
@@ -213,7 +215,7 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 1. Create a Git-based application in Coolify with the **Docker Compose** build pack, using `compose.yaml` at the repository root. Don't add `compose.local.yaml`.
 2. Set environment variables:
    - `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required: strong, URL-safe values)
-   - `ADMIN_PASSWORD`, to protect `/admin`
+   - `ADMIN_PASSWORD`, for the admin login page
    - `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL`
    - optionally `DATABASE_URL` (a Tiger Cloud service instead of the bundled Postgres), `API_KEYS`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY` and `WORKER_CONCURRENCY`
 

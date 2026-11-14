@@ -127,6 +127,18 @@ export type Page<T> = {
   perPage: number;
 };
 
+/**
+ * GET /api/admin/session, and the reply to POST /api/admin/login. Admin needs
+ * a login only when the server has ADMIN_PASSWORD set.
+ */
+export type AdminSession = {
+  required: boolean;
+  /** True when this browser may use the admin API: logged in, or no login required. */
+  authenticated: boolean;
+};
+
+export type AdminLoginRequest = { password: string };
+
 export type AdminSummary = {
   typesense: HealthResponse["typesense"];
   urls: { total: number; safe: number; unsafe: number };

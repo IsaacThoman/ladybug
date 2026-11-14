@@ -1,5 +1,8 @@
+import { Mascot } from "@ladybug/mascot/web";
 import type { ApiFailure } from "../api.ts";
+import { PageEnd } from "./Garden.tsx";
 import Header from "./Header.tsx";
+import LadybugMark from "./LadybugMark.tsx";
 import Link from "./Link.tsx";
 
 export default function ErrorState({ failure, scanId }: { failure: ApiFailure; scanId?: string }) {
@@ -8,12 +11,10 @@ export default function ErrorState({ failure, scanId }: { failure: ApiFailure; s
     <>
       <Header />
       <main className="error-state">
-        <div className="error-card panel">
-          <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
-            <circle cx="28" cy="28" r="26" fill="none" stroke="currentColor" strokeWidth="3" opacity="0.35" />
-            <path d="M28 15v17" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-            <circle cx="28" cy="40" r="2.6" fill="currentColor" />
-          </svg>
+        <div className="error-card">
+          <div className="state-mascot">
+            <Mascot mood="nervous" fallback={<LadybugMark size={96} />} />
+          </div>
           <h1>{title}</h1>
           <p>{body}</p>
           <div className="error-actions">
@@ -26,6 +27,7 @@ export default function ErrorState({ failure, scanId }: { failure: ApiFailure; s
           </div>
         </div>
       </main>
+      <PageEnd />
     </>
   );
 }

@@ -6,7 +6,7 @@ export default function Header({ children }: { children?: ReactNode }) {
   return (
     <header className="app-header">
       <Link href="/" className="brand" aria-label="ladybug home">
-        <LadybugMark size={30} />
+        <LadybugMark size={32} />
         <span className="brand-name">ladybug</span>
       </Link>
       <div className="app-header-actions">{children}</div>

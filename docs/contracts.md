@@ -17,6 +17,9 @@ The source of truth is `packages/shared/src/scan.ts` (scan, event, report and HT
 | `GET /api/scans/:id` | none | `ScanResponse` |
 | `GET /api/scans/:id/events` | none | SSE, see `eventsPath` in shared |
 | `GET /api/scans/:id/artifacts/:key` | none | 302 to a presigned URL (or the file in local dev), see `artifactPath` |
+| `GET /api/admin/session` | none | `AdminSession` |
+| `POST /api/admin/login {password}` | none (10 wrong passwords per client per 15 minutes) | `AdminSession`, and sets the `ladybug_admin` session cookie |
+| `POST /api/admin/logout` | none | 204, clears the cookie |
 | `GET /api/admin/timeline?range=1h\|24h\|7d` | admin | `CheckTimeline` |
 
 Errors are `ApiError` JSON with 400/401/404/429. Scan ids are UUIDs, so reads don't need a key.
@@ -63,7 +66,7 @@ Postgres extensions: `timescaledb` (the `url_checks` hypertable and `url_checks_
 | `S3_ACCESS_KEY_ID` | yes | |
 | `S3_SECRET_ACCESS_KEY` | yes | |
 
-Server only: `PORT` (3001), `API_KEYS` (comma-separated; unset disables auth), `RATE_LIMIT_PER_MINUTE` (default 10 per key), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes and in `compose.yaml`), `CLIENT_IP_HEADER` (trusted header with the client IP, e.g. `cf-connecting-ip` behind a Cloudflare Tunnel), `ADMIN_PASSWORD` (Basic auth for `/admin` and `/api/admin`; unset = open).
+Server only: `PORT` (3001), `API_KEYS` (comma-separated; unset disables auth), `RATE_LIMIT_PER_MINUTE` (default 10 per key), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes and in `compose.yaml`), `CLIENT_IP_HEADER` (trusted header with the client IP, e.g. `cf-connecting-ip` behind a Cloudflare Tunnel), `ADMIN_PASSWORD` (`/api/admin` needs the admin UI's session cookie, or HTTP Basic auth with any username; unset = open).
 
 Worker only:
 

@@ -3,8 +3,8 @@ import type { EventFilter } from "../api";
 import { useEventFeed } from "../useEventFeed";
 import CheckForm from "./CheckForm";
 import EventList from "./EventList";
+import GardenHero from "./GardenHero";
 import PendingList from "./PendingList";
-import StatTiles from "./StatTiles";
 import VisitsChart from "./VisitsChart";
 
 const DETECTIONS: EventFilter = { types: ["decision", "analysis_completed"], verdict: "unsafe" };
@@ -12,10 +12,14 @@ const EVERYTHING: EventFilter = {};
 
 export default function OverviewView({
   summary,
+  summaryError,
+  connected,
   pending,
   live,
 }: {
   summary: AdminSummary | null;
+  summaryError: boolean;
+  connected: boolean;
   pending: PendingAnalysis[];
   live: LogEvent[];
 }) {
@@ -25,7 +29,13 @@ export default function OverviewView({
 
   return (
     <div className="stack">
-      <StatTiles summary={summary} running={pending.length} />
+      <GardenHero
+        summary={summary}
+        summaryError={summaryError}
+        connected={connected}
+        pending={pending}
+        live={live}
+      />
       <VisitsChart refreshKey={lastDecision} />
       <div className="columns">
         <div className="stack">

@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { buildLadybug } from "./ladybugModel";
-import type { LadybugRig } from "./ladybugModel";
+import { buildLeaf } from "./leafModel.ts";
+import { buildLadybug } from "./ladybugModel.ts";
+import type { LadybugRig } from "./ladybugModel.ts";
 
 export type LadybugMode = "idle" | "walking" | "airborne" | "dragging";
 
@@ -21,6 +22,19 @@ export type LadybugPose = {
   heading: 1 | -1;
   /** Defaults to "calm". */
   mood?: LadybugMood;
+  /**
+   * Something to look at while idle, instead of glancing around at random:
+   * -1..1 on each axis, x to the viewer's right and y down.
+   */
+  look?: { x: number; y: number } | null;
+};
+
+export type LadybugOptions = {
+  /**
+   * Stand on a 3D leaf. The camera then frames the leaf, so the bug no longer
+   * lines its feet up with a 2D ground line as it turns.
+   */
+  perch?: boolean;
 };
 
 export type LadybugViewport = {
@@ -48,6 +62,8 @@ const FLASH_SECONDS = 2.6;
 const ALARM_TINT = new THREE.Color("#ff2414");
 /** Sideways offset of the magnifying glass from the bug's nose. */
 const LENS_X = 0.2;
+/** Model units/s² pulling a hop back down. */
+const HOP_GRAVITY = 22;
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 /** Frame-rate independent smoothing factor. */
@@ -77,6 +93,12 @@ export class LadybugRenderer {
   private readonly sway = new THREE.Group();
   private readonly shadow: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private readonly environment: THREE.Texture;
+  private readonly lights = {
+    sky: new THREE.HemisphereLight(),
+    key: new THREE.DirectionalLight(),
+    rim: new THREE.DirectionalLight(),
+  };
+  private readonly leaf: ReturnType<typeof buildLeaf> | null = null;
 
   private viewport: LadybugViewport;
   private framedAnchorZ = Number.NaN;
@@ -114,8 +136,12 @@ export class LadybugRenderer {
   private lens = 0;
   private lensSide: 1 | -1 = 1;
   private lensX = -LENS_X;
+  private lookX = 0;
+  private lookY = 0;
+  private hopY = 0;
+  private hopV = 0;
 
-  constructor(canvas: HTMLCanvasElement, viewport: LadybugViewport) {
+  constructor(canvas: HTMLCanvasElement, viewport: LadybugViewport, options: LadybugOptions = {}) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -127,15 +153,13 @@ export class LadybugRenderer {
     room.dispose();
     pmrem.dispose();
     this.scene.environment = this.environment;
-    this.scene.environmentIntensity = 0.55;
 
-    this.scene.add(new THREE.HemisphereLight("#fff4e6", "#7a5a4a", 1.1));
-    const key = new THREE.DirectionalLight("#fff1dc", 2.2);
-    key.position.set(-1.5, 3, 2.5);
-    this.scene.add(key);
-    const rim = new THREE.DirectionalLight("#cfe2ff", 1.2);
-    rim.position.set(2, 1.5, -2);
-    this.scene.add(rim);
+    this.scene.add(this.lights.sky);
+    this.lights.key.position.set(-1.5, 3, 2.5);
+    this.scene.add(this.lights.key);
+    this.lights.rim.position.set(2, 1.5, -2);
+    this.scene.add(this.lights.rim);
+    this.setLighting("day");
 
     this.rig = buildLadybug();
     this.sway.position.y = 0.22;
@@ -151,6 +175,11 @@ export class LadybugRenderer {
     this.shadow.scale.set(0.85, 1, 0.6);
     this.shadow.position.y = 0.001;
     this.scene.add(this.shadow);
+
+    if (options.perch) {
+      this.leaf = buildLeaf();
+      this.scene.add(this.leaf.root);
+    }
 
     this.viewport = viewport;
     this.renderer.setSize(viewport.width, viewport.height, false);
@@ -186,6 +215,33 @@ export class LadybugRenderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Warm sunlight, or cool moonlight for pages in dark mode. */
+  setLighting(time: "day" | "night") {
+    const { sky, key, rim } = this.lights;
+    const night = time === "night";
+    sky.color.set(night ? "#9fb4e8" : "#fff4e6");
+    sky.groundColor.set(night ? "#1c2238" : "#7a5a4a");
+    sky.intensity = night ? 0.75 : 1.1;
+    key.color.set(night ? "#c4d4ff" : "#fff1dc");
+    key.intensity = night ? 1.25 : 2.2;
+    rim.color.set(night ? "#8eb2ff" : "#cfe2ff");
+    rim.intensity = night ? 1.6 : 1.2;
+    this.scene.environmentIntensity = night ? 0.3 : 0.55;
+  }
+
+  /** Follow a new canvas size. */
+  resize(viewport: LadybugViewport) {
+    this.viewport = viewport;
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setSize(viewport.width, viewport.height, false);
+    this.framedAnchorZ = Number.NaN;
+  }
+
+  /** A little jump on the spot, `speed` in model units/s. Wings open on the way. */
+  hop(speed = 3.6) {
+    if (this.hopY <= 0) this.hopV = speed;
+  }
+
   /** Startled: antennae go frantic and the body shivers for a moment. */
   startle(seconds = 2.5) {
     this.startleLeft = Math.max(this.startleLeft, seconds);
@@ -215,8 +271,24 @@ export class LadybugRenderer {
     const mood = pose.mood ?? "calm";
     const walking = mode === "walking";
     const held = mode === "dragging";
-    const airborne = mode === "airborne";
     const rig = this.rig;
+
+    // Hops are the renderer's own, so a perched bug can jump off its leaf.
+    if (this.hopY > 0 || this.hopV > 0) {
+      this.hopV -= HOP_GRAVITY * dt;
+      this.hopY += this.hopV * dt;
+      if (this.hopY <= 0) {
+        // land() takes px/s at the desktop pet's 100 px per model unit.
+        this.land(-this.hopV * 100);
+        this.hopY = 0;
+        this.hopV = 0;
+      }
+    }
+    const hopping = this.hopY > 0;
+    const airborne = mode === "airborne" || hopping;
+    const look = mode === "idle" ? pose.look : null;
+    this.lookX = approach(this.lookX, look?.x ?? 0, 6, dt);
+    this.lookY = approach(this.lookY, look?.y ?? 0, 6, dt);
 
     this.vx += (pose.vx - this.vx) * ease(10, dt);
     this.startleLeft = Math.max(0, this.startleLeft - dt);
@@ -239,7 +311,7 @@ export class LadybugRenderer {
     // Facing: three-quarter view while moving, glance around while idle.
     // Looking up at a dragged link, or celebrating, it faces the viewer.
     const facesViewer = mood === "expectant" || mood === "happy";
-    if (mode === "idle" && !facesViewer) {
+    if (mode === "idle" && !facesViewer && !look) {
       this.glanceIn -= dt;
       if (this.glanceIn <= 0) {
         this.glance =
@@ -251,7 +323,11 @@ export class LadybugRenderer {
       this.glance = 0;
     }
     const targetYaw =
-      mode === "idle" ? this.glance : held ? pose.heading * 0.3 : pose.heading * WALK_YAW;
+      mode === "idle"
+        ? this.glance + this.lookX * 0.55
+        : held
+          ? pose.heading * 0.3
+          : pose.heading * WALK_YAW;
     this.yaw += (targetYaw - this.yaw) * ease(walking ? 8 : 5, dt);
     let spinYaw = 0;
     if (this.spin >= 0) {
@@ -261,7 +337,7 @@ export class LadybugRenderer {
     }
     const yaw = this.yaw + spinYaw;
     rig.root.rotation.y = yaw;
-    this.frameCamera(FRONT_FEET_Z * Math.cos(yaw));
+    this.frameCamera(this.leaf ? 0 : FRONT_FEET_Z * Math.cos(yaw));
 
     // Gait phase. Walking cadence follows ground speed so feet don't skate.
     const gaitTarget = walking || held ? 1 : 0;
@@ -304,13 +380,15 @@ export class LadybugRenderer {
     const tiltTarget = mode === "idle" ? Math.sin(t * 0.6) * (0.14 - this.expect * 0.08) : 0;
     this.headTilt += (tiltTarget - this.headTilt) * ease(3, dt);
     rig.head.rotation.z = this.headTilt;
+    rig.head.rotation.y = this.lookX * 0.3;
     const sniffBurst = Math.max(0, Math.sin(t * 1.9)) ** 2;
     const sniffNod = Math.sin(t * 17) * 0.08 * sniffBurst;
     rig.head.rotation.x =
       Math.sin(this.phase * 2) * 0.05 * this.gait +
       this.sniff * (0.3 + sniffNod) -
       this.expect * 0.45 -
-      this.alarmed * 0.12;
+      this.alarmed * 0.12 +
+      this.lookY * 0.3;
 
     // Antennae: lazy sway, springy when moving, frantic when held or startled. Sniffing
     // makes them twitch; nervous sweeps them back; alarmed stands them up
@@ -392,6 +470,7 @@ export class LadybugRenderer {
       this.alarmed * (0.3 + flashing * 0.7) +
       (startled ? 1.6 * Math.min(1, this.startleLeft) : 0);
     this.sway.rotation.z = this.tilt + Math.sin(t * 53) * 0.03 * tremble;
+    this.sway.position.y = 0.22 + this.hopY;
     this.sway.position.x = (Math.sin(t * 61) * 0.006 + Math.sin(t * 37) * 0.004) * tremble;
 
     // Magnifying glass: floats ahead of the nose on the viewer's side of the
@@ -424,21 +503,28 @@ export class LadybugRenderer {
     const s = THREE.MathUtils.clamp(this.squash, -0.3, 0.3);
     rig.root.scale.set(1 - s * 0.6, 1 + s, 1 - s * 0.6);
 
-    // Contact shadow only while on the ground.
-    const grounded = mode === "idle" || walking;
+    // Contact shadow only while on the ground; a hop leaves a fading one.
+    const grounded = !airborne && (mode === "idle" || walking);
+    const shade = grounded ? 1 : hopping ? Math.max(0.15, 1 - this.hopY * 2.5) : 0;
     const material = this.shadow.material;
-    material.opacity += ((grounded ? 1 : 0) - material.opacity) * ease(12, dt);
+    material.opacity += (shade - material.opacity) * ease(12, dt);
     this.shadow.visible = material.opacity > 0.01;
 
     this.renderer.render(this.scene, this.camera);
   }
 
-  dispose() {
+  /**
+   * Frees the GPU resources. `loseContext` also releases the WebGL context
+   * right away, for a canvas that won't be drawn on again.
+   */
+  dispose({ loseContext = false } = {}) {
     this.rig.dispose();
+    this.leaf?.dispose();
     this.shadow.geometry.dispose();
     this.shadow.material.map?.dispose();
     this.shadow.material.dispose();
     this.environment.dispose();
     this.renderer.dispose();
+    if (loseContext) this.renderer.forceContextLoss();
   }
 }

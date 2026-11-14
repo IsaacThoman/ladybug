@@ -1,10 +1,14 @@
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
+import { Mascot } from "@ladybug/mascot/web";
+import type { LadybugMood, MascotHandle } from "@ladybug/mascot/web";
 import { SCAN_STATUSES, isTerminalStatus } from "@ladybug/shared";
-import type { ScanStatus } from "@ladybug/shared";
+import type { ScanStatus, ScanVerdict } from "@ladybug/shared";
 import { formatElapsed } from "../format.ts";
 import type { ScanState } from "../scanState.ts";
 import { useNow } from "../useNow.ts";
 import ActivityLog from "./ActivityLog.tsx";
+import { PageEnd } from "./Garden.tsx";
 import Header from "./Header.tsx";
 import Link from "./Link.tsx";
 import Findings from "./Findings.tsx";
@@ -23,9 +27,30 @@ type Props = {
   headerExtra?: ReactNode;
 };
 
+/** The same reactions the desktop pet has to a verdict. */
+function moodFor(running: boolean, verdict: ScanVerdict | null): LadybugMood {
+  if (running) return "sniffing";
+  if (verdict === "benign") return "happy";
+  if (verdict === "suspicious") return "nervous";
+  if (verdict === "malicious") return "alarmed";
+  return "calm";
+}
+
 export default function ReportView({ scan, artifactSrc, notice, headerExtra }: Props) {
   const terminal = isTerminalStatus(scan.status);
   const running = !terminal;
+  const verdict = scan.result?.verdict ?? null;
+  const mascot = useRef<MascotHandle>(null);
+  const reacted = useRef(verdict);
+
+  // A verdict arriving while you watch gets the full reaction.
+  useEffect(() => {
+    if (!verdict || reacted.current === verdict) return;
+    reacted.current = verdict;
+    if (verdict === "benign") mascot.current?.celebrate();
+    else if (verdict === "malicious") mascot.current?.alarm();
+    else mascot.current?.startle();
+  }, [verdict]);
   const now = useNow(running && scan.createdAt !== null);
   const report = scan.report;
 
@@ -71,6 +96,9 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
             </div>
             <StatusStepper status={scan.status} reached={reached} error={scan.error} />
           </div>
+          <div className="topbar-mascot">
+            <Mascot ref={mascot} mood={moodFor(running, verdict)} look={null} />
+          </div>
           <ScoreGauge
             score={scan.result?.score ?? null}
             verdict={scan.result?.verdict ?? null}
@@ -102,6 +130,7 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
           </div>
         </div>
       </main>
+      <PageEnd />
     </>
   );
 }

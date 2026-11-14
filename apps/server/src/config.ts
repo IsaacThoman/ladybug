@@ -36,7 +36,10 @@ export const config = {
    * unreachable except through that proxy, or clients can spoof it.
    */
   clientIpHeader: process.env.CLIENT_IP_HEADER?.trim().toLowerCase() || null,
-  /** When set, /admin and /api/admin require HTTP Basic auth with this password (any username). */
+  /**
+   * When set, /api/admin needs a login with this password: the admin UI's
+   * login page, or HTTP Basic auth with any username.
+   */
   adminPassword: process.env.ADMIN_PASSWORD || null,
   /** Built admin UI, served at /admin when it exists. */
   adminDist:

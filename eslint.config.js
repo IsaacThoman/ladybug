@@ -9,7 +9,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["apps/{server,worker,sandbox}/**/*.ts", "packages/**/*.ts", "**/electron/**/*.ts", "**/vite.config.ts"],
+    files: ["apps/{server,worker,sandbox}/**/*.ts", "packages/{shared,backend}/**/*.ts", "**/electron/**/*.ts", "**/vite.config.ts"],
     languageOptions: { globals: globals.node },
   },
   {
@@ -17,7 +17,7 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser, ...globals.webextensions } },
   },
   {
-    files: ["apps/{desktop,admin,web}/src/**/*.{ts,tsx}"],
+    files: ["apps/{desktop,admin,web}/src/**/*.{ts,tsx}", "packages/mascot/src/**/*.{ts,tsx}"],
     languageOptions: { globals: globals.browser },
     plugins: { "react-hooks": reactHooks, "react-refresh": reactRefresh },
     rules: {

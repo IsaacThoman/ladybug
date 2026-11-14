@@ -8,6 +8,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/backend/package.json packages/backend/
+COPY packages/mascot/package.json packages/mascot/
 COPY apps/admin/package.json apps/admin/
 COPY apps/desktop/package.json apps/desktop/
 COPY apps/extension/package.json apps/extension/
@@ -20,6 +21,7 @@ FROM manifests AS admin
 RUN npm ci --workspace=@ladybug/admin --ignore-scripts
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+COPY packages/mascot packages/mascot
 COPY apps/admin apps/admin
 RUN npx --workspace=@ladybug/admin vite build
 

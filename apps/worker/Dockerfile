@@ -17,6 +17,7 @@ COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
 COPY packages/shared/package.json packages/shared/
 COPY packages/backend/package.json packages/backend/
+COPY packages/mascot/package.json packages/mascot/
 RUN npm ci --omit=dev -w @ladybug/worker --include-workspace-root=false --ignore-scripts --no-audit --no-fund \
     && test -L node_modules/@ladybug/shared && test -L node_modules/@ladybug/backend \
     && npm cache clean --force

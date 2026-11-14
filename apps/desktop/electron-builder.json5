@@ -8,9 +8,15 @@
     "output": "release/${version}",
     "buildResources": "build"
   },
-  "files": ["dist", "dist-electron"],
+  "files": ["dist", "dist-electron", "!**/.env", "!**/.env.*"],
   "mac": {
     "target": ["dmg"],
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "extendInfo": {
+      "NSCameraUsageDescription": "Ladybug uses your camera during FaceTime calls you start.",
+      "NSMicrophoneUsageDescription": "Ladybug uses your microphone during FaceTime calls you start."
+    },
     "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
   },
   "win": {

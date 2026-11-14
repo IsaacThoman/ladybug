@@ -752,6 +752,7 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
       ref={petRef}
       className={dragging ? "pet dragging" : "pet"}
       style={{ width: PET_WIDTH, height: PET_HEIGHT }}
+      data-overlay-interactive
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

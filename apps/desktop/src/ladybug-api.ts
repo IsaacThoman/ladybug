@@ -1,3 +1,5 @@
+import type { FaceTimeApi } from "./calls/types";
+
 // Contract between the Electron preload script and the renderer.
 
 export type Rect = { x: number; y: number; width: number; height: number };
@@ -11,6 +13,7 @@ export type OverlayLayout = {
 };
 
 export type LadybugApi = {
+  faceTime: FaceTimeApi;
   getLayout: () => Promise<OverlayLayout>;
   onLayoutChanged: (callback: (layout: OverlayLayout) => void) => () => void;
   /**
@@ -19,6 +22,8 @@ export type LadybugApi = {
    * everywhere else.
    */
   setPetRect: (rect: Rect) => void;
+  /** Other clickable surfaces, polled with the pet's hit box in the main process. */
+  setInteractiveRects: (rects: Rect[]) => void;
   /** true while the pet is being dragged, so the overlay stays interactive. */
   setPetHeld: (held: boolean) => void;
   showMenu: () => void;

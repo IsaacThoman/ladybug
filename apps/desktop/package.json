@@ -9,10 +9,12 @@
     "dev:overlay": "vite --mode overlay",
     "build": "npm run typecheck && vite build",
     "dist": "npm run build && electron-builder",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "node --test electron/*.test.ts"
   },
   "dependencies": {
     "@ladybug/shared": "^0.0.0",
+    "livekit-client": "^2.24.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.187.0"

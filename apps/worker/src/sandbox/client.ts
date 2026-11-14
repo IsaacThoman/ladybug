@@ -12,22 +12,30 @@ import type {
   RequestsResponse,
   TypeRequest,
 } from "@ladybug/shared";
+import { SANDBOX_TOKEN_HEADER } from "@ladybug/shared";
+
+export type DaemonFetchInit = { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal };
+/** The part of fetch() the client uses, so a provider can route requests its own way. */
+export type DaemonFetch = (url: string, init?: DaemonFetchInit) => Promise<Response>;
 
 /** Typed client for the in-sandbox daemon (apps/sandbox). */
 export class DaemonClient {
   readonly baseUrl: string;
   private token: string;
+  private fetch: DaemonFetch;
 
-  constructor(baseUrl: string, token: string) {
+  constructor(baseUrl: string, token: string, fetchImpl: DaemonFetch = fetch) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.token = token;
+    this.fetch = fetchImpl;
   }
 
   private async request(path: string, init: { method?: string; body?: unknown; timeoutMs?: number } = {}) {
-    const res = await fetch(`${this.baseUrl}${path}`, {
+    const res = await this.fetch(`${this.baseUrl}${path}`, {
       method: init.method ?? (init.body === undefined ? "GET" : "POST"),
       headers: {
         Authorization: `Bearer ${this.token}`,
+        [SANDBOX_TOKEN_HEADER]: this.token,
         ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -46,7 +54,7 @@ export class DaemonClient {
 
   async healthy() {
     try {
-      const res = await fetch(`${this.baseUrl}/healthz`, { signal: AbortSignal.timeout(2000) });
+      const res = await this.fetch(`${this.baseUrl}/healthz`, { signal: AbortSignal.timeout(2000) });
       if (!res.ok) return false;
       const body = (await res.json()) as { ok?: boolean; browser?: boolean };
       return body.ok === true && body.browser !== false;

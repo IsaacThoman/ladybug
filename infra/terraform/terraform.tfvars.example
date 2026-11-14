@@ -5,3 +5,10 @@ sandbox_max_nodes = 6
 # Must be globally unique.
 registry_name    = "ladybugdemo"
 artifacts_bucket = "ladybug-artifacts-demo"
+
+# Sandboxes only: the server and worker stay elsewhere (e.g. Coolify), and this
+# cluster runs just the sandbox pods and the egress gateway. No managed
+# databases or Object Storage are created. See infra/README.md.
+# sandbox_only      = true
+# system_nodes      = 1
+# sandbox_min_nodes = 1

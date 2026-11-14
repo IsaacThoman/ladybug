@@ -38,7 +38,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: kubectl kustomize infra/k8s > rendered.yaml
+      # The full deployment, plus the accounts a sandboxes-only cluster adds.
+      - run: (kubectl kustomize infra/k8s; echo ---; cat infra/k8s/remote-worker.yaml) > rendered.yaml
       - run: docker run --rm -i ghcr.io/yannh/kubeconform:latest -strict -summary - < rendered.yaml
       - name: Compose stack
         run: |

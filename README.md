@@ -228,7 +228,7 @@ Things to know:
 - **Artifacts.** Screenshots and HAR files live on the `artifacts` volume. To use Object Storage instead, set `ARTIFACT_STORE=s3` and the `S3_*` variables.
 - **Cloudflare Tunnel.** Point the tunnel at Coolify's proxy, and set the `web` domain as `http://ladybugg.garden:8080` (http, so Traefik doesn't try to get its own certificate behind Cloudflare). Set `CLIENT_IP_HEADER=cf-connecting-ip` so rate limits see visitors' real IPs. Only do that if the tunnel is the only way in, or clients could spoof the header. Live updates use server-sent events with regular heartbeats, so they stay open through Cloudflare.
 - **Proxy hops.** Without the tunnel, `TRUST_PROXY_HOPS=2` (the default here) covers Traefik, then web's nginx.
-- **Kubernetes.** The Vultr Kubernetes setup is an alternative: see [`infra/README.md`](infra/README.md).
+- **Kubernetes.** The Vultr Kubernetes setup is an alternative: see [`infra/README.md`](infra/README.md). It can also take over just the sandboxes, with autoscaling, while everything else stays on this stack: see ["Sandboxes only"](infra/README.md#sandboxes-only).
 
 ## Using the pet
 

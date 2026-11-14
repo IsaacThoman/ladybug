@@ -41,7 +41,7 @@ curl -H "$T" "$S/files/downloads/invoice.zip" -o invoice.zip
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SANDBOX_TOKEN` | required | Bearer token for every route but `GET /healthz`. The daemon exits without it. |
+| `SANDBOX_TOKEN` | required | Token for every route but `GET /healthz`, sent as `Authorization: Bearer` or in `X-Sandbox-Token`. The daemon exits without it. |
 | `SCAN_ID` | | Sent as the proxy username so the gateway can attribute flows (`ladybug` if unset). |
 | `PROXY_URL` | | e.g. `http://10.0.0.5:8080`. Chrome and `/exec` children (`HTTP(S)_PROXY`) use it. |
 | `GATEWAY_CA_PEM` | | Gateway CA cert. Installed into `~/.pki/nssdb` before Chrome starts; `/exec` gets `CURL_CA_BUNDLE`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and `NODE_EXTRA_CA_CERTS`. With a proxy but no CA, Chrome ignores certificate errors. |

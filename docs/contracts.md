@@ -40,6 +40,7 @@ Built from the repo root as the Docker context. Registry is the Vultr Container 
 - Gateway Service: `gateway.ladybug.svc.cluster.local:8080`. Sandbox pods have no DNS, so the worker resolves that name and passes the ClusterIP in `PROXY_URL`.
 - Sandbox node pool: label `pool=sandbox`, taint `pool=sandbox:NoSchedule`.
 - Worker ServiceAccount `worker`, with a Role in `sandbox` for pods: create, get, list, watch, delete.
+- Sandboxes-only clusters (`bootstrap.sh --sandbox-only`) have no `worker`. ServiceAccount `remote-worker` is for a worker outside the cluster (pods and `pods/proxy` in `sandbox`), and `deployer` is for the deploy workflow (Deployments in `ladybug`). ConfigMap `sandbox-env` in `sandbox` gives the pods `PROXY_URL` and `GATEWAY_CA_PEM`.
 - Secret `gateway-ca` in `ladybug`: `mitmproxy-ca.pem` (key + cert, gateway only) and `ca.crt` (public cert, given to the worker as `GATEWAY_CA_PEM`).
 - Secret `ladybug-secrets` in `ladybug`: everything in the env tables below marked secret.
 - Secret `registry-pull` (dockerconfigjson) in both namespaces; the worker passes it to sandbox pods as `SANDBOX_IMAGE_PULL_SECRET`.
@@ -79,6 +80,9 @@ Worker only:
 | `SANDBOX_IMAGE` | | default `ladybug-sandbox:dev` |
 | `SANDBOX_NAMESPACE` | | default `sandbox` |
 | `SANDBOX_IMAGE_PULL_SECRET` | | k8s only |
+| `SANDBOX_KUBECONFIG_B64` | yes | k8s, worker outside the cluster: a base64 kubeconfig. Sandboxes are then reached through the API server's pod proxy |
+| `SANDBOX_ENV_CONFIGMAP` | | k8s: a ConfigMap in the sandbox namespace that gives pods the gateway address and CA, instead of `GATEWAY_*` |
+| `SANDBOX_START_TIMEOUT_MS` | | k8s: how long a pod may take to be ready, default 360000 (covers a node scaling up) |
 | `GATEWAY_HOST` | | k8s: `gateway.ladybug.svc.cluster.local` |
 | `GATEWAY_PROXY_URL` | | docker: optional explicit proxy URL |
 | `GATEWAY_CA_PEM` | | public CA cert of the gateway |

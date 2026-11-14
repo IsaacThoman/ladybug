@@ -1,4 +1,5 @@
 import type {
+  AdminAccountsResponse,
   AdminSession,
   AdminSummary,
   CheckResponse,
@@ -86,6 +87,14 @@ export const api = {
     }),
 
   deleteUrl: (id: string) => request<void>(`/api/admin/urls/${id}`, { method: "DELETE" }),
+
+  users: () => request<AdminAccountsResponse>("/api/admin/users"),
+
+  approveUser: (id: string) => request<unknown>(`/api/admin/users/${id}/approve`, { method: "POST" }),
+
+  rejectUser: (id: string) => request<unknown>(`/api/admin/users/${id}/reject`, { method: "POST" }),
+
+  deleteUser: (id: string) => request<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
 
   check: (url: string) =>
     request<CheckResponse>("/api/admin/check", { method: "POST", body: JSON.stringify({ url }) }),

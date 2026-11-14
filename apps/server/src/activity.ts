@@ -36,16 +36,43 @@ export function logEvent(input: Omit<LogEvent, "id" | "at">): LogEvent {
   return event;
 }
 
-/** Pushes an alert to every connected desktop pet, and logs that it did. */
-export function sendPetAlert(level: AlertLevel, message: string, url: string, host: string, scanId?: string) {
+/**
+ * Who an alert is for: one user's pets (by user id), or every pet, for checks
+ * an admin runs from the admin UI.
+ */
+export type AlertRecipient = { userId: string; username: string } | "everyone";
+
+/** Pushes an alert to the recipient's desktop pets, and logs that it did. */
+export function sendPetAlert(
+  recipient: AlertRecipient,
+  level: AlertLevel,
+  message: string,
+  url: string,
+  host: string,
+  scanId?: string,
+) {
   const alert: PetAlert = { id: newId(), level, message, url, host, at: Date.now(), ...(scanId ? { scanId } : {}) };
-  petChannel.send("alert", alert);
+  let pets: number;
+  if (recipient === "everyone") {
+    petChannel.send("alert", alert);
+    pets = petChannel.size;
+  } else {
+    petChannel.sendTo(recipient.userId, "alert", alert);
+    pets = petChannel.sizeOf(recipient.userId);
+  }
+  const to = recipient === "everyone" ? "every pet" : `${recipient.username}'s pets`;
   logEvent({
     type: "alert",
-    message: `Pet alert (${level}) to ${petChannel.size} pet(s): ${message}`,
+    message: `Pet alert (${level}) to ${to} (${pets} listening): ${message}`,
     url,
     host,
-    details: { level, petsConnected: petChannel.size, alertId: alert.id, scanId },
+    details: {
+      level,
+      petsConnected: pets,
+      alertId: alert.id,
+      scanId,
+      ...(recipient === "everyone" ? {} : { user: recipient.username }),
+    },
   });
   return alert;
 }

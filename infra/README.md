@@ -14,8 +14,8 @@ internet directly. Its only outbound connection is the gateway on TCP 8080.
   sufficient quota for the node pools and one Load Balancer.
 - A VKE CNI that enforces NetworkPolicy. The deny test below is a deployment gate:
   do not send untrusted URLs until it passes.
-- An OpenAI-compatible model endpoint (base URL, model and key) and reputation-service keys, if wanted. Set `API_KEYS` to a
-  strong, comma-separated list before exposing the scan submission endpoint.
+- An OpenAI-compatible model endpoint (base URL, model and key) and reputation-service keys, if wanted. Scans need an approved
+  account; `API_KEYS` is only for scripts that start scans without one.
 
 ## Provision and deploy
 
@@ -150,11 +150,9 @@ Vultr console for residual billable resources.
   gVisor/Kata RuntimeClass and test browser compatibility before production.
 - Enforce per-scan egress byte/request/time budgets at the gateway.
 - Pin images by digest, scan them, sign them and enforce signature admission.
-- Add authentication. API keys protect scan creation only, not report reads or
-  artifacts; the admin UI is only blocked at the edge.
-- `/api/pet/stream` broadcasts every alert to every connected pet, and the
-  extension reports every page visited. On a shared public server that means
-  users see each other's alerts. Scope alerts per user before opening it up.
+- Report reads and artifacts are readable by anyone with the scan id; the admin
+  UI (where accounts are approved) is only blocked at the edge, so approve
+  accounts through a port-forward.
 - Rotate the gateway CA deliberately: drain scans, replace `gateway-ca`, restart
   both gateway and worker Deployments, and repeat the deny test. A subPath mount
   does not update in running gateway pods. Bootstrap preserves the existing CA.

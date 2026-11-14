@@ -9,11 +9,13 @@ import ActivityView from "./ActivityView";
 import Icon from "./Icon";
 import OverviewView from "./OverviewView";
 import UrlsView from "./UrlsView";
+import UsersView from "./UsersView";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: "home", sub: "What's happening in the garden right now." },
   { id: "activity", label: "Activity log", icon: "pulse", sub: "Every visit, decision and alert, newest first." },
   { id: "urls", label: "URL database", icon: "database", sub: "Pages and hosts Ladybug already has a verdict for." },
+  { id: "users", label: "Users", icon: "user", sub: "Who can use Ladybug. New accounts wait here until you approve them." },
 ] as const satisfies readonly { id: string; label: string; icon: IconName; sub: string }[];
 type TabId = (typeof TABS)[number]["id"];
 
@@ -74,12 +76,15 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
   const [live, setLive] = useState<LogEvent[]>([]);
   // Bumped whenever the URL database may have changed.
   const [urlsVersion, setUrlsVersion] = useState(0);
+  // Bumped when someone signs up or an admin changes an account.
+  const [usersVersion, setUsersVersion] = useState(0);
   const mascotRef = useRef<LadybugMascotHandle>(null);
   const now = useNow(1_000);
 
   const onEvent = useCallback((event: LogEvent) => {
     setLive((current) => [event, ...current].slice(0, LIVE_LIMIT));
     if (event.type === "analysis_completed" || event.type === "admin") setUrlsVersion((v) => v + 1);
+    if (event.type === "account" || event.type === "admin") setUsersVersion((v) => v + 1);
   }, []);
   const { pending, connected } = useAdminStream(onEvent);
 
@@ -106,7 +111,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [urlsVersion]);
+  }, [urlsVersion, usersVersion]);
 
   const latest = live.find(isVerdict);
   const fresh = latest && now - latest.at < REACTION_MS ? latest : undefined;
@@ -151,6 +156,11 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
             <a key={t.id} href={`#${t.id}`} aria-current={tab === t.id ? "page" : undefined}>
               <Icon name={t.icon} size={16} />
               {t.label}
+              {t.id === "users" && (summary?.pendingAccounts ?? 0) > 0 && (
+                <span className="tab-count" aria-label={`${summary?.pendingAccounts} waiting for approval`}>
+                  {summary?.pendingAccounts}
+                </span>
+              )}
             </a>
           ))}
         </nav>
@@ -186,6 +196,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
         {tab === "overview" && <OverviewView summary={summary} pending={pending} live={live} />}
         {tab === "activity" && <ActivityView live={live} />}
         {tab === "urls" && <UrlsView version={urlsVersion} />}
+        {tab === "users" && <UsersView version={usersVersion} />}
       </main>
     </div>
   );

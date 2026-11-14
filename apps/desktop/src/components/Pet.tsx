@@ -15,6 +15,7 @@ import {
   watchScan,
 } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
+import { getSession } from "../session";
 import { findHttpUrl, parseHttpUrl } from "../urls";
 import { LadybugRenderer } from "@ladybug/mascot";
 import type { LadybugMood } from "@ladybug/mascot";
@@ -197,7 +198,7 @@ const carriesLink = (data: DataTransfer) => data.types.some((type) => LINK_TYPES
 const dropEffectFor = (allowed: DataTransfer["effectAllowed"]): DataTransfer["dropEffect"] =>
   allowed === "link" || allowed === "linkMove" ? "link" : allowed === "move" ? "move" : "copy";
 
-export default function Pet({ layout }: { layout: OverlayLayout }) {
+export default function Pet({ layout, onAccountNeeded }: { layout: OverlayLayout; onAccountNeeded: () => void }) {
   const petRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -711,6 +712,13 @@ export default function Pet({ layout }: { layout: OverlayLayout }) {
         s.mode = "airborne";
       }
       if (scan.phase !== "idle") setScan({ phase: "idle" });
+      const session = getSession();
+      if (session?.account.status !== "approved") {
+        // Not set up yet: point at the sign-in panel instead of chatting.
+        say(session ? "An admin still has to let you in." : "Sign in so I can watch your back!", "chat", true);
+        onAccountNeeded();
+        return;
+      }
       fetchGreeting()
         .then((message) => say(message, "chat", true))
         .catch(() => say(OFFLINE_MESSAGE, "chat", true));

@@ -3,15 +3,21 @@ import type { FormEvent } from "react";
 import type { ScanListItem } from "@ladybug/shared";
 import { MascotStage } from "@ladybug/mascot/react";
 import type { LadybugMascotHandle, LadybugMood } from "@ladybug/mascot/react";
-import { ApiRequestError, createScan, isAbort, listScans, loadApiKey, saveApiKey } from "../api.ts";
+import { ApiRequestError, createScan, isAbort, listScans, refreshAccount } from "../api.ts";
 import type { ApiFailure } from "../api.ts";
 import { hostOf, timeAgo } from "../format.ts";
 import { navigate } from "../router.ts";
+import { getSession, useSession } from "../session.ts";
 import { useNow } from "../useNow.ts";
 import Link from "./Link.tsx";
 import VerdictChip from "./VerdictChip.tsx";
 
 type Recent = { state: "loading" } | { state: "ok"; scans: ScanListItem[] } | { state: "error"; failure: ApiFailure };
+
+const STATUS_TEXT = {
+  pending: "An admin still has to approve your account. You can scan links once they do.",
+  rejected: "An admin turned down this account, so it can't scan links.",
+} as const;
 
 function normalizeUrl(raw: string): string | null {
   const trimmed = raw.trim();
@@ -27,42 +33,24 @@ function normalizeUrl(raw: string): string | null {
   }
 }
 
+/** Signing in to scan a link: the sign-in page brings it back as ?url=. */
+const signInFor = (target: string) => navigate(`/signin?url=${encodeURIComponent(target)}`);
+
 export default function Home() {
-  const [url, setUrl] = useState("");
-  const [apiKey, setApiKey] = useState(loadApiKey);
-  const [showKey, setShowKey] = useState(() => loadApiKey() === "");
+  // Back from signing in with a link that still needs scanning.
+  const [url, setUrl] = useState(() => new URLSearchParams(window.location.search).get("url") ?? "");
+  const session = useSession();
+  const approved = session?.account.status === "approved";
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<{ message: string; needsKey?: boolean } | null>(null);
-  const [recent, setRecent] = useState<Recent>({ state: "loading" });
-  const now = useNow(true, 30_000);
+  const [error, setError] = useState<{ message: string } | null>(null);
   const mascotRef = useRef<LadybugMascotHandle>(null);
   const target = normalizeUrl(url);
 
+  // Picks up an approval since the page was opened, and tidies ?url= away.
   useEffect(() => {
-    const abort = new AbortController();
-    const load = () =>
-      listScans(20, abort.signal)
-        .then((res) => setRecent({ state: "ok", scans: res.scans }))
-        .catch((err: unknown) => {
-          if (isAbort(err)) return;
-          setRecent({
-            state: "error",
-            failure: err instanceof ApiRequestError ? err.failure : { kind: "unreachable" },
-          });
-        });
-    load();
-    const timer = window.setInterval(load, 10_000);
-    return () => {
-      abort.abort();
-      window.clearInterval(timer);
-    };
+    void refreshAccount().catch(() => {});
+    if (window.location.search) window.history.replaceState(null, "", "/");
   }, []);
-
-  const onKeyChange = (value: string) => {
-    setApiKey(value);
-    saveApiKey(value.trim());
-    if (error?.needsKey) setError(null);
-  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -71,21 +59,22 @@ export default function Home() {
       setError({ message: "That doesn't look like a web address. Try something like https://example.com/login." });
       return;
     }
+    // Signed out: sign in first, then the scan carries on.
+    if (!session) {
+      signInFor(target);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      const { scanId } = await createScan(target, apiKey.trim());
+      const { scanId } = await createScan(target);
       navigate(`/scans/${scanId}`);
     } catch (err) {
       const failure: ApiFailure = err instanceof ApiRequestError ? err.failure : { kind: "unreachable" };
-      if (failure.kind === "unauthorized") {
-        setShowKey(true);
-        setError({
-          message: apiKey.trim()
-            ? "The server rejected that API key. Check it and try again."
-            : "This server needs an API key. Paste yours below, then scan again.",
-          needsKey: true,
-        });
+      if (failure.kind === "unauthorized" && !getSession()) {
+        // The session ended on the server.
+        signInFor(target);
+        return;
       } else if (failure.kind === "unreachable") {
         setError({ message: "Can't reach the ladybug server. Is it running?" });
       } else {
@@ -126,7 +115,7 @@ export default function Home() {
               value={url}
               onChange={(e) => {
                 setUrl(e.target.value);
-                if (error && !error.needsKey) setError(null);
+                if (error) setError(null);
               }}
               autoFocus
             />
@@ -136,33 +125,20 @@ export default function Home() {
             </button>
           </form>
           {error && (
-            <p className={`form-error${error.needsKey ? " needs-key" : ""}`} role="alert">
+            <p className="form-error" role="alert">
               {error.message}
             </p>
           )}
           <div className="key-row">
-            {showKey ? (
-              <label className={`key-field${error?.needsKey ? " is-highlighted" : ""}`}>
-                <span>API key</span>
-                <input
-                  type="password"
-                  className="mono"
-                  value={apiKey}
-                  onChange={(e) => onKeyChange(e.target.value)}
-                  placeholder="paste x-api-key"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
-            ) : (
-              <button type="button" className="link-button" onClick={() => setShowKey(true)}>
-                API key saved · change
-              </button>
-            )}
             <Link href="/demo" className="link-button">
               Watch a recorded scan →
             </Link>
           </div>
+          {session && session.account.status !== "approved" && (
+            <p className="account-status" data-status={session.account.status} role="status">
+              {STATUS_TEXT[session.account.status]}
+            </p>
+          )}
         </div>
         <div className="hero-mascot">
           <MascotStage unit={230} mood={mood} followPointer={mood === "calm"} ref={mascotRef}>
@@ -192,46 +168,92 @@ export default function Home() {
         </ol>
       </section>
 
-      <section className="recent" aria-label="Recent scans">
-        <h2 className="section-title">Recent scans</h2>
-        <p className="section-sub">What the garden's been looking at lately.</p>
-        {recent.state === "loading" && <p className="muted">Loading…</p>}
-        {recent.state === "error" && (
-          <p className="muted recent-error">
-            {recent.failure.kind === "unreachable"
-              ? "Can't reach the ladybug server, so recent scans aren't available."
-              : "Couldn't load recent scans."}{" "}
-            <Link href="/demo">Watch the demo instead.</Link>
+      {session && approved ? (
+        <YourScans key={session.token} />
+      ) : (
+        <section className="recent" aria-label="Your scans">
+          <h2 className="section-title">Your scans</h2>
+          <p className="section-sub">
+            {session ? (
+              "Your scans show up here once your account is approved."
+            ) : (
+              <>
+                <Link href="/signin">Sign in</Link> to see the links you've scanned.
+              </>
+            )}{" "}
+            <Link href="/demo">Watch the demo meanwhile.</Link>
           </p>
-        )}
-        {recent.state === "ok" && recent.scans.length === 0 && (
-          <p className="muted">No scans yet. Paste a URL above.</p>
-        )}
-        {recent.state === "ok" && recent.scans.length > 0 && (
-          <ul className="recent-list">
-            {recent.scans.map((s) => (
-              <li key={s.scanId}>
-                <Link href={`/scans/${s.scanId}`} className="recent-item">
-                  {s.status === "done" ? (
-                    <VerdictChip verdict={s.verdict} />
-                  ) : (
-                    <span className={`status-chip ${s.status}`}>{s.status}</span>
-                  )}
-                  <span className={`recent-score ${s.verdict ?? ""}`}>{s.score ?? "–"}</span>
-                  <span className="recent-url">
-                    <span className="recent-host">{hostOf(s.finalUrl ?? s.inputUrl)}</span>
-                    <span className="mono recent-full">{s.inputUrl}</span>
-                  </span>
-                  <time className="recent-time" dateTime={s.createdAt}>
-                    {timeAgo(s.createdAt, now)}
-                  </time>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        </section>
+      )}
     </main>
+  );
+}
+
+/** The signed-in user's latest scans, refreshed every few seconds. */
+function YourScans() {
+  const [recent, setRecent] = useState<Recent>({ state: "loading" });
+  const now = useNow(true, 30_000);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    const load = () =>
+      listScans(20, abort.signal)
+        .then((res) => setRecent({ state: "ok", scans: res.scans }))
+        .catch((err: unknown) => {
+          if (isAbort(err)) return;
+          setRecent({
+            state: "error",
+            failure: err instanceof ApiRequestError ? err.failure : { kind: "unreachable" },
+          });
+        });
+    load();
+    const timer = window.setInterval(load, 10_000);
+    return () => {
+      abort.abort();
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  return (
+    <section className="recent" aria-label="Your scans">
+      <h2 className="section-title">Your scans</h2>
+      <p className="section-sub">The links you've scanned lately.</p>
+      {recent.state === "loading" && <p className="muted">Loading…</p>}
+      {recent.state === "error" && (
+        <p className="muted recent-error">
+          {recent.failure.kind === "unreachable"
+            ? "Can't reach the ladybug server, so your scans aren't available."
+            : "Couldn't load your scans."}{" "}
+          <Link href="/demo">Watch the demo instead.</Link>
+        </p>
+      )}
+      {recent.state === "ok" && recent.scans.length === 0 && (
+        <p className="muted">No scans yet. Paste a URL above.</p>
+      )}
+      {recent.state === "ok" && recent.scans.length > 0 && (
+        <ul className="recent-list">
+          {recent.scans.map((s) => (
+            <li key={s.scanId}>
+              <Link href={`/scans/${s.scanId}`} className="recent-item">
+                {s.status === "done" ? (
+                  <VerdictChip verdict={s.verdict} />
+                ) : (
+                  <span className={`status-chip ${s.status}`}>{s.status}</span>
+                )}
+                <span className={`recent-score ${s.verdict ?? ""}`}>{s.score ?? "–"}</span>
+                <span className="recent-url">
+                  <span className="recent-host">{hostOf(s.finalUrl ?? s.inputUrl)}</span>
+                  <span className="mono recent-full">{s.inputUrl}</span>
+                </span>
+                <time className="recent-time" dateTime={s.createdAt}>
+                  {timeAgo(s.createdAt, now)}
+                </time>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -22,11 +22,17 @@ export function usePathname() {
   return useSyncExternalStore(subscribe, () => window.location.pathname);
 }
 
-export type Route = { name: "home" } | { name: "demo" } | { name: "scan"; scanId: string } | { name: "not_found" };
+export type Route =
+  | { name: "home" }
+  | { name: "signin" }
+  | { name: "demo" }
+  | { name: "scan"; scanId: string }
+  | { name: "not_found" };
 
 export function matchRoute(pathname: string): Route {
   const path = pathname.replace(/\/+$/, "") || "/";
   if (path === "/") return { name: "home" };
+  if (path === "/signin") return { name: "signin" };
   if (path === "/demo" || path === "/scans/demo") return { name: "demo" };
   const scan = /^\/scans\/([^/]+)$/.exec(path);
   if (scan) return { name: "scan", scanId: decodeURIComponent(scan[1]) };

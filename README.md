@@ -2,7 +2,7 @@
 
 A desktop pet that lives on top of your screen and warns you about unsafe websites.
 
-A browser extension reports every page you visit to the backend. The backend looks the URL up in Typesense:
+A browser extension reports every page you visit to the backend, as you. The backend looks the URL up in Typesense:
 
 - **Known safe:** nothing happens.
 - **Known unsafe:** the ladybug raises an alert.
@@ -12,6 +12,8 @@ You can also hand the pet a link directly: drop it on the bug, or use "Scan clip
 
 Every request and decision is logged and can be browsed in the admin UI. Each sandbox scan also has a live report page.
 
+People need an account, approved by an admin, before the extension reports their visits or their pet hears anything. See [Accounts](#accounts).
+
 ## Layout
 
 npm-workspaces monorepo:
@@ -20,7 +22,7 @@ npm-workspaces monorepo:
 | --- | --- |
 | `apps/desktop` | Electron + Vite + React app. A transparent, click-through window covers the whole primary display, and a 3D ladybug (three.js) walks around on top of it. It listens to the server for alerts. |
 | `apps/server` | Node + Express backend (TypeScript, run directly with Node's type stripping). Checks URLs, runs analyses, logs activity, serves the admin UI. |
-| `apps/admin` | Vite + React admin UI: a sign-in page, stats, live activity log, running analyses, and the URL database, with the ladybug narrating from the sidebar. |
+| `apps/admin` | Vite + React admin UI: a sign-in page, stats, live activity log, running analyses, the URL database and account approvals, with the ladybug narrating from the sidebar. |
 | `apps/extension` | Chrome extension (Manifest V3) that reports each page you visit to the server. |
 | `apps/worker` | Scan worker: sandbox lifecycle, pre-scan lookups, scripted detonation, the LLM agent loop, scoring. |
 | `apps/sandbox` | Sandbox image: headful Chrome on Xvfb plus an HTTP tool daemon the worker drives. |
@@ -97,6 +99,8 @@ Packaged builds continue to use the desktop overlay.
 
 Electron downloads its binary the first time the desktop app starts.
 
+Until you sign in, a sign-in panel sits in the top-left corner of the overlay (or the development window). Create an account there or sign in; it stays up with a "waiting for approval" note until an admin approves you, then gets out of the way. "Account…" in the tray or right-click menu brings it back.
+
 ### 3. Browser extension
 
 ```sh
@@ -104,7 +108,7 @@ npm run dev:extension                  # rebuilds on change, reports to http://l
 npm run build -w @ladybug/extension    # release build, reports to https://ladybugg.garden
 ```
 
-Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `apps/extension/dist`. A server URL saved in the popup overrides the build's default. Its popup shows whether it can reach the server and the last pages it reported, and lets you pause reporting or point it at another server. The toolbar badge shows `!` on unsafe pages and `…` while a page is being checked.
+Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `apps/extension/dist`. A server URL saved in the popup overrides the build's default. Sign in (or create an account) in its popup: nothing is reported until you do, and nothing is checked until an admin approves the account. The popup also shows whether it can reach the server and the last pages it reported, and lets you pause reporting or point it at another server (which signs you out). The toolbar badge shows `!` on unsafe pages, `…` while a page is being checked, and `?` when it can't check (signed out, waiting for approval, or the server is unreachable).
 
 To see it work, visit `https://example.com/` (nothing happens), the phishing test page above (the ladybug alerts), and any other site (the ladybug checks it in the sandbox, then reports back, usually within a minute or two).
 
@@ -113,11 +117,12 @@ To see it work, visit `https://example.com/` (nothing happens), the phishing tes
 - With `npm run stack:up`: <http://localhost:8080/admin/>, or the server directly at <http://localhost:3001/admin/>. If `ADMIN_PASSWORD` is set, it opens on a sign-in page that asks for it. Scripts can still use HTTP Basic (`curl -u :password`).
 - With `npm run dev:server`: `npm run dev:admin`, then <http://localhost:5174/admin/>. It proxies API calls to the server.
 
-It has three tabs:
+It has four tabs:
 
 - **Overview:** stats, a chart of visits checked over the last hour, day or week (from TimescaleDB, see [Postgres and Tiger Data](#postgres-and-tiger-data)), a "check a URL" box that runs the same pipeline as a visit, analyses in progress, recent detections and the latest activity.
 - **Activity log:** every request, decision, analysis, pet alert and admin change. You can search and filter it, click a row for details, and new events appear live.
 - **URL database:** known URLs and hosts, searched in Typesense. You can add rules, flip verdicts, or forget a record so it's analysed again.
+- **Users:** sign-ups waiting for approval (the tab shows how many), and every account with when it was last seen and how many devices are signed in. Approve or turn down requests, revoke access, or delete an account.
 
 `npm run dev` starts the server, worker, report page, desktop app, admin UI and extension watcher together. It still needs `npm run services:up`.
 
@@ -127,7 +132,7 @@ It has three tabs:
 npm run dev:web              # http://localhost:5175
 ```
 
-Paste a URL to scan it, or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs, the score, and earlier flagged scans of near-identical pages. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
+Paste a URL to scan it. If you're signed out, Scan takes you to the sign-in page first and carries on with the link afterwards. Your recent scans are listed below. Or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs, the score, and earlier flagged scans of near-identical pages. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
 
 To scan one URL without the queue, database or server, printing events as they happen and the report as JSON:
 
@@ -140,23 +145,34 @@ npm run scan -w @ladybug/worker -- https://example.com
 - `.env` (Compose): `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required), `DATABASE_URL` (to use Tiger Cloud), `ADMIN_PASSWORD`, `API_KEYS`, `LLM_*`, `WORKER_CONCURRENCY`, and the local ports
 - `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_PASSWORD`, `ADMIN_DIST`
 - `apps/worker/.env`: `DATABASE_URL`, `REDIS_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SANDBOX_PROVIDER`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY`
-- `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://ladybugg.garden` for both.
+- `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, and optionally `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://ladybugg.garden` for both.
 - Extension: release builds report to `https://ladybugg.garden`, and `npm run dev:extension` builds report to `http://localhost:3001`. Either can be changed in its popup.
 
-See the `.env.example` files, and [`docs/contracts.md`](docs/contracts.md) for every variable. `compose.local.yaml` only publishes ports on localhost. Before exposing anything, set strong `POSTGRES_PASSWORD`, `TYPESENSE_API_KEY` and `ADMIN_PASSWORD`. `API_KEYS` can gate starting scans, but reading reports and pet alerts is open.
+See the `.env.example` files, and [`docs/contracts.md`](docs/contracts.md) for every variable. `compose.local.yaml` only publishes ports on localhost. Before exposing anything, set strong `POSTGRES_PASSWORD`, `TYPESENSE_API_KEY` and `ADMIN_PASSWORD`. Reporting visits, starting scans and pet alerts need an approved account (or, for scans, a key from `API_KEYS`); reading a report only needs its link.
+
+## Accounts
+
+Accounts are a username and a password, stored in Postgres (`users`, and one `sessions` row per signed-in device; only scrypt hashes of the passwords and SHA-256 hashes of the tokens are kept).
+
+- Anyone can sign up from the extension popup, the pet's sign-in panel or the website's sign-in page (`/signin`, the **Sign in** button at the top). New accounts are **pending**: they can sign in, but the server refuses their visits, scans and pet stream with `403` until an admin approves them on the admin UI's **Users** tab. Clients notice on their own when that happens.
+- Each user's visits alert only their own pets. If two users visit the same unknown URL while it's being analysed, there is still one analysis, and both pets hear the result. The URL database is shared: a page one user's visit flagged is known unsafe for everyone.
+- "Check a URL" in the admin UI alerts every pet, as before.
+- Turning an account down, revoking it or deleting it disconnects its pets at once.
+- Sign-up and sign-in are limited to 10 attempts per minute per client IP.
+- The admin UI itself has no accounts: it is protected by `ADMIN_PASSWORD`.
 
 ## How it works
 
 ```
-browser ──POST /api/check──▶ server ──search──▶ Typesense (urls)
+browser ──POST /api/check (as a user)──▶ server ──search──▶ Typesense (urls)
                                │
                                ├─ known safe ─────▶ (nothing)
-                               ├─ known unsafe ───▶ pet alert
+                               ├─ known unsafe ───▶ pet alert (that user's pets)
                                └─ unknown ────────▶ pet alert "checking…" (with the scan id)
                                                     └─ sandbox scan (queue ▶ worker ▶ sandbox)
                                                         └─ save verdict to Typesense ─▶ pet alert with the result
 
-desktop pet ◀── GET /api/pet/stream (server-sent events)
+desktop pet ◀── GET /api/pet/stream (server-sent events, the signed-in user's alerts)
 admin UI    ◀── GET /api/admin/stream (server-sent events) + /api/admin/*
 ```
 
@@ -196,13 +212,16 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 
 | Endpoint | Used by |
 | --- | --- |
-| `POST /api/check` `{ url, title? }` | Extension |
-| `GET /api/pet/stream` | Desktop pet (SSE, `alert` events) |
-| `POST /api/scans` `{ url }`, `GET /api/scans`, `GET /api/scans/:id` | Pet, report page |
+| `POST /api/auth/signup`, `/login` `{ username, password, client? }`, `POST /api/auth/logout`, `GET /api/auth/me` | Extension, pet, report page |
+| `POST /api/check` `{ url, title? }` | Extension (approved account) |
+| `GET /api/pet/stream` | Desktop pet (SSE, `alert` events; approved account) |
+| `POST /api/scans` `{ url }`, `GET /api/scans` (your own) | Pet, report page (approved account, or an `API_KEYS` key to start scans) |
+| `GET /api/scans/:id` | Pet, report page |
 | `GET /api/scans/:id/events` | Report page, pet (SSE, replays from the start) |
 | `GET /api/scans/:id/artifacts/:key` | Report page (screenshots, HAR) |
 | `GET /api/admin/summary`, `/events`, `/urls`, `/stream`, `/timeline?range=1h\|24h\|7d` | Admin UI |
 | `POST /api/admin/check`, `POST/PUT/DELETE /api/admin/urls` | Admin UI |
+| `GET /api/admin/users`, `POST /api/admin/users/:id/approve\|reject`, `DELETE /api/admin/users/:id` | Admin UI |
 | `GET /health` | Everything |
 
 ## Deploy
@@ -214,7 +233,7 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 1. Create a Git-based application in Coolify with the **Docker Compose** build pack, using `compose.yaml` at the repository root. Don't add `compose.local.yaml`.
 2. Set environment variables:
    - `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required: strong, URL-safe values)
-   - `ADMIN_PASSWORD`, to protect `/admin`
+   - `ADMIN_PASSWORD`, to protect `/admin`, where accounts are approved
    - `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL`
    - optionally `DATABASE_URL` (a Tiger Cloud service instead of the bundled Postgres), `API_KEYS`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY` and `WORKER_CONCURRENCY`
 
@@ -235,9 +254,9 @@ Things to know:
 
 - It wanders along the bottom of the screen on its own.
 - Drop a link on it, or choose "Scan clipboard URL" from the tray or right-click menu, and it goes to investigate. When the scan finishes it reacts to the verdict: a happy wiggle, nervous, or alarmed.
-- Click it during or after a scan to open the report. Otherwise, a click makes it hop and say something (greeting comes from the server). Clicking also dismisses an alert.
+- Click it during or after a scan to open the report. Otherwise, a click makes it hop and say something (greeting comes from the server). Clicking also dismisses an alert. While you're signed out or waiting for approval, a click brings up the sign-in panel instead.
 - Drag it around and throw it.
-- Right-click it, or use the tray icon, to hide it or quit.
+- Right-click it, or use the tray icon, to hide it, open "Account…" (sign in or out) or quit.
 
 Everything else on the overlay is click-through, so it never gets in the way of the apps underneath.
 

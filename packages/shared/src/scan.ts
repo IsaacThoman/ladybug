@@ -1,6 +1,8 @@
 // Scan pipeline types: what the API, the worker, the report page and the pet
 // all agree on.
 
+import type { AuthErrorCode } from "./accounts.ts";
+
 export const SCAN_STATUSES = [
   "queued",
   "provisioning",
@@ -162,7 +164,11 @@ export type ScanListItem = Omit<ScanResponse, "report"> & {
 /** GET /api/scans?limit=20 — most recent first. */
 export type ScanListResponse = { scans: ScanListItem[] };
 
-export type ApiError = { error: string };
+export type ApiError = {
+  error: string;
+  /** Set on 401/403 from endpoints that need an approved account. */
+  code?: AuthErrorCode;
+};
 
 /** Header carrying the API key on POST /api/scans. Reads don't need it: scan ids are unguessable. */
 export const API_KEY_HEADER = "x-api-key";
@@ -203,12 +209,15 @@ CREATE TABLE IF NOT EXISTS scans (
   input_url   text NOT NULL,
   status      text NOT NULL,
   api_key     text,
+  user_id     uuid,
   report      jsonb,
   error       text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS scans_created_at_idx ON scans (created_at DESC);
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS user_id uuid;
+CREATE INDEX IF NOT EXISTS scans_user_idx ON scans (user_id, created_at DESC);
 `;
 
 /** Verdict thresholds: under 30 benign, 30–69 suspicious, 70+ malicious. */

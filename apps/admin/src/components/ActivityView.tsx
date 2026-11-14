@@ -11,6 +11,7 @@ const FILTERS: { label: string; types?: LogEventType[] }[] = [
   { label: "Analyses", types: ["analysis_started", "analysis_completed"] },
   { label: "Pet alerts", types: ["alert"] },
   { label: "Admin", types: ["admin"] },
+  { label: "Sign-ups", types: ["account"] },
   { label: "Errors", types: ["error"] },
 ];
 

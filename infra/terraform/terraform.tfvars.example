@@ -12,3 +12,6 @@ artifacts_bucket = "ladybug-artifacts-demo"
 # sandbox_only      = true
 # system_nodes      = 1
 # sandbox_min_nodes = 1
+
+# The Container Registry isn't offered everywhere (e.g. not in atl).
+# registry_region = "ewr"

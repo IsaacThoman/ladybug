@@ -13,8 +13,9 @@ internet directly. Its only outbound connection is the gateway on TCP 8080.
 - Terraform >= 1.6, kubectl with kustomize support, Docker/buildx, openssl,
   Python 3, and a Vultr account/API key. Standalone `kustomize` is needed only
   for `build-images.sh --set-images`.
-- A Vultr region with VKE, Managed Postgres/Valkey, Object Storage and Registry;
-  sufficient quota for the node pools and one Load Balancer.
+- A Vultr region with VKE, Managed Postgres/Valkey and Object Storage;
+  sufficient quota for the node pools and one Load Balancer. The Container
+  Registry is in fewer regions: set `registry_region` if yours lacks it.
 - A VKE CNI that enforces NetworkPolicy. The deny test below is a deployment gate:
   do not send untrusted URLs until it passes.
 - An OpenAI-compatible model endpoint (base URL, model and key) and reputation-service keys, if wanted. Set `API_KEYS` to a
@@ -113,7 +114,8 @@ export VULTR_API_KEY=...
 terraform -chdir=infra/terraform init
 cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
 # In terraform.tfvars: sandbox_only = true, system_nodes = 1, and the region,
-# registry name and sandbox_min_nodes / sandbox_max_nodes you want.
+# registry name and sandbox_min_nodes / sandbox_max_nodes you want. Set
+# registry_region too if your region has no Container Registry (e.g. atl).
 terraform -chdir=infra/terraform apply
 
 export REGISTRY=$(terraform -chdir=infra/terraform output -raw registry)
@@ -141,14 +143,17 @@ How it fits together:
   (`SANDBOX_KUBECONFIG_B64`). It can create, read and delete pods in `sandbox`
   and use their proxy subresource, and nothing else.
 - **It reaches each sandbox through the API server's pod proxy**, since pod IPs
-  aren't routable from outside. The `sandbox-api-proxy` NetworkPolicy lets
-  that traffic reach port 7000. Every screenshot and page snapshot crosses
-  the control plane this way, which is fine for tens of scans at once.
+  aren't routable from outside. On VKE that traffic arrives from the
+  `konnectivity-agent` pods in `kube-system`, and the `sandbox-api-proxy`
+  NetworkPolicy lets those reach port 7000. Every screenshot and page
+  snapshot crosses the control plane this way, which is fine for tens of
+  scans at once.
 - **Pods get the gateway's address and public CA from the `sandbox-env`
   ConfigMap** (`SANDBOX_ENV_CONFIGMAP`), which bootstrap writes.
 - **A pod may wait for a node.** The worker gives a sandbox
   `SANDBOX_START_TIMEOUT_MS` (default 6 minutes) to become ready, which covers
-  the autoscaler adding a node. The scan's own time limit starts after that.
+  the autoscaler adding a node (about 2 minutes on VKE). The scan's own time
+  limit starts after that.
 - **Revoking the worker:** delete the `remote-worker-token` Secret in `ladybug`
   and run bootstrap again for a new one.
 

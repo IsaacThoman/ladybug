@@ -24,7 +24,7 @@ export class DaemonClient {
   private token: string;
   private fetch: DaemonFetch;
 
-  constructor(baseUrl: string, token: string, fetchImpl: DaemonFetch = fetch) {
+  constructor(baseUrl: string, token: string, fetchImpl: DaemonFetch = (url, init) => fetch(url, init)) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.token = token;
     this.fetch = fetchImpl;

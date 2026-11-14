@@ -77,7 +77,7 @@ export default function SignInPage() {
 
   return (
     <main className="signin">
-      <MascotStage unit={150} mood={mood} followPointer={mood === "calm"} ref={mascotRef}>
+      <MascotStage unit={150} mood={mood} ref={mascotRef}>
         <p className="mascot-bubble" key={`${mood}:${says}`} aria-hidden="true">
           {says}
         </p>

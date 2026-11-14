@@ -10,9 +10,12 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "dev": "concurrently -k -n server,desktop -c blue,magenta \"npm:dev:server\" \"npm:dev:desktop\"",
+    "dev": "concurrently -k -n server,desktop,admin,ext -c blue,magenta,green,yellow \"npm:dev:server\" \"npm:dev:desktop\" \"npm:dev:admin\" \"npm:dev:extension\"",
     "dev:server": "npm run dev -w @ladybug/server",
     "dev:desktop": "npm run dev -w @ladybug/desktop",
+    "dev:admin": "npm run dev -w @ladybug/admin",
+    "dev:extension": "npm run dev -w @ladybug/extension",
+    "typesense": "docker compose up -d typesense",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint ."

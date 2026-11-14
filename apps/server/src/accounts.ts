@@ -48,7 +48,7 @@ export async function currentUser(accounts: AccountStore, req: Request) {
 }
 
 const AUTH_ERRORS: Record<AuthErrorCode, { status: number; error: string }> = {
-  signed_out: { status: 401, error: "Sign in to use Ladybug" },
+  signed_out: { status: 401, error: "Sign in to use Ladybugg" },
   pending: { status: 403, error: "Your account is waiting for an admin to approve it" },
   rejected: { status: 403, error: "An admin turned down this account" },
 };

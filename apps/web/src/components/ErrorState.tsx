@@ -41,7 +41,7 @@ function describe(failure: ApiFailure, scanId?: string) {
       };
     case "unreachable":
       return {
-        title: "Can't reach the ladybug server",
+        title: "Can't reach the ladybugg server",
         body: "The API didn't respond. Check that the server is running, then refresh this page.",
       };
     case "unauthorized":

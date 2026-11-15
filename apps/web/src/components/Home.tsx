@@ -148,25 +148,6 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="how" id="how" aria-labelledby="how-title">
-        <h2 id="how-title" className="section-title">
-          How it works
-        </h2>
-        <ol className="how-steps">
-          {STEPS.map((step, i) => (
-            <li key={step.title} className="how-step">
-              <span className="how-icon" aria-hidden="true">
-                {step.icon}
-              </span>
-              <h3>
-                <span className="how-number">{i + 1}</span> {step.title}
-              </h3>
-              <p>{step.body}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
       {session && approved ? (
         <YourScans key={session.token} />
       ) : (
@@ -266,27 +247,3 @@ function mascotLine(
   if (target) return { mood: "expectant", says: `Ooh, ${hostOf(target)}. Shall I?` };
   return { mood: "calm", says: "Got a sketchy link? I'll take a look." };
 }
-
-const icon = (d: string) => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d={d} />
-  </svg>
-);
-
-const STEPS = [
-  {
-    title: "Planted in a sandbox",
-    body: "The page opens in a throwaway browser, walled off from everything else, with its traffic recorded.",
-    icon: icon("M12 21v-8M12 13c0-4 3-6.5 7-6.5 0 4-3 6.5-7 6.5zM12 15.5c0-3-2.2-5-5.5-5 0 3 2.2 5 5.5 5zM6 21h12"),
-  },
-  {
-    title: "Poked by an agent",
-    body: "An AI agent clicks around like a curious visitor would, following redirects and filling in forms.",
-    icon: icon("M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.2 15.2 21 21M8 10.5a2.5 2.5 0 0 1 2.5-2.5"),
-  },
-  {
-    title: "Scored, with evidence",
-    body: "You get a risk score from 0 to 100, the findings behind it, and screenshots of what it saw.",
-    icon: icon("M4 17a8 8 0 0 1 16 0M12 17l3.5-5M4 21h16"),
-  },
-];

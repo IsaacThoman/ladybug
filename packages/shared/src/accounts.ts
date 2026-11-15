@@ -41,6 +41,11 @@ export type AdminAccount = Account & {
   lastSeenAt: string | null;
   /** Devices signed in right now. */
   sessions: number;
+  /** The user's pet may place support calls (off until an admin turns it on). */
+  callsEnabled: boolean;
 };
 
 export type AdminAccountsResponse = { accounts: AdminAccount[] };
+
+/** PUT /api/admin/users/:id/calls. */
+export type AdminCallsRequest = { enabled: boolean };

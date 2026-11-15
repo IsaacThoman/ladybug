@@ -910,7 +910,6 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   };
 
   const busy = answer !== null && answer.id === warning?.id && answer.state !== "failed";
-  const others = warnings.length - 1;
 
   return (
     <>
@@ -941,13 +940,8 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
         <button type="button" className="primary" disabled={busy} onClick={() => choose(warning.id, "exit")}>Get me out of here</button>
         <button type="button" className="ghost" disabled={busy} onPointerEnter={fret} onFocus={fret} onClick={() => choose(warning.id, "continue")}>Continue anyway</button>
       </div>
-      {answer?.id === warning.id && answer.state === "failed" ? (
+      {answer?.id === warning.id && answer.state === "failed" && (
         <p className="pet-warning-note" role="alert">I couldn't reach your browser. Try again, or use the page itself.</p>
-      ) : (
-        <p className="pet-warning-note">
-          {others > 0 ? `${others} more blocked ${others === 1 ? "page" : "pages"} after this one. ` : ""}
-          Continuing hides the warning for the rest of the browser session.
-        </p>
       )}
     </section>}
     <section

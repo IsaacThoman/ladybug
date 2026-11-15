@@ -3,8 +3,9 @@ import type {
   DragEvent as ReactDragEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
 } from "react";
-import type { AlertLevel, PetAlert, PetWarning, ScanStatus, ScanVerdict, WarningChoice } from "@ladybug/shared";
+import type { AlertLevel, PetAlert, PetFocus, PetWarning, ScanStatus, ScanVerdict, WarningChoice } from "@ladybug/shared";
 import { chooseForWarning, createScan, getScan, reportUrl, subscribeToPetStream, watchScan } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
 import { getSession } from "../session";
@@ -22,6 +23,8 @@ const UNIT_PX = 100; // CSS px per model unit (≈ the bug's length)
 const CANVAS_WIDTH = 180;
 const CANVAS_HEIGHT = 150;
 const GROUND_PX = 14;
+/** How far above the bottom of the work area the bug walks. */
+const GROUND_LIFT = 24;
 const GRAVITY = 2400; // px/s²
 const WALK_SPEED = 70; // px/s
 const BOUNCE = 0.35;
@@ -38,7 +41,7 @@ const ALERT_REACTION_MS = { benign: 4000, malicious: 12000 };
 const DRAG_HOVER_STALE_MS = 400;
 /** How many scan ids to remember for de-duplicating reactions. */
 const SEEN_SCANS_LIMIT = 100;
-/** Space between the warning bubble and the bug, and the screen edges. */
+/** Space between a speech bubble and the bug, and the screen edges. */
 const BUBBLE_GAP = 14;
 const BUBBLE_MARGIN = 8;
 /** Re-enable the bubble's buttons if the browser hasn't acted on a choice by then. */
@@ -95,15 +98,16 @@ function remember(set: Set<string>, id: string) {
   if (set.size > SEEN_SCANS_LIMIT) set.delete(set.values().next().value!);
 }
 
-function moodFor(scan: ScanState, dropHover: boolean, blocking: boolean): LadybugMood {
+function moodFor(scan: ScanState, dropHover: boolean, blocking: boolean, inspecting: boolean): LadybugMood {
   if (dropHover) return "expectant";
   // Scared for as long as the browser is blocking an unsafe page.
   if (blocking) return "alarmed";
-  if (scan.phase === "scanning") return "sniffing";
-  if (scan.phase !== "done") return "calm";
-  if (scan.verdict === "benign") return "happy";
-  if (scan.verdict === "suspicious") return "nervous";
-  if (scan.verdict === "malicious") return "alarmed";
+  if (scan.phase === "done") {
+    if (scan.verdict === "benign") return "happy";
+    if (scan.verdict === "suspicious") return "nervous";
+    if (scan.verdict === "malicious") return "alarmed";
+  }
+  if (scan.phase === "scanning" || inspecting) return "sniffing";
   return "calm";
 }
 
@@ -140,7 +144,45 @@ const carriesLink = (data: DataTransfer) => data.types.some((type) => LINK_TYPES
 const dropEffectFor = (allowed: DataTransfer["effectAllowed"]): DataTransfer["dropEffect"] =>
   allowed === "link" || allowed === "linkMove" ? "link" : allowed === "move" ? "move" : "copy";
 
-export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: { layout: OverlayLayout; callBusy: boolean; requestHelp: () => void; onAccountNeeded: () => void }) {
+/**
+ * Keeps a speech bubble next to the bug: above it (below it near the top of
+ * the screen), on screen, with its tail pointing at the bug.
+ */
+function placeBubble(bubble: HTMLElement, s: PhysicsState, workArea: OverlayLayout["workArea"]) {
+  const width = bubble.offsetWidth;
+  const height = bubble.offsetHeight;
+  if (width === 0) {
+    // Hidden: placed afresh, unseen, when it shows again.
+    delete bubble.dataset.side;
+    return;
+  }
+  const center = s.x + PET_WIDTH / 2;
+  const left = Math.min(
+    Math.max(center - width / 2, workArea.x + BUBBLE_MARGIN),
+    workArea.x + workArea.width - width - BUBBLE_MARGIN,
+  );
+  const above = s.y - BUBBLE_GAP - height >= workArea.y + BUBBLE_MARGIN;
+  const top = Math.max(
+    workArea.y + BUBBLE_MARGIN,
+    Math.min(
+      above ? s.y - BUBBLE_GAP - height : s.y + PET_HEIGHT + BUBBLE_GAP,
+      workArea.y + workArea.height - height - BUBBLE_MARGIN,
+    ),
+  );
+  bubble.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+  bubble.style.setProperty("--tail-x", `${Math.min(Math.max(center - left, 22), width - 22)}px`);
+  const side = above ? "above" : "below";
+  if (bubble.dataset.side !== side) bubble.dataset.side = side;
+}
+
+export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeeded }: {
+  layout: OverlayLayout;
+  callBusy: boolean;
+  /** The support call's bubble: its status, controls and the caller's video. Kept mounted so the video element lives on. */
+  call: { open: boolean; content: ReactNode };
+  requestHelp: () => void;
+  onAccountNeeded: () => void;
+}) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenRef = useRef(false);
@@ -179,14 +221,22 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
   /** The warning a choice was just sent for, or that couldn't be sent. */
   const [answer, setAnswer] = useState<{ id: string; state: "sending" | "sent" | "failed" } | null>(null);
   const bubbleRef = useRef<HTMLElement>(null);
+  const callBubbleRef = useRef<HTMLElement>(null);
   /** Holds the bug still while its bubble is up, so the buttons don't wander off. */
   const holdRef = useRef(false);
   const seenWarningsRef = useRef(new Set<string>());
   const lastFretRef = useRef(0);
+  /** Whether the page in the browser's active tab is being checked, from the server. */
+  const [focus, setFocus] = useState<PetFocus | null>(null);
 
   const warning = warnings.at(-1) ?? null;
-  const showBubble = warning !== null && !menu;
-  const mood = moodFor(scan, dropHover, warning !== null);
+  // A support call has the bug's attention; blocked pages wait until it's over.
+  const showBubble = warning !== null && !menu && !call.open;
+  // The page the user is looking at is being checked: stand still and look it
+  // over through the magnifying glass. Blocked pages, reactions and drops come first.
+  const inspecting = Boolean(focus?.investigating) && !dropHover && warning === null && scan.phase !== "done";
+  const inspectingRef = useRef(false);
+  const mood = moodFor(scan, dropHover, warning !== null, inspecting);
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -194,11 +244,12 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
 
   useEffect(() => {
     moodRef.current = mood;
-  }, [mood]);
+    inspectingRef.current = inspecting;
+  }, [mood, inspecting]);
 
   useEffect(() => {
-    holdRef.current = showBubble;
-  }, [showBubble]);
+    holdRef.current = showBubble || call.open;
+  }, [showBubble, call.open]);
 
   // Movement bounds are the display work area or the development window.
   const getBounds = () => {
@@ -207,7 +258,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       minX: workArea.x,
       maxX: workArea.x + workArea.width - PET_WIDTH,
       minY: workArea.y,
-      groundY: workArea.y + workArea.height - PET_HEIGHT,
+      groundY: workArea.y + workArea.height - PET_HEIGHT - GROUND_LIFT,
     };
   };
 
@@ -250,21 +301,17 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       const mood = moodRef.current;
       const { minX, maxX, minY, groundY } = getBounds();
       s.targetX = Math.min(Math.max(s.targetX, minX), maxX);
-      // Sniffing and nervous bugs potter about nearby instead of crossing the screen.
-      const pottering = mood === "sniffing" || mood === "nervous";
-      const speed = s.backing
-        ? WALK_SPEED * 0.6
-        : mood === "sniffing"
-          ? WALK_SPEED * 0.45
-          : mood === "nervous"
-            ? WALK_SPEED * 0.35
-            : WALK_SPEED;
+      // Nervous bugs potter about nearby instead of crossing the screen.
+      const pottering = mood === "nervous";
+      const speed = s.backing ? WALK_SPEED * 0.6 : pottering ? WALK_SPEED * 0.35 : WALK_SPEED;
 
-      const holding = mood === "expectant" || holdRef.current;
+      // Searching with the magnifying glass, it stands still and faces forward.
+      const holding = mood === "expectant" || mood === "sniffing" || holdRef.current || inspectingRef.current;
       if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
-          // Hold still while a link is dragged over it, or while it's warning about a page.
+          // Hold still while a link is dragged over it, while it's warning
+          // about a page, or while it searches with the magnifying glass.
           if (holding) s.idleUntil = Math.max(s.idleUntil, now + 300);
           if (now >= s.idleUntil) {
             if (s.backing) {
@@ -344,30 +391,14 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
         reportedY = s.y;
         window.ladybug.setPetRect({ x: s.x, y: s.y, width: PET_WIDTH, height: PET_HEIGHT });
       }
-      // The warning bubble rides above the bug (below it near the top of the
-      // screen), kept on screen, with its tail pointing at the bug.
-      const bubble = bubbleRef.current;
-      if (bubble) {
-        const { workArea } = layoutRef.current;
-        const width = bubble.offsetWidth;
-        const height = bubble.offsetHeight;
-        const center = s.x + PET_WIDTH / 2;
-        const left = Math.min(
-          Math.max(center - width / 2, workArea.x + BUBBLE_MARGIN),
-          workArea.x + workArea.width - width - BUBBLE_MARGIN,
-        );
-        const above = s.y - BUBBLE_GAP - height >= workArea.y + BUBBLE_MARGIN;
-        const top = above ? s.y - BUBBLE_GAP - height : s.y + PET_HEIGHT + BUBBLE_GAP;
-        bubble.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
-        bubble.style.setProperty("--tail-x", `${Math.min(Math.max(center - left, 22), width - 22)}px`);
-        const side = above ? "above" : "below";
-        if (bubble.dataset.side !== side) bubble.dataset.side = side;
-      }
+      // Speech bubbles ride along with the bug.
+      if (bubbleRef.current) placeBubble(bubbleRef.current, s, layoutRef.current.workArea);
+      if (callBubbleRef.current) placeBubble(callBubbleRef.current, s, layoutRef.current.workArea);
       // On-screen velocity, so drags (which move x outside this loop) count too.
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
       prevX = s.x;
       if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
-      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood }, dt);
+      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current }, dt);
       frame = requestAnimationFrame(tick);
     };
 
@@ -590,7 +621,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     else react("malicious");
   });
 
-  useEffect(() => subscribeToPetStream({ onAlert: (alert) => onAlert(alert), onWarnings: (next) => onWarnings(next) }), []);
+  useEffect(() => subscribeToPetStream({ onAlert: (alert) => onAlert(alert), onWarnings: (next) => onWarnings(next), onFocus: setFocus }), []);
 
   // A choice the browser hasn't acted on in a while can be tried again.
   useEffect(() => {
@@ -740,7 +771,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     {showBubble && <section
       ref={bubbleRef}
       key={warning.id}
-      className="pet-warning"
+      className="pet-bubble pet-warning"
       role="alertdialog"
       aria-labelledby="pet-warning-title"
       aria-describedby="pet-warning-summary"
@@ -760,7 +791,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
         {warning.reason && <p className="pet-warning-reason">{warning.reason}</p>}
         <p className="pet-warning-url" title={warning.url}>{warning.url}</p>
       </div>
-      <div className="pet-warning-actions">
+      <div className="pet-bubble-actions">
         <button type="button" className="primary" disabled={busy} onClick={() => choose(warning.id, "exit")}>Get me out of here</button>
         <button type="button" className="ghost" disabled={busy} onPointerEnter={fret} onFocus={fret} onClick={() => choose(warning.id, "continue")}>Continue anyway</button>
       </div>
@@ -773,6 +804,16 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
         </p>
       )}
     </section>}
+    <section
+      ref={callBubbleRef}
+      className="pet-bubble pet-call"
+      aria-label="Support call"
+      data-overlay-interactive
+      hidden={!call.open}
+      style={{ maxWidth: layout.workArea.width - BUBBLE_MARGIN * 2 }}
+    >
+      {call.content}
+    </section>
     {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Ladybugg" data-overlay-interactive
       style={{ maxWidth: layout.workArea.width, maxHeight: layout.workArea.height }}
       onKeyDown={(e) => {

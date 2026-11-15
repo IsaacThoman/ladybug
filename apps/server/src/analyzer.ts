@@ -43,9 +43,19 @@ export const isAnalysisRunning = (url: string) => pending.has(url);
 
 export const pendingAnalysis = (url: string) => pending.get(url);
 
-function broadcastPending() {
+type PendingListener = (url: string) => void;
+const pendingListeners = new Set<PendingListener>();
+
+/** Calls `listener` with a URL whenever its analysis starts or ends. Returns an unsubscribe function. */
+export function onPendingChange(listener: PendingListener) {
+  pendingListeners.add(listener);
+  return () => void pendingListeners.delete(listener);
+}
+
+function pendingChanged(url: string) {
   const message: AdminStreamEvent = { kind: "pending", pending: listPending() };
   adminChannel.send("message", message);
+  for (const listener of pendingListeners) listener(url);
 }
 
 const SUSPICIOUS_PATTERNS: [RegExp, string][] = [
@@ -96,7 +106,7 @@ export function startAnalysis(url: string, host: string, recipient: AlertRecipie
     ...(scan ? { scanId: randomUUID() } : {}),
   };
   pending.set(url, analysis);
-  broadcastPending();
+  pendingChanged(url);
   logEvent({
     type: "analysis_started",
     message: `Analysis started for ${url}`,
@@ -190,6 +200,6 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
     pending.delete(url);
     browserVisits.delete(url);
     watchers.delete(url);
-    broadcastPending();
+    pendingChanged(url);
   }
 }

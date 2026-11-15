@@ -89,6 +89,23 @@ export type PetAlert = {
   scanId?: string;
 };
 
+/**
+ * `POST /api/pet/focus`: the extension reports the page in the browser's
+ * active tab whenever it changes, or null when there's nothing to check.
+ */
+export type FocusRequest = { url: string | null };
+
+/**
+ * Pet stream event "focus": whether the page in the active tab is being
+ * checked right now. Sent when the pet connects, and whenever that changes.
+ */
+export type PetFocus = {
+  /** Normalised URL of the active tab, or null. */
+  url: string | null;
+  /** An analysis of `url` is running, so the pet stops to look it over. */
+  investigating: boolean;
+};
+
 // ---------------------------------------------------------------------------
 // Blocked pages. While the extension blocks an unsafe page, the page holds a
 // stream open to the server (POST /api/pet/warnings). The user's desktop pets

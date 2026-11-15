@@ -192,9 +192,14 @@ process per call line, as required by the existing call lifecycle.
 Clicking the ladybug opens a menu above it with **Request help**, **Scan clipboard
 URL**, and **View report** when available. Arrow keys and Tab move through items;
 Escape closes the menu. Dragging and the right-click menu remain available.
-The call panel appears during calls and offers **Hang up**; terminal status can
-be dismissed. Media elements stay mounted for remote requests. First use may
-prompt for permissions; permission failures appear in the panel without redial.
+During a call the ladybug holds still and shows a speech bubble with the call
+status, **Hang up**, and the caller's video, sized to fill much of the screen.
+Black bars the call bridge adds around the phone's picture (above and below, or
+left and right) are detected from sampled frames and cropped away. "Call ended"
+fades after a few seconds; errors stay until dismissed. Blocked-page warnings
+wait until the call bubble closes. Media elements stay mounted for remote
+requests. First use may prompt for permissions; permission failures appear in
+the bubble without redial.
 
 For Redis integration tests, use a dedicated disposable Redis/Valkey database:
 

@@ -14,6 +14,7 @@ import type {
   CreateScanResponse,
   GreetingResponse,
   PetAlert,
+  PetFocus,
   PetWarning,
   ScanEvent,
   ScanResponse,
@@ -153,16 +154,19 @@ export type PetStreamHandlers = {
    * while disconnected: the pages open new warnings when the server is back.
    */
   onWarnings: (warnings: PetWarning[]) => void;
+  /** Whether the page in the browser's active tab is being checked. Null while disconnected. */
+  onFocus: (focus: PetFocus | null) => void;
 };
 
 /**
  * Listens for the signed-in user's alerts (unsafe or unknown sites their
- * browser extension reported) and blocked pages. Connects whenever someone
+ * browser extension reported), blocked pages, and whether the page in the
+ * active tab is being checked. Connects whenever someone
  * signs in, and keeps checking back while the account waits for approval.
  * Uses fetch rather than EventSource so the token travels in a header.
  * Returns an unsubscribe function.
  */
-export function subscribeToPetStream({ onAlert, onWarnings }: PetStreamHandlers) {
+export function subscribeToPetStream({ onAlert, onWarnings, onFocus }: PetStreamHandlers) {
   let closed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | null = null;
@@ -177,6 +181,8 @@ export function subscribeToPetStream({ onAlert, onWarnings }: PetStreamHandlers)
     clearTimeout(retry);
     controller?.abort();
     onWarnings([]);
+    // Whatever the old stream said may be out of date by now.
+    onFocus(null);
     const session = getSession();
     connectedToken = session?.token ?? null;
     if (closed || !session) return;
@@ -200,15 +206,18 @@ export function subscribeToPetStream({ onAlert, onWarnings }: PetStreamHandlers)
       await readServerSentEvents(res.body, (event, data) => {
         if (event === "alert") onAlert(JSON.parse(data) as PetAlert);
         else if (event === "warnings") onWarnings(JSON.parse(data) as PetWarning[]);
+        else if (event === "focus") onFocus(JSON.parse(data) as PetFocus);
       });
       // The server ended the stream (a restart, or access was revoked): reconnecting tells which.
       if (!current.signal.aborted) {
         onWarnings([]);
+        onFocus(null);
         schedule(ALERT_RECONNECT_MS);
       }
     } catch {
       if (!current.signal.aborted && !closed) {
         onWarnings([]);
+        onFocus(null);
         schedule(ALERT_RECONNECT_MS);
       }
     }

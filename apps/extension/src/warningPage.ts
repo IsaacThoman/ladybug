@@ -1,4 +1,3 @@
-import { LadybugRenderer } from "@ladybug/mascot";
 import { readServerSentEvents } from "@ladybug/shared";
 import type { OpenWarningRequest, WarningStreamEvents } from "@ladybug/shared";
 import { getAuth, getSettings } from "./settings";
@@ -12,7 +11,7 @@ import "./warning.css";
 //
 // While it's up, it keeps a stream open to the server, so the user's desktop
 // ladybug stays scared and can offer the options in its speech bubble. If no
-// desktop ladybug is listening, this page's own ladybug offers them instead.
+// desktop ladybug is listening, this page offers them instead.
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -33,54 +32,6 @@ const send = (type: WarningMessage["type"]) =>
   chrome.runtime.sendMessage<WarningMessage, WarningDetails>({ type, token });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/** The 3D ladybug, alarmed. Falls back to the still mark without WebGL. */
-function startLadybug() {
-  const canvas = $<HTMLCanvasElement>("ladybug");
-  const unit = 104;
-  const width = Math.round(unit * 1.8);
-  const height = Math.round(unit * 1.5);
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-
-  let renderer: LadybugRenderer;
-  try {
-    renderer = new LadybugRenderer(canvas, { width, height, unitPx: unit, groundPx: Math.round(unit * 0.21) });
-  } catch {
-    canvas.hidden = true;
-    $<HTMLImageElement>("ladybug-fallback").hidden = false;
-    return null;
-  }
-
-  let last = performance.now();
-  const tick = (now: number) => {
-    const dt = Math.min((now - last) / 1000, 1 / 20);
-    last = now;
-    renderer.render({ mode: "idle", vx: 0, heading: 1, mood: "alarmed", look: 0 }, dt);
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-  return renderer;
-}
-
-/** Brings out this page's ladybug and its speech bubble. */
-function speakHere() {
-  const ladybug = startLadybug();
-  if (!ladybug || prefersReducedMotion()) return;
-  // Wings flare and the shell flashes as it starts talking, and again if
-  // the pointer heads for "Continue anyway".
-  setTimeout(() => ladybug.alarm(), 250);
-  let lastAlarm = 0;
-  const fret = () => {
-    if (performance.now() - lastAlarm < 2_000) return;
-    lastAlarm = performance.now();
-    ladybug.startle();
-    ladybug.alarm();
-  };
-  continueEl.addEventListener("pointerenter", fret);
-  continueEl.addEventListener("focus", fret);
-}
 
 /**
  * "waiting": not yet known whether a desktop ladybug is listening. "handoff":
@@ -94,25 +45,17 @@ function setView(next: "handoff" | "here") {
   view = next;
   handoffEl.hidden = next !== "handoff";
   hereEl.hidden = next !== "here";
-  if (next === "here") {
-    speakHere();
-    exitEl.focus();
-  }
+  if (next === "here") exitEl.focus();
 }
 
 function show(details: NonNullable<WarningDetails>) {
   $("host").textContent = details.host;
-  $("reason").textContent = details.reason;
-  $("url").textContent = details.url;
-  $("url").title = details.url;
   if (details.late) {
     $("summary").replaceChildren(
       "Ladybugg just finished checking ",
       Object.assign(document.createElement("strong"), { textContent: details.host }),
       ", and it isn't safe, so it's blocked now.",
     );
-    $("speech-title").textContent = "This page turned out to be dangerous";
-    $("speech-summary").textContent = "Don't enter passwords or payment details, or download anything from it.";
   }
   main.hidden = false;
   main.focus();

@@ -9,6 +9,7 @@ import { hostOf, timeAgo } from "../format.ts";
 import { navigate } from "../router.ts";
 import { getSession, useSession } from "../session.ts";
 import { useNow } from "../useNow.ts";
+import Landing from "./Landing.tsx";
 import Link from "./Link.tsx";
 import VerdictChip from "./VerdictChip.tsx";
 
@@ -165,6 +166,8 @@ export default function Home() {
           </p>
         </section>
       )}
+
+      <Landing />
     </main>
   );
 }

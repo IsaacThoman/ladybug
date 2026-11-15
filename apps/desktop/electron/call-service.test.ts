@@ -135,7 +135,7 @@ test("cancellation while capture is pending stops media and suppresses dialing a
 test("a signed-out request is visible and allows retry", async () => {
   const f = controllerFixture();
   f.published.promise.catch(() => {});
-  f.api.prepare = async () => { throw new Error("Sign in to Ladybugg to request help."); };
+  f.api.prepare = async () => { throw new Error("Sign in to Computerbug to request help."); };
   await f.controller.start();
   assert.equal(f.controller.getSnapshot().phase, "error");
   assert.match(f.controller.getSnapshot().message, /Sign in/);

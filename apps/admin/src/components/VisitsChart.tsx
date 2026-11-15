@@ -124,7 +124,7 @@ export default function VisitsChart({ refreshKey }: { refreshKey: string | undef
           <p className="hint">
             {shown
               ? `${(totals.safe + totals.unsafe + totals.unknown).toLocaleString()} in the ${range === "1h" ? "last hour" : `last ${RANGE_LABELS[range].toLowerCase()}`} · TimescaleDB continuous aggregate`
-              : "By what Ladybugg decided, from the visit hypertable"}
+              : "By what Computerbug decided, from the visit hypertable"}
           </p>
         </div>
         <div className="segmented" role="group" aria-label="Time range">

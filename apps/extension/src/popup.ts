@@ -32,7 +32,7 @@ const accountStatusEl = $<HTMLParagraphElement>("account-status");
 const signOutEl = $<HTMLButtonElement>("sign-out");
 
 const STATUS_TEXT = {
-  pending: "Waiting for an admin to approve your account. Ladybugg starts checking pages as soon as they do.",
+  pending: "Waiting for an admin to approve your account. Computerbug starts checking pages as soon as they do.",
   rejected: "An admin turned down this account, so pages aren't checked.",
 } as const;
 

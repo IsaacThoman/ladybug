@@ -60,7 +60,7 @@ export default function LoginPage({ onSignedIn, unreachable = false, onRetry }: 
 
         {unreachable ? (
           <section className="login-card">
-            <h1>Ladybugg admin</h1>
+            <h1>Computerbug admin</h1>
             <p className="login-sub">The server didn't answer. Check that it's running, then try again.</p>
             <button type="button" className="login-submit" onClick={onRetry}>
               Try again
@@ -68,7 +68,7 @@ export default function LoginPage({ onSignedIn, unreachable = false, onRetry }: 
           </section>
         ) : (
           <form className="login-card" onSubmit={submit}>
-            <h1>Ladybugg admin</h1>
+            <h1>Computerbug admin</h1>
             <p className="login-sub">Sign in to tend the garden.</p>
             {/* Lets password managers file the password under a name. */}
             <input type="text" name="username" value="admin" autoComplete="username" readOnly hidden />
@@ -102,7 +102,7 @@ export default function LoginPage({ onSignedIn, unreachable = false, onRetry }: 
           </form>
         )}
         <a className="login-back" href="/">
-          ← Back to ladybugg
+          ← Back to computerbug
         </a>
       </main>
       <GardenHills />

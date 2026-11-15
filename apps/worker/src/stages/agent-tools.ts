@@ -115,7 +115,7 @@ export function buildTools(
     defineTool({
       name: "browser_type",
       description:
-        "Type text into a field (selector, or x,y to click first). Only ever type throwaway test data: email test@example.com, password Ladybugg-Test-123!, names like Test User.",
+        "Type text into a field (selector, or x,y to click first). Only ever type throwaway test data: email test@example.com, password Computerbug-Test-123!, names like Test User.",
       inputSchema: z.object({
         text: z.string(),
         selector: z.string().nullable(),

@@ -1,4 +1,4 @@
-# ladybugg
+# computerbug
 
 A desktop pet that lives on top of your screen and warns you about unsafe websites.
 
@@ -105,7 +105,7 @@ Until you sign in, a sign-in panel sits in the top-left corner of the overlay (o
 
 ```sh
 npm run dev:extension                  # rebuilds on change, reports to http://localhost:3001
-npm run build -w @ladybug/extension    # release build, reports to https://ladybugg.garden
+npm run build -w @ladybug/extension    # release build, reports to https://computerbug.garden
 ```
 
 Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `apps/extension/dist`. A server URL saved in the popup overrides the build's default. Sign in (or create an account) in its popup: nothing is reported until you do, and nothing is checked until an admin approves the account. The popup also shows whether it can reach the server and the last pages it reported, and lets you pause reporting or point it at another server (which signs you out). The toolbar badge shows `!` on unsafe pages, `…` while a page is being checked, and `?` when it can't check (signed out, waiting for approval, or the server is unreachable).
@@ -146,8 +146,8 @@ npm run scan -w @ladybug/worker -- https://example.com
 - `.env` (Compose): `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required), `DATABASE_URL` (to use Tiger Cloud), `ADMIN_PASSWORD`, `API_KEYS`, `LLM_*`, `WORKER_CONCURRENCY`, and the local ports
 - `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_PASSWORD`, `ADMIN_DIST`
 - `apps/worker/.env`: `DATABASE_URL`, `REDIS_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SANDBOX_PROVIDER`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY`
-- `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, and optionally `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://ladybugg.garden` for both.
-- Extension: release builds report to `https://ladybugg.garden`, and `npm run dev:extension` builds report to `http://localhost:3001`. Either can be changed in its popup.
+- `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, and optionally `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://computerbug.garden` for both.
+- Extension: release builds report to `https://computerbug.garden`, and `npm run dev:extension` builds report to `http://localhost:3001`. Either can be changed in its popup.
 
 See the `.env.example` files, and [`docs/contracts.md`](docs/contracts.md) for every variable. `compose.local.yaml` only publishes ports on localhost. Before exposing anything, set strong `POSTGRES_PASSWORD`, `TYPESENSE_API_KEY` and `ADMIN_PASSWORD`. Reporting visits, starting scans and pet alerts need an approved account (or, for scans, a key from `API_KEYS`); reading a report only needs its link.
 
@@ -240,7 +240,7 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
    - optionally `DATABASE_URL` (a Tiger Cloud service instead of the bundled Postgres), `API_KEYS`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY` and `WORKER_CONCURRENCY`
 
    `.env.example` lists them all.
-3. Give service **`web`** the domain, on internal port `8080`: for example `https://ladybugg.garden:8080`. Traefik routes it, and `web` proxies `/api`, `/admin` and `/health` to the server. Don't give any other service a domain.
+3. Give service **`web`** the domain, on internal port `8080`: for example `https://computerbug.garden:8080`. Traefik routes it, and `web` proxies `/api`, `/admin` and `/health` to the server. Don't give any other service a domain.
 4. Deploy. The first build takes a while: it also builds the sandbox image (service `sandbox-image`, which only holds the image and sleeps).
 
 Things to know:
@@ -248,7 +248,7 @@ Things to know:
 - **Docker socket.** The worker mounts `/var/run/docker.sock` to start one sandbox container per scan, which is root-equivalent on the host. Sandboxes join only the internal `ladybug-sandboxes` network (rename it with `SANDBOX_NETWORK`). Their only way out is the gateway, which refuses private and link-local addresses, so they can't reach the other containers, the host's private networks or cloud metadata. They can still reach anything public, including services on the host's own public IP.
 - **Sizing.** Each scan's sandbox can use up to 2 CPUs and 3 GB of RAM, so set `WORKER_CONCURRENCY` (default 2) to fit the server.
 - **Artifacts.** Screenshots and HAR files live on the `artifacts` volume. To use Object Storage instead, set `ARTIFACT_STORE=s3` and the `S3_*` variables.
-- **Cloudflare Tunnel.** Point the tunnel at Coolify's proxy, and set the `web` domain as `http://ladybugg.garden:8080` (http, so Traefik doesn't try to get its own certificate behind Cloudflare). Set `CLIENT_IP_HEADER=cf-connecting-ip` so rate limits see visitors' real IPs. Only do that if the tunnel is the only way in, or clients could spoof the header. Live updates use server-sent events with regular heartbeats, so they stay open through Cloudflare.
+- **Cloudflare Tunnel.** Point the tunnel at Coolify's proxy, and set the `web` domain as `http://computerbug.garden:8080` (http, so Traefik doesn't try to get its own certificate behind Cloudflare). Set `CLIENT_IP_HEADER=cf-connecting-ip` so rate limits see visitors' real IPs. Only do that if the tunnel is the only way in, or clients could spoof the header. Live updates use server-sent events with regular heartbeats, so they stay open through Cloudflare.
 - **Proxy hops.** Without the tunnel, `TRUST_PROXY_HOPS=2` (the default here) covers Traefik, then web's nginx.
 - **Kubernetes.** The Vultr Kubernetes setup is an alternative: see [`infra/README.md`](infra/README.md). It can also take over just the sandboxes, with autoscaling, while everything else stays on this stack: see ["Sandboxes only"](infra/README.md#sandboxes-only).
 

@@ -60,7 +60,7 @@ export default function SignInPage() {
       setBusy(false);
       setError(
         err instanceof ApiRequestError && err.failure.kind === "unreachable"
-          ? "Can't reach the ladybugg server."
+          ? "Can't reach the computerbug server."
           : err instanceof Error
             ? err.message
             : String(err),
@@ -149,7 +149,7 @@ export default function SignInPage() {
         </p>
       </form>
       <Link href="/" className="signin-back">
-        ← Back to ladybugg
+        ← Back to computerbug
       </Link>
     </main>
   );

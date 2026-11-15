@@ -53,15 +53,16 @@ export async function readMessages(config: MessagingConfig, request = fetch): Pr
   });
   if (!response.ok) { await response.body?.cancel(); throw new Error("Chert shared messages unavailable"); }
   const body = object(await response.json()), data = object(body?.data);
-  if (!Array.isArray(data?.items) || data.items.length > 50) throw new Error("Invalid shared messages response");
-  return data.items.map((value: unknown) => {
+  // Chert returns at most the newest 50 messages, whatever the query says.
+  if (!Array.isArray(data?.items)) throw new Error("Invalid shared messages response");
+  // Skip rows we can't read (an image-only reply, say) rather than failing the
+  // whole poll: one such row would otherwise stop every reply and send check
+  // until 50 newer messages pushed it out.
+  return data.items.filter((value: unknown): value is SharedMessage => {
     const row = object(value);
-    if (!row || typeof row.id !== "string" || !row.id || typeof row.line_id !== "string" ||
-      !["inbound", "outbound"].includes(String(row.direction)) || typeof row.state !== "string" ||
-      typeof row.masked_recipient !== "string" || typeof row.text !== "string" ||
-      typeof row.created_at !== "string" || !Number.isFinite(Date.parse(row.created_at))) {
-      throw new Error("Invalid shared message");
-    }
-    return row as SharedMessage;
+    return !!row && typeof row.id === "string" && !!row.id && typeof row.line_id === "string" &&
+      ["inbound", "outbound"].includes(String(row.direction)) && typeof row.state === "string" &&
+      typeof row.masked_recipient === "string" && typeof row.text === "string" &&
+      typeof row.created_at === "string" && Number.isFinite(Date.parse(row.created_at));
   });
 }

@@ -14,9 +14,17 @@ const windows = (config: MessagingConfig) => `support:shared:windows:${hash(`${c
 export type SupportCommand = { id: string; accountId: string; kind: "support" | "browser-kill" | "device-shutdown"; sentAt: number; expiresAt: number };
 type Job = { accountId: string; id: string; url: string; config: Pick<MessagingConfig, "destination" | "line" | "project">; created: number; attempts: number; messageId?: string };
 
-/** Atomic reservation and outbox insertion; pending sends survive process restarts. */
+/**
+ * Atomic reservation and outbox insertion; pending sends survive process restarts.
+ * An existing cooldown longer than the current one (left by an older build, say)
+ * is trimmed, so shortening HOST_COOLDOWN_MS takes effect on live keys too.
+ */
 const reserve = `
-if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl ~= -2 then
+ if ttl == -1 or ttl > tonumber(ARGV[5]) then redis.call('PEXPIRE', KEYS[1], ARGV[5]) end
+ return 0
+end
 redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[5])
 redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[3])
 redis.call('ZADD', KEYS[3], ARGV[4], KEYS[2])

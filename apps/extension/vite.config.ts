@@ -14,6 +14,7 @@ export default defineConfig({
       input: {
         background: path.join(import.meta.dirname, "src/background.ts"),
         popup: path.join(import.meta.dirname, "popup.html"),
+        warning: path.join(import.meta.dirname, "warning.html"),
       },
       output: {
         entryFileNames: "[name].js",

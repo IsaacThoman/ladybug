@@ -41,6 +41,8 @@ export const listPending = () =>
 
 export const isAnalysisRunning = (url: string) => pending.has(url);
 
+export const pendingAnalysis = (url: string) => pending.get(url);
+
 function broadcastPending() {
   const message: AdminStreamEvent = { kind: "pending", pending: listPending() };
   adminChannel.send("message", message);

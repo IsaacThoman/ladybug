@@ -19,12 +19,14 @@ type Setup = {
   epsilon: number;
   cleanupInterval: number;
   seed: number;
+  resetDrive: boolean;
+  adaptation?: { increment: number; tau: number };
   inputs: { neurons: number[]; rate: number }[];
   /** Rate changes applied just before the given step. */
   changes: { step: number; input: number; rate: number }[];
 };
 
-type Run = { spikes: number[][]; v: Float32Array; g: Float32Array };
+type Run = { spikes: number[][]; v: Float32Array; g: Float32Array; a: Float32Array };
 
 function randomNetwork(random: () => number, n: number, maxDegree: number, maxCount: number): Net {
   const ptr = new Uint32Array(n + 1);
@@ -70,6 +72,8 @@ function randomSetup(seed: number, overrides: Partial<Setup> = {}): Setup {
     epsilon: 1e-3,
     cleanupInterval: [1, 3, 16][Math.floor(random() * 3)],
     seed: Math.floor(random() * 2 ** 32),
+    resetDrive: random() < 0.5,
+    adaptation: random() < 0.5 ? { increment: 0.05 + random() * 0.5, tau: 20 + random() * 500 } : undefined,
     inputs: [
       { neurons: pick(12), rate: 80 + random() * 200 },
       { neurons: pick(30), rate: 5 + random() * 30 },
@@ -85,11 +89,12 @@ function randomSetup(seed: number, overrides: Partial<Setup> = {}): Setup {
   };
 }
 
-// Weak synapses, no tonic neurons, and all input stopped from step 800 to
-// 2400 (0.8 s): activity dies away and comes back, so neurons keep joining and
+// Weak synapses, no tonic neurons, no adaptation (which keeps a neuron that
+// fired active for a while), and all input stopped from step 800 to 2400
+// (0.8 s): activity dies away and comes back, so neurons keep joining and
 // leaving the active set.
 function sparseSetup(seed: number): Setup {
-  const setup = randomSetup(seed, { bias: undefined, dt: 0.5 });
+  const setup = randomSetup(seed, { bias: undefined, dt: 0.5, adaptation: undefined });
   return {
     ...setup,
     gain: setup.gain.map((x) => x * 0.35),
@@ -114,6 +119,8 @@ function runEngine(setup: Setup, steps: number): Run & { sim: Simulation; active
     seed: setup.seed,
     gain: setup.gain,
     postScale: setup.postScale,
+    resetDrive: setup.resetDrive,
+    adaptation: setup.adaptation,
   });
   if (setup.bias) sim.setBias(setup.bias);
   setup.inputs.forEach((input, q) => sim.addInput(`input ${q}`, input.neurons, input.rate));
@@ -128,7 +135,15 @@ function runEngine(setup: Setup, steps: number): Run & { sim: Simulation; active
     activeHigh = Math.max(activeHigh, sim.active);
   }
   const n = sim.neurons;
-  return { sim, spikes, activeLow, activeHigh, v: Float32Array.from({ length: n }, (_, i) => sim.potential(i)), g: Float32Array.from({ length: n }, (_, i) => sim.drive(i)) };
+  return {
+    sim,
+    spikes,
+    activeLow,
+    activeHigh,
+    v: Float32Array.from({ length: n }, (_, i) => sim.potential(i)),
+    g: Float32Array.from({ length: n }, (_, i) => sim.drive(i)),
+    a: Float32Array.from({ length: n }, (_, i) => sim.adaptationOf(i)),
+  };
 }
 
 // The model stepped densely and naively: every neuron, every step. With
@@ -139,6 +154,9 @@ function runReference(setup: Setup, steps: number, cut: boolean): Run {
   const n = net.ptr.length - 1;
   const leak = dt / setup.tauMem;
   const decay = Math.exp(-dt / setup.tauSyn);
+  const keep = setup.resetDrive ? 0 : 1;
+  const adaptDecay = setup.adaptation ? Math.exp(-dt / setup.adaptation.tau) : 0;
+  const adaptStep = setup.adaptation ? setup.adaptation.increment : 0;
   const hold = Math.min(65535, Math.max(1, Math.round(setup.refractory / dt)));
   const delay = Math.max(1, Math.round(setup.delay / dt));
   const weight = new Float32Array(net.post.length);
@@ -148,6 +166,7 @@ function runReference(setup: Setup, steps: number, cut: boolean): Run {
   const bias = setup.bias ?? new Float32Array(n);
   const v = new Float32Array(n);
   const g = new Float32Array(n);
+  const a = new Float32Array(n);
   const left = new Int32Array(n);
   const rates = setup.inputs.map((input) => input.rate);
   const sources = setup.inputs.map((input, q) => {
@@ -170,22 +189,27 @@ function runReference(setup: Setup, steps: number, cut: boolean): Run {
     const cleanup = cut && s % setup.cleanupInterval === setup.cleanupInterval - 1;
     for (let i = 0; i < n; i++) {
       const gi = g[i];
+      const ai = a[i];
       g[i] = gi * decay;
+      a[i] = ai * adaptDecay;
       if (left[i] > 0) {
         left[i]--;
       } else {
-        const next = v[i] + leak * (gi + bias[i] - v[i]);
+        const next = v[i] + leak * (gi + bias[i] - ai - v[i]);
         if (next >= setup.threshold) {
           v[i] = 0;
+          g[i] = gi * decay * keep + 0;
+          a[i] = ai * adaptDecay + adaptStep;
           left[i] = hold;
           fired.push(i);
         } else {
           v[i] = next;
         }
       }
-      if (cleanup && left[i] === 0 && bias[i] === 0 && Math.abs(v[i]) < setup.epsilon && Math.abs(g[i]) < setup.epsilon) {
+      if (cleanup && left[i] === 0 && bias[i] === 0 && Math.abs(v[i]) < setup.epsilon && Math.abs(g[i]) < setup.epsilon && a[i] < setup.epsilon) {
         v[i] = 0;
         g[i] = 0;
+        a[i] = 0;
       }
     }
     sources.forEach((source, q) => {
@@ -195,13 +219,15 @@ function runReference(setup: Setup, steps: number, cut: boolean): Run {
         const i = picked[k];
         if (left[i] !== 0) continue;
         v[i] = 0;
+        if (setup.resetDrive) g[i] = 0;
+        a[i] += adaptStep;
         left[i] = hold;
         fired.push(i);
       }
     });
     spikes.push(fired.sort((a, b) => a - b));
   }
-  return { spikes, v, g };
+  return { spikes, v, g, a };
 }
 
 const total = (spikes: number[][]) => spikes.reduce((sum, step) => sum + step.length, 0);
@@ -214,6 +240,7 @@ function assertMatches(setup: Setup, label: string) {
   for (let s = 0; s < steps; s++) assert.deepEqual(engine.spikes[s], reference.spikes[s], `${label}, step ${s}`);
   assert.deepEqual(engine.v, reference.v, `${label}: v`);
   assert.deepEqual(engine.g, reference.g, `${label}: g`);
+  assert.deepEqual(engine.a, reference.a, `${label}: a`);
   return engine;
 }
 
@@ -353,11 +380,56 @@ test("bias drives a lone neuron tonically and keeps it active; muted neurons del
   assert.equal(sim.potential(2), 0);
 });
 
+test("resetDrive clears the drive at each spike, so one strong input fires a neuron once", () => {
+  // 0 -> 1 with 100 synapses of 1 mV: one spike gives neuron 1 a drive of 100 mV.
+  const net: Network = { ptr: Uint32Array.from([0, 1, 1]), post: Uint32Array.from([1]), count: Uint16Array.from([100]) };
+  const fired = (resetDrive: boolean) => {
+    const sim = new Simulation(net, { gain: Float32Array.from([1, 0]), resetDrive });
+    sim.addInput("kick", [0], 0);
+    sim.setRecording(true);
+    sim.setRate("kick", 1e6);
+    sim.step();
+    sim.setRate("kick", 0);
+    sim.advance(200);
+    if (resetDrive) assert.equal(sim.drive(1), 0);
+    return sim.recording![1];
+  };
+  assert.equal(fired(true), 1);
+  assert.ok(fired(false) > 1, "without the reset the leftover drive fires it again");
+});
+
+test("adaptation slows a tonically driven neuron, then decays away", () => {
+  const net: Network = { ptr: Uint32Array.from([0, 0]), post: new Uint32Array(0), count: new Uint16Array(0) };
+  const rate = (adaptation?: { increment: number; tau: number }) => {
+    const sim = new Simulation(net, { gain: new Float32Array(1), adaptation });
+    sim.setBias(Float32Array.from([12]));
+    sim.setRecording(true);
+    sim.advance(2000);
+    const spikes = sim.recording![0];
+    if (adaptation) {
+      assert.ok(sim.adaptationOf(0) > 1);
+      sim.setBias(null);
+      sim.advance(10 * adaptation.tau);
+      assert.equal(sim.active, 0, "it rests once the adaptation has decayed");
+      assert.equal(sim.adaptationOf(0), 0);
+    } else {
+      assert.equal(sim.adaptationOf(0), 0);
+    }
+    return spikes / 2;
+  };
+  const plain = rate();
+  const adapted = rate({ increment: 0.5, tau: 200 });
+  assert.ok(plain > 50, `${plain} Hz without adaptation`);
+  assert.ok(adapted < plain * 0.75, `${adapted} Hz with adaptation, against ${plain} Hz without`);
+});
+
 test("bad arguments are refused", () => {
   const net: Network = { ptr: Uint32Array.from([0, 0]), post: new Uint32Array(0), count: new Uint16Array(0) };
   assert.throws(() => new Simulation(net, { gain: new Float32Array(2) }), /gain has 2 entries, expected 1/);
   assert.throws(() => new Simulation(net, { gain: new Float32Array(1), dt: 0 }), /must be positive/);
   assert.throws(() => new Simulation(net, { gain: new Float32Array(1), cleanupInterval: 0.5 }), /cleanupInterval/);
+  assert.throws(() => new Simulation(net, { gain: new Float32Array(1), adaptation: { increment: -1, tau: 10 } }), /adaptation/);
+  assert.throws(() => new Simulation(net, { gain: new Float32Array(1), adaptation: { increment: 1, tau: 0 } }), /adaptation/);
   const sim = new Simulation(net, { gain: new Float32Array(1) });
   sim.addInput("x", [0]);
   assert.throws(() => sim.addInput("x", [0]), /already an input called "x"/);

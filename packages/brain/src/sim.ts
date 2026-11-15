@@ -1,20 +1,22 @@
 // The spiking engine: leaky integrate-and-fire neurons on a connectome, stepped
 // sparsely so that only neurons with some state cost anything.
 //
-// Each neuron has a membrane potential v (mV above rest) and a synaptic drive
-// g (mV), with
+// Each neuron has a membrane potential v (mV above rest), a synaptic drive g
+// (mV) and, optionally, a spike-frequency adaptation a (mV), with
 //
-//   dv/dt = (g + bias - v) / tauMem      dg/dt = -g / tauSyn
+//   dv/dt = (g + bias - a - v) / tauMem   dg/dt = -g / tauSyn   da/dt = -a / tauAdapt
 //
-// stepped with forward Euler for v and an exact decay for g. A neuron spikes
-// when v reaches the threshold, then v resets to 0 and holds there for the
-// refractory period. A spike adds its edge weight to each target's g after the
-// synaptic delay. An edge's weight is count × gain[pre] × postScale[post].
+// stepped with forward Euler for v and exact decays for g and a. A neuron
+// spikes when v reaches the threshold; then v resets to 0 and holds there for
+// the refractory period, a grows by the adaptation increment, and with
+// `resetDrive` g is cleared to 0 too. A spike adds its edge weight to each
+// target's g after the synaptic delay. An edge's weight is
+// count × gain[pre] × postScale[post].
 //
 // Step s (counting from 0) does, in order:
 //   1. deliver the spikes fired at step s - delay, in ascending neuron order;
-//   2. update every active neuron: decay g; if refractory, count down and
-//      hold v at 0, otherwise integrate v and fire at threshold;
+//   2. update every active neuron: decay g and a; if refractory, count down
+//      and hold v at 0, otherwise integrate v and fire at threshold;
 //   3. fire the neurons the Poisson inputs pick, unless refractory.
 // Delivering in a fixed order keeps g's float sums, and so the whole run,
 // independent of where neurons happen to sit in the active set.
@@ -22,10 +24,10 @@
 // A neuron is active while it has state. It joins the active set when a spike
 // reaches it, an input fires it or it gets a bias. Every `cleanupInterval`
 // steps (on steps where s % cleanupInterval is cleanupInterval - 1), after its
-// update, a neuron that is not refractory, has no bias, and has |v| and |g|
+// update, a neuron that is not refractory, has no bias, and has |v|, |g| and a
 // below `epsilon` is set to exactly 0 and leaves. That cut is the only way the
-// result differs from stepping every neuron densely, and it moves v and g by
-// less than epsilon.
+// result differs from stepping every neuron densely, and it moves v, g and a
+// by less than epsilon.
 
 import type { Connectome } from "./format.ts";
 
@@ -59,6 +61,18 @@ export type SimulationOptions = {
   postScale?: Float32Array;
   /** Seeds the Poisson inputs. Default 1. */
   seed?: number;
+  /**
+   * Whether a spike also clears the neuron's synaptic drive g, as the reset of
+   * Shiu et al. (2024) does (v = v_rst; g = 0). Default false.
+   */
+  resetDrive?: boolean;
+  /**
+   * Spike-frequency adaptation: each spike adds `increment` mV to an
+   * adaptation variable a that decays with time constant `tau` ms and is
+   * subtracted from the drive, dv/dt = (g + bias - a - v) / tauMem. Default
+   * none.
+   */
+  adaptation?: { increment: number; tau: number };
 };
 
 export type SimulationStats = {
@@ -71,10 +85,16 @@ export type SimulationStats = {
 };
 
 // Per-neuron state is interleaved, four floats a neuron, so an update touches
-// one cache line rather than four; this is most of the sweep's speed.
+// one cache line rather than four; this is most of the sweep's speed. The
+// bias, which is rare, is kept apart, and so are the neurons that have one:
+// they are stepped by their own loop, which spares the main sweep the bias
+// term.
+const STRIDE = 4;
+const SHIFT = 2;
 const V = 0;
 const G = 1;
-const BIAS = 2;
+// Spike-frequency adaptation, mV, subtracted from the drive.
+const ADAPT = 2;
 // Steps of refractory period left, a small whole number held as a float.
 const HOLD = 3;
 
@@ -92,6 +112,8 @@ export class Simulation {
   readonly epsilon: number;
   readonly cleanupInterval: number;
   readonly seed: number;
+  readonly resetDrive: boolean;
+  readonly adaptation: { readonly increment: number; readonly tau: number } | null;
   /** Synaptic delay and refractory period in whole steps. */
   readonly delaySteps: number;
   readonly refractorySteps: number;
@@ -105,8 +127,17 @@ export class Simulation {
   // which is exact, since adding 0 changes nothing.
   #silent: Uint8Array;
   #state: Float32Array;
+  #bias: Float32Array;
+  // Neurons with a nonzero bias. They count as active (inSet is 1) but are
+  // kept out of the active list, never cut, and stepped by sweepBiased.
+  #biased = new Uint32Array(0);
   #leak: number;
   #decay: number;
+  // Per-step decay of the adaptation variable, and what a spike adds to it.
+  // 0 with resetDrive, else 1: what a spike multiplies g by.
+  #keepDrive: number;
+  #adaptDecay: number;
+  #adaptStep: number;
 
   #inSet: Uint8Array;
   #active: Uint32Array;
@@ -151,11 +182,18 @@ export class Simulation {
     this.epsilon = options.epsilon ?? 1e-3;
     this.cleanupInterval = options.cleanupInterval ?? 16;
     this.seed = options.seed ?? 1;
+    this.resetDrive = options.resetDrive ?? false;
+    const adaptation = options.adaptation;
+    if (adaptation && !(adaptation.increment >= 0 && adaptation.tau > 0)) throw new Error("adaptation needs an increment of zero or more and a positive tau");
+    this.adaptation = adaptation && adaptation.increment > 0 ? { increment: adaptation.increment, tau: adaptation.tau } : null;
     if (!(this.dt > 0 && this.tauMem > 0 && this.tauSyn > 0)) throw new Error("dt and the time constants must be positive");
     if (!(this.epsilon >= 0)) throw new Error("epsilon must not be negative");
     if (!(Number.isInteger(this.cleanupInterval) && this.cleanupInterval >= 1)) throw new Error("cleanupInterval must be a whole number of steps");
     this.#leak = this.dt / this.tauMem;
     this.#decay = Math.exp(-this.dt / this.tauSyn);
+    this.#keepDrive = this.resetDrive ? 0 : 1;
+    this.#adaptDecay = this.adaptation ? Math.exp(-this.dt / this.adaptation.tau) : 0;
+    this.#adaptStep = this.adaptation ? this.adaptation.increment : 0;
     this.refractorySteps = Math.min(65535, Math.max(1, Math.round(this.refractory / this.dt)));
     this.delaySteps = Math.max(1, Math.round(this.delay / this.dt));
 
@@ -164,7 +202,8 @@ export class Simulation {
     this.#count = network.count;
     this.#weight = new Float32Array(this.connections);
     this.#silent = new Uint8Array(n);
-    this.#state = new Float32Array(4 * n);
+    this.#state = new Float32Array(STRIDE * n);
+    this.#bias = new Float32Array(n);
     this.#inSet = new Uint8Array(n);
     this.#active = new Uint32Array(n);
     this.#scratch = new Uint32Array(n);
@@ -184,17 +223,22 @@ export class Simulation {
 
   /** Neurons in the active set now. */
   get active() {
-    return this.#activeCount;
+    return this.#activeCount + this.#biased.length;
   }
 
   /** Neuron i's membrane potential, mV above rest. */
   potential(i: number) {
-    return this.#state[4 * i + V];
+    return this.#state[STRIDE * i + V];
   }
 
   /** Neuron i's synaptic drive, mV. */
   drive(i: number) {
-    return this.#state[4 * i + G];
+    return this.#state[STRIDE * i + G];
+  }
+
+  /** Neuron i's adaptation, mV (0 without adaptation). */
+  adaptationOf(i: number) {
+    return this.#state[STRIDE * i + ADAPT];
   }
 
   /** Whether neuron i is in the active set. */
@@ -229,8 +273,24 @@ export class Simulation {
    */
   setBias(bias: Float32Array | null) {
     if (bias && bias.length !== this.neurons) throw new Error(`bias has ${bias.length} entries, expected ${this.neurons}`);
-    const state = this.#state;
-    for (let i = 0; i < this.neurons; i++) state[4 * i + BIAS] = bias ? bias[i] : 0;
+    // Neurons that had a bias rejoin the active list, which cuts them once at rest.
+    for (const i of this.#biased) this.#active[this.#activeCount++] = i;
+    const biased: number[] = [];
+    for (let i = 0; i < this.neurons; i++) {
+      this.#bias[i] = bias ? bias[i] : 0;
+      if (this.#bias[i] !== 0) biased.push(i);
+    }
+    this.#biased = Uint32Array.from(biased);
+    if (biased.length > 0) {
+      let kept = 0;
+      for (let k = 0; k < this.#activeCount; k++) {
+        const i = this.#active[k];
+        if (this.#bias[i] === 0) this.#active[kept++] = i;
+      }
+      this.#activeCount = kept;
+    }
+    this.#sort(this.#active, this.#activeCount);
+    this.#sorted = this.#activeCount;
     this.#activateBiased();
   }
 
@@ -335,9 +395,10 @@ export class Simulation {
   reset() {
     const state = this.#state;
     for (let i = 0; i < this.neurons; i++) {
-      state[4 * i + V] = 0;
-      state[4 * i + G] = 0;
-      state[4 * i + HOLD] = 0;
+      state[STRIDE * i + V] = 0;
+      state[STRIDE * i + G] = 0;
+      state[STRIDE * i + HOLD] = 0;
+      state[STRIDE * i + ADAPT] = 0;
     }
     this.#inSet.fill(0);
     this.#activeCount = 0;
@@ -382,7 +443,7 @@ export class Simulation {
         events += end - start;
         for (let e = start; e < end; e++) {
           const j = post[e] | 0;
-          state[(j << 2) + G] += weight[e];
+          state[(j << SHIFT) + G] += weight[e];
           if (inSet[j] === 0) {
             inSet[j] = 1;
             active[count++] = j;
@@ -395,12 +456,29 @@ export class Simulation {
     // 2. Update the active neurons. This step's spikes overwrite the slot just
     // delivered; room is made up front because a call inside the sweep would
     // stop V8 hoisting its typed-array loads out of the loop.
-    let out = arriving.length >= count ? arriving : this.#grow(slot, count);
+    const biased = this.#biased;
+    let out = arriving.length >= count + biased.length ? arriving : this.#grow(slot, count + biased.length);
     const cleanup = this.stats.steps % this.cleanupInterval === this.cleanupInterval - 1;
     let fired: number;
     if (cleanup) {
       const result = this.#sweepResult;
-      fired = sweepAndCleanup(active, count, this.#sorted, inSet, state, out, this.#leak, this.#decay, this.threshold, this.refractorySteps, this.epsilon, result);
+      fired = sweepAndCleanup(
+        active,
+        count,
+        this.#sorted,
+        inSet,
+        state,
+        out,
+        this.#leak,
+        this.#decay,
+        this.threshold,
+        this.refractorySteps,
+        this.#keepDrive,
+        this.#adaptDecay,
+        this.#adaptStep,
+        this.epsilon,
+        result,
+      );
       count = result[0];
       this.#sorted = result[1];
       // The sweep runs several times faster in index order than in arrival
@@ -410,13 +488,18 @@ export class Simulation {
         this.#sorted = count;
       }
     } else {
-      fired = sweep(active, count, state, out, this.#leak, this.#decay, this.threshold, this.refractorySteps);
+      fired = sweep(active, count, state, out, this.#leak, this.#decay, this.threshold, this.refractorySteps, this.#keepDrive, this.#adaptDecay, this.#adaptStep);
+    }
+    if (biased.length > 0) {
+      fired = sweepBiased(biased, state, this.#bias, out, fired, this.#leak, this.#decay, this.threshold, this.refractorySteps, this.#keepDrive, this.#adaptDecay, this.#adaptStep);
     }
 
     // 3. Poisson inputs.
     const inputs = this.#inputs;
     const picked = this.#scratch;
     const refractorySteps = this.refractorySteps;
+    const resetDrive = this.resetDrive;
+    const adaptStep = this.#adaptStep;
     for (let q = 0; q < inputs.length; q++) {
       const input = inputs[q];
       if (input.rate === 0) continue;
@@ -424,9 +507,12 @@ export class Simulation {
       if (out.length < fired + m) out = this.#grow(slot, fired + m);
       for (let k = 0; k < m; k++) {
         const i = picked[k];
-        if (state[4 * i + HOLD] !== 0) continue;
-        state[4 * i + V] = 0;
-        state[4 * i + HOLD] = refractorySteps;
+        const o = i * STRIDE;
+        if (state[o + HOLD] !== 0) continue;
+        state[o + V] = 0;
+        if (resetDrive) state[o + G] = 0;
+        state[o + ADAPT] += adaptStep;
+        state[o + HOLD] = refractorySteps;
         out[fired++] = i;
         if (inSet[i] === 0) {
           inSet[i] = 1;
@@ -467,13 +553,7 @@ export class Simulation {
   }
 
   #activateBiased() {
-    const state = this.#state;
-    for (let i = 0; i < this.neurons; i++) {
-      if (state[4 * i + BIAS] !== 0 && this.#inSet[i] === 0) {
-        this.#inSet[i] = 1;
-        this.#active[this.#activeCount++] = i;
-      }
-    }
+    for (const i of this.#biased) this.#inSet[i] = 1;
   }
 
   #members(neurons: ArrayLike<number>, what: string) {
@@ -523,20 +603,81 @@ export class Simulation {
 // integrated v before looking at the refractory count (a held neuron's v is 0,
 // so this is harmless) which keeps the loop free of dependent branches; `| 0`
 // tells V8 the index is a small integer.
-function sweep(active: Uint32Array, count: number, state: Float32Array, out: Uint32Array, leak: number, decay: number, threshold: number, refractorySteps: number) {
+function sweep(
+  active: Uint32Array,
+  count: number,
+  state: Float32Array,
+  out: Uint32Array,
+  leak: number,
+  decay: number,
+  threshold: number,
+  refractorySteps: number,
+  keepDrive: number,
+  adaptDecay: number,
+  adaptStep: number,
+) {
   let fired = 0;
   for (let k = 0; k < count; k++) {
     const i = active[k] | 0;
-    const o = i << 2;
+    const o = i << SHIFT;
     const v = state[o + V];
     const g = state[o + G];
     const hold = state[o + HOLD];
-    const next = v + leak * (g + state[o + BIAS] - v);
-    state[o + G] = g * decay;
+    const a = state[o + ADAPT];
+    const next = v + leak * (g - a - v);
+    const decayed = g * decay;
+    state[o + G] = decayed;
+    state[o + ADAPT] = a * adaptDecay;
     if (hold > 0) {
       state[o + HOLD] = hold - 1;
     } else if (next >= threshold) {
       state[o + V] = 0;
+      // + 0 turns -0 into 0, so that a cleared drive is exactly 0.
+      state[o + G] = decayed * keepDrive + 0;
+      state[o + ADAPT] = a * adaptDecay + adaptStep;
+      state[o + HOLD] = refractorySteps;
+      out[fired++] = i;
+    } else {
+      state[o + V] = next;
+    }
+  }
+  return fired;
+}
+
+// The same update for the biased neurons, appending their spikes to out[from..].
+function sweepBiased(
+  biased: Uint32Array,
+  state: Float32Array,
+  bias: Float32Array,
+  out: Uint32Array,
+  from: number,
+  leak: number,
+  decay: number,
+  threshold: number,
+  refractorySteps: number,
+  keepDrive: number,
+  adaptDecay: number,
+  adaptStep: number,
+) {
+  let fired = from;
+  for (let k = 0; k < biased.length; k++) {
+    const i = biased[k] | 0;
+    const o = i << SHIFT;
+    const v = state[o + V];
+    const g = state[o + G];
+    const hold = state[o + HOLD];
+    const a = state[o + ADAPT];
+    const next = v + leak * (g + bias[i] - a - v);
+    const decayed = g * decay;
+    state[o + G] = decayed;
+    state[o + ADAPT] = a * adaptDecay;
+    if (hold > 0) {
+      state[o + HOLD] = hold - 1;
+    } else if (next >= threshold) {
+      state[o + V] = 0;
+      // + 0 turns -0 into 0, so that a cleared drive is exactly 0.
+      state[o + G] = decayed * keepDrive + 0;
+      state[o + ADAPT] = a * adaptDecay + adaptStep;
       state[o + HOLD] = refractorySteps;
       out[fired++] = i;
     } else {
@@ -558,6 +699,9 @@ function sweepAndCleanup(
   decay: number,
   threshold: number,
   refractorySteps: number,
+  keepDrive: number,
+  adaptDecay: number,
+  adaptStep: number,
   epsilon: number,
   result: Uint32Array,
 ) {
@@ -567,16 +711,22 @@ function sweepAndCleanup(
   for (let k = 0; k < count; k++) {
     if (k === sortedBefore) sorted = kept;
     const i = active[k] | 0;
-    const o = i << 2;
+    const o = i << SHIFT;
     const v = state[o + V];
     const g = state[o + G];
     const hold = state[o + HOLD];
-    const next = v + leak * (g + state[o + BIAS] - v);
-    state[o + G] = g * decay;
+    const a = state[o + ADAPT];
+    const next = v + leak * (g - a - v);
+    const decayed = g * decay;
+    state[o + G] = decayed;
+    state[o + ADAPT] = a * adaptDecay;
     if (hold > 0) {
       state[o + HOLD] = hold - 1;
     } else if (next >= threshold) {
       state[o + V] = 0;
+      // + 0 turns -0 into 0, so that a cleared drive is exactly 0.
+      state[o + G] = decayed * keepDrive + 0;
+      state[o + ADAPT] = a * adaptDecay + adaptStep;
       state[o + HOLD] = refractorySteps;
       out[fired++] = i;
     } else {
@@ -584,9 +734,15 @@ function sweepAndCleanup(
     }
     // Compared as stored, in single precision, as the dense reference does.
     // The most active neurons fail the first test, so it goes first.
-    if (Math.abs(state[o + V]) < epsilon && Math.abs(state[o + G]) < epsilon && state[o + HOLD] === 0 && state[o + BIAS] === 0) {
+    if (
+      Math.abs(state[o + V]) < epsilon &&
+      Math.abs(state[o + G]) < epsilon &&
+      state[o + HOLD] === 0 &&
+      state[o + ADAPT] < epsilon
+    ) {
       state[o + V] = 0;
       state[o + G] = 0;
+      state[o + ADAPT] = 0;
       inSet[i] = 0;
     } else {
       active[kept++] = i;

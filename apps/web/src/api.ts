@@ -17,7 +17,7 @@ export type ApiFailure =
 export class ApiRequestError extends Error {
   failure: ApiFailure;
   constructor(failure: ApiFailure) {
-    super("message" in failure ? failure.message : "Can't reach the ladybugg server");
+    super("message" in failure ? failure.message : "Can't reach the computerbug server");
     this.failure = failure;
   }
 }

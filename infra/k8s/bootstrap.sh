@@ -198,7 +198,7 @@ kubectl -n ladybug create configmap ladybug-config --dry-run=client -o yaml \
   --from-literal="LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}" \
   --from-literal="LLM_MODEL=${LLM_MODEL:-}" \
   --from-literal="LLM_VISION=${LLM_VISION:-true}" \
-  --from-literal="SITE_DOMAIN=${SITE_DOMAIN:-ladybugg.garden}" \
+  --from-literal="SITE_DOMAIN=${SITE_DOMAIN:-computerbug.garden}" \
   > "$generated_dir/configmap-values.yaml"
 python3 - "$registry" "$tag" > "$generated_dir/kustomization.yaml" <<'PY'
 import json, sys
@@ -221,5 +221,5 @@ for deployment in gateway server worker web edge; do
 done
 edge_ip=$(kubectl -n ladybug get service edge -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 echo "Bootstrap complete. Run infra/k8s/test/deny-test.sh before accepting scan URLs."
-echo "Point ${SITE_DOMAIN:-ladybugg.garden}'s A record at ${edge_ip:-<edge IP, still pending: kubectl -n ladybug get service edge>}."
+echo "Point ${SITE_DOMAIN:-computerbug.garden}'s A record at ${edge_ip:-<edge IP, still pending: kubectl -n ladybug get service edge>}."
 echo "Caddy gets its HTTPS certificate once DNS resolves to that IP."

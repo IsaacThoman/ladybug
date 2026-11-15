@@ -13,7 +13,7 @@ Provider credentials belong only in `apps/server/.env`:
 - `CHERT_PROJECT_ID` and its assigned `CHERT_LINE_ID`.
 - `EMERGENCY_NUMBER` in international format, including `+` and country code.
 
-The desktop needs no call settings of its own. It calls as the Ladybugg account
+The desktop needs no call settings of its own. It calls as the Computerbug account
 it is signed in to, on the same server. The account must be approved, and an
 admin has to turn on calls for it under **Users** in the admin UI. Calls are off
 by default because they ring a real phone and incur provider charges. Turning
@@ -61,12 +61,12 @@ provider charges; this adapter makes no model API requests.
 ## Screen sharing and permissions
 
 Both **Request help** and an emergency contact's SUPPORT message automatically
-start screen sharing. Ladybugg selects the primary full-screen source when its
+start screen sharing. Computerbug selects the primary full-screen source when its
 display ID is available, otherwise the first source. Under Wayland, it uses the
-source returned by the PipeWire portal. Ladybugg adds no display picker; the OS
+source returned by the PipeWire portal. Computerbug adds no display picker; the OS
 portal may still require approval or source selection and cannot be bypassed.
 Wayland needs PipeWire and a compatible desktop portal. On macOS, enable
-Ladybugg under **System Settings → Privacy & Security → Screen Recording**;
+Computerbug under **System Settings → Privacy & Security → Screen Recording**;
 microphone and camera permissions are requested independently.
 
 The screen fills the outgoing video at its original aspect ratio, capped at
@@ -97,7 +97,7 @@ and [platform notes](https://www.electronjs.org/docs/latest/api/desktop-capturer
 Start the normal backend dependencies with `npm run services:up` if needed.
 Use `npm run dev:overlay` for overlay mode or `npm run dev` for an explicitly
 requested development window. The desktop no longer runs a privileged inbound
-agent worker or requires `chert dev`; outbound calls go through Ladybugg's server.
+agent worker or requires `chert dev`; outbound calls go through Computerbug's server.
 Screen, camera, and microphone capture begins only when **Request help** is selected or a valid emergency-contact SUPPORT reply arrives.
 
 ```sh
@@ -113,9 +113,9 @@ approved account and turn on its calls in the admin UI. Then:
 1. Click the ladybug and select **Request help**, grant device access, and answer on the recipient's phone.
 2. Confirm the phone sees readable screen content and a moving face inset in the bottom-right corner, and hears its microphone after
    Chert reports `bridge_ready`.
-3. Confirm Ladybugg plays the recipient's audio and displays available video.
+3. Confirm Computerbug plays the recipient's audio and displays available video.
 4. Press **Hang up** and verify capture stops immediately. Wait for cleanup and repeat.
-5. End the call on the phone and verify Ladybugg stops capture.
+5. End the call on the phone and verify Computerbug stops capture.
 6. Repeat using an emergency contact's SUPPORT message, without clicking the overlay.
 7. Deny camera access: verify screen and microphone continue and the screen-only message appears.
    Stop the camera during a call and confirm the inset disappears without ending the call.
@@ -132,7 +132,7 @@ is `electron/call-service.ts`, and the provider lifecycle lives in
 
 ## Risky-site alerts and remote support
 
-Ladybug uses Chert's **shared-line texts**, authenticated with the same server-only
+Computerbug uses Chert's **shared-line texts**, authenticated with the same server-only
 `CHERT_API_KEY`, `CHERT_PROJECT_ID`, and `CHERT_LINE_ID` as FaceTime. The fixed
 `EMERGENCY_NUMBER` is also shared. No tenant slug, messaging signing secret, or
 webhook subscription is needed for this product.
@@ -155,7 +155,7 @@ their message ID and current state for polling.
 
 The live GET returns `{ data: { items, total, limit, offset } }`; rows include
 `id`, `line_id`, `direction`, `state`, `masked_recipient`, `created_at`, and `text`.
-Ladybug polls every 15 seconds. More than 50 messages between polls can cause
+Computerbug polls every 15 seconds. More than 50 messages between polls can cause
 messages to be missed; the endpoint provides no durable event cursor here.
 
 Browser visits to known unsafe sites and analyses finding unsafe sites queue:

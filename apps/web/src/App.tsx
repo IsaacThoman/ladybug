@@ -10,11 +10,11 @@ import Link from "./components/Link.tsx";
 import { matchRoute, usePathname } from "./router.ts";
 
 const TITLES = {
-  home: "ladybugg",
-  signin: "Sign in · ladybugg",
-  demo: "Demo scan · ladybugg",
-  scan: "Scan report · ladybugg",
-  not_found: "Not found · ladybugg",
+  home: "computerbug",
+  signin: "Sign in · computerbug",
+  demo: "Demo scan · computerbug",
+  scan: "Scan report · computerbug",
+  not_found: "Not found · computerbug",
 };
 
 export default function App() {

@@ -41,7 +41,7 @@ scripts/build-images.sh --push
 cp infra/k8s/secrets.example.env infra/k8s/secrets.env
 # Fill in the four local keys in secrets.env. Use literal, unquoted env values.
 # The model endpoint's URL and name go in the ConfigMap:
-# SITE_DOMAIN defaults to ladybugg.garden.
+# SITE_DOMAIN defaults to computerbug.garden.
 LLM_BASE_URL=https://api.example.com/v1 LLM_MODEL=your-model TAG="$TAG" infra/k8s/bootstrap.sh
 export KUBECONFIG="$PWD/infra/k8s/.generated/kubeconfig"
 infra/k8s/test/deny-test.sh
@@ -50,7 +50,7 @@ kubectl -n ladybug get service edge   # point the domain's A record at EXTERNAL-
 
 ### Public domain
 
-Everything public is served from one origin, `https://ladybugg.garden` by
+Everything public is served from one origin, `https://computerbug.garden` by
 default (`SITE_DOMAIN` in the bootstrap environment). That's the URL packaged
 desktop apps and release builds of the extension use by default.
 

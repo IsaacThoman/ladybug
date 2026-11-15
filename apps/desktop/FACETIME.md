@@ -92,23 +92,32 @@ is `electron/call-service.ts`, and the provider lifecycle lives in
 
 ## Risky-site alerts and remote support
 
-Messaging and FaceTime share the server-only `CHERT_API_KEY` and `CHERT_LINE_ID`.
-The key must have access to both messaging and FaceTime. Configure:
+Ladybug uses Chert's **shared-line texts**, authenticated with the same server-only
+`CHERT_API_KEY`, `CHERT_PROJECT_ID`, and `CHERT_LINE_ID` as FaceTime. The fixed
+`EMERGENCY_NUMBER` is also shared. No tenant slug, messaging signing secret, or
+webhook subscription is needed for this product.
 
-- `CHERT_API_KEY`: shared Chert bearer secret for messaging and FaceTime.
-- `CHERT_TENANT_SLUG`: optional tenant slug for multi-tenant accounts.
-- `CHERT_LINE_ID`: shared assigned sender line (used as `phone_line_id` for messaging).
-- `CHERT_WEBHOOK_SECRET`: the webhook subscription secret, independent of the messaging key.
-- `EMERGENCY_NUMBER`: the same E.164 destination used for FaceTime.
+Open **app.trychert.com → Messages** in the Ladybug project. From the emergency
+contact's phone, text `join <code>` to the line using the join code shown there.
+The phone must register before the project can exchange texts with it.
 
-Use an iMessage-enabled line with automatic SMS fallback disabled. Register the
-public HTTPS endpoint `https://<your-host>/api/support/chert/webhook` with Chert's
-console or `POST /api/v1/webhook-subscriptions`, selecting
-`events: ["message.received"]`. Store the subscription's signing secret in
-`CHERT_WEBHOOK_SECRET`. Follow Chert's [send contract](https://docs.trychert.com/api/sending)
-and [signed reply contract](https://docs.trychert.com/api/receiving-replies).
-The receiver accepts modern `X-Webhook-Signature` and legacy `x-chert-signature`
-headers and requires a signature timestamp within five minutes.
+Shared-line contract, checked against the live API:
+
+- `POST https://app.trychert.com/api/v1/shared-messages` with
+  `{ "line_id": "...", "recipient": "+15551234567", "text": "..." }`.
+- Send the project API key as `Authorization: Bearer ftk...`, the project UUID as
+  `X-Chert-Project-Id`, and a stable `Idempotency-Key` for every POST retry.
+- Poll GET on the same endpoint for the newest 50 messages. There is currently
+  no shared-line text webhook. The separate `console.trychert.com` messaging API
+  requires another product's tenant and is not used by this deployment.
+
+A live POST returned `{ data: { id, state: "sent" } }`. The POST uses `line_id`
+(the initially supplied `lineid` spelling was rejected with HTTP 422).
+
+The live GET returns `{ data: { items, total, limit, offset } }`; rows include
+`id`, `line_id`, `direction`, `state`, `masked_recipient`, `created_at`, and `text`.
+Ladybug polls every 15 seconds. More than 50 messages between polls can cause
+messages to be missed; the endpoint provides no durable event cursor here.
 
 Browser visits to known unsafe sites and analyses finding unsafe sites queue:
 
@@ -117,19 +126,27 @@ Browser visits to known unsafe sites and analyses finding unsafe sites queue:
 URLs have credentials and fragments removed. Admin checks and manual scans alone
 do not message anyone. Redis reserves one notification per normalized hostname
 per hour, including concurrent visits and server restarts. Subdomains have separate
-limits. The durable outbox retries transient failures up to five times using the
-same idempotency key. Chert currently cannot guarantee duplicate-free sends after
-a lost response, even with that key. A saved provider failure can also prevent a
-retry from making another attempt. Pending/duplicate responses do not open support
-windows; only a confirmed `sent` result with a chat ID does. Messaging failures
-are logged independently and do not block site checks or pet alerts.
+limits. The durable outbox retries transient POST failures up to five times with
+the same idempotency key. Accepted pending sends retain their returned message ID
+and are checked through GET without creating another send. Only `state: sent`
+opens a support window; pending/unknown states do not establish delivery.
+Messaging failures do not interrupt site checks or pet alerts.
 
-A successful send opens a 30-minute support window for that chat and contact.
-Only inbound one-to-one text equal to SUPPORT (ignoring case and surrounding
-whitespace) can consume it. Both the message timestamp and webhook receipt must
-fall inside the window. Events are deduplicated in Redis; each window is consumed
-once. The most recently connected eligible desktop receives the request through
-an authenticated main-process SSE connection. Offline requests are discarded;
+A confirmed send opens a 30-minute support window scoped to the project, line,
+and emergency contact. Only inbound `received` text equal to SUPPORT (ignoring
+case and surrounding whitespace) is eligible. Both the message's `created_at`
+and the polling receipt must fall inside the window. IDs are deduplicated in
+Redis; each window is consumed once. Messages predating server startup are ignored.
+
+**Sender matching:** shared-line GET currently masks phone numbers as `•••1234`.
+The deployment owner accepts matching the last four digits of registered senders
+to `EMERGENCY_NUMBER`. This is not a full-number identity check: registered phones
+sharing those digits cannot be distinguished. Full unmasked numbers, if returned,
+are compared exactly. No phone number or private message text is written to logs.
+
+The most recently connected eligible desktop receives the request through an
+authenticated main-process SSE connection. A desktop must already have been
+connected when the reply was recorded. Offline requests are discarded and
 reconnects have no backlog. Busy calls ignore additional requests. Keep one server
 process per call line, as required by the existing call lifecycle.
 
@@ -146,9 +163,8 @@ For Redis integration tests, use a dedicated disposable Redis/Valkey database:
 TEST_REDIS_URL=redis://localhost:16379/15 npm test -w @ladybug/server
 ```
 
-These tests clear that database. For acceptance with the configured test contact,
+These tests clear that database. For acceptance after the emergency phone joins,
 visit a known unsafe URL, verify the message, reply SUPPORT, and confirm exactly
-one desktop starts one call. Check that a second reply, an expired reply, a reply
-from another sender, and a reply while offline start no call. Verify menu placement
-at all display edges, keyboard and outside-click dismissal, dragging/throwing,
-link dropping, report access, overlay click-through, and permission failures.
+one desktop starts one call after polling. Check duplicate/expired replies,
+wrong line or last-four digits, outbound texts, busy calls and offline/reconnected
+desktops. Device media permissions and actual FaceTime remain manual checks.

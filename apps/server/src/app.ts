@@ -20,7 +20,6 @@ import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
 import { isStoreReady } from "./store.ts";
 import { SupportService, configureSupport } from "./support/service.ts";
-import { supportWebhook } from "./support/webhook.ts";
 import { callsRouter } from "./calls/router.ts";
 
 const GREETINGS = [
@@ -43,7 +42,6 @@ export function createApp(
   const support = new SupportService(deps.redis, callsRouter.deliverSupport).start();
   app.locals.support = support;
   configureSupport(support);
-  app.use("/api/support/chert/webhook", supportWebhook(support));
   app.use(express.json({ limit: "16kb" }));
   app.use("/api/calls", callsRouter);
 

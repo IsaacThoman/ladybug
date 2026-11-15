@@ -3,6 +3,7 @@ import type {
   DragEvent as ReactDragEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  ReactNode,
 } from "react";
 import type { AlertLevel, PetAlert, PetFocus, PetWarning, ScanStatus, ScanVerdict, WarningChoice } from "@ladybug/shared";
 import { chooseForWarning, createScan, getScan, reportUrl, subscribeToPetStream, watchScan } from "../api";
@@ -38,7 +39,7 @@ const ALERT_REACTION_MS = { benign: 4000, malicious: 12000 };
 const DRAG_HOVER_STALE_MS = 400;
 /** How many scan ids to remember for de-duplicating reactions. */
 const SEEN_SCANS_LIMIT = 100;
-/** Space between the warning bubble and the bug, and the screen edges. */
+/** Space between a speech bubble and the bug, and the screen edges. */
 const BUBBLE_GAP = 14;
 const BUBBLE_MARGIN = 8;
 /** Re-enable the bubble's buttons if the browser hasn't acted on a choice by then. */
@@ -141,7 +142,45 @@ const carriesLink = (data: DataTransfer) => data.types.some((type) => LINK_TYPES
 const dropEffectFor = (allowed: DataTransfer["effectAllowed"]): DataTransfer["dropEffect"] =>
   allowed === "link" || allowed === "linkMove" ? "link" : allowed === "move" ? "move" : "copy";
 
-export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: { layout: OverlayLayout; callBusy: boolean; requestHelp: () => void; onAccountNeeded: () => void }) {
+/**
+ * Keeps a speech bubble next to the bug: above it (below it near the top of
+ * the screen), on screen, with its tail pointing at the bug.
+ */
+function placeBubble(bubble: HTMLElement, s: PhysicsState, workArea: OverlayLayout["workArea"]) {
+  const width = bubble.offsetWidth;
+  const height = bubble.offsetHeight;
+  if (width === 0) {
+    // Hidden: placed afresh, unseen, when it shows again.
+    delete bubble.dataset.side;
+    return;
+  }
+  const center = s.x + PET_WIDTH / 2;
+  const left = Math.min(
+    Math.max(center - width / 2, workArea.x + BUBBLE_MARGIN),
+    workArea.x + workArea.width - width - BUBBLE_MARGIN,
+  );
+  const above = s.y - BUBBLE_GAP - height >= workArea.y + BUBBLE_MARGIN;
+  const top = Math.max(
+    workArea.y + BUBBLE_MARGIN,
+    Math.min(
+      above ? s.y - BUBBLE_GAP - height : s.y + PET_HEIGHT + BUBBLE_GAP,
+      workArea.y + workArea.height - height - BUBBLE_MARGIN,
+    ),
+  );
+  bubble.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+  bubble.style.setProperty("--tail-x", `${Math.min(Math.max(center - left, 22), width - 22)}px`);
+  const side = above ? "above" : "below";
+  if (bubble.dataset.side !== side) bubble.dataset.side = side;
+}
+
+export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeeded }: {
+  layout: OverlayLayout;
+  callBusy: boolean;
+  /** The support call's bubble: its status, controls and the caller's video. Kept mounted so the video element lives on. */
+  call: { open: boolean; content: ReactNode };
+  requestHelp: () => void;
+  onAccountNeeded: () => void;
+}) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuOpenRef = useRef(false);
@@ -180,6 +219,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
   /** The warning a choice was just sent for, or that couldn't be sent. */
   const [answer, setAnswer] = useState<{ id: string; state: "sending" | "sent" | "failed" } | null>(null);
   const bubbleRef = useRef<HTMLElement>(null);
+  const callBubbleRef = useRef<HTMLElement>(null);
   /** Holds the bug still while its bubble is up, so the buttons don't wander off. */
   const holdRef = useRef(false);
   const seenWarningsRef = useRef(new Set<string>());
@@ -188,7 +228,8 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
   const [focus, setFocus] = useState<PetFocus | null>(null);
 
   const warning = warnings.at(-1) ?? null;
-  const showBubble = warning !== null && !menu;
+  // A support call has the bug's attention; blocked pages wait until it's over.
+  const showBubble = warning !== null && !menu && !call.open;
   // The page the user is looking at is being checked: stand still and look it
   // over through the magnifying glass. Blocked pages, reactions and drops come first.
   const inspecting = Boolean(focus?.investigating) && !dropHover && warning === null && scan.phase !== "done";
@@ -205,8 +246,8 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
   }, [mood, inspecting]);
 
   useEffect(() => {
-    holdRef.current = showBubble;
-  }, [showBubble]);
+    holdRef.current = showBubble || call.open;
+  }, [showBubble, call.open]);
 
   // Movement bounds are the display work area or the development window.
   const getBounds = () => {
@@ -353,25 +394,9 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
         reportedY = s.y;
         window.ladybug.setPetRect({ x: s.x, y: s.y, width: PET_WIDTH, height: PET_HEIGHT });
       }
-      // The warning bubble rides above the bug (below it near the top of the
-      // screen), kept on screen, with its tail pointing at the bug.
-      const bubble = bubbleRef.current;
-      if (bubble) {
-        const { workArea } = layoutRef.current;
-        const width = bubble.offsetWidth;
-        const height = bubble.offsetHeight;
-        const center = s.x + PET_WIDTH / 2;
-        const left = Math.min(
-          Math.max(center - width / 2, workArea.x + BUBBLE_MARGIN),
-          workArea.x + workArea.width - width - BUBBLE_MARGIN,
-        );
-        const above = s.y - BUBBLE_GAP - height >= workArea.y + BUBBLE_MARGIN;
-        const top = above ? s.y - BUBBLE_GAP - height : s.y + PET_HEIGHT + BUBBLE_GAP;
-        bubble.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
-        bubble.style.setProperty("--tail-x", `${Math.min(Math.max(center - left, 22), width - 22)}px`);
-        const side = above ? "above" : "below";
-        if (bubble.dataset.side !== side) bubble.dataset.side = side;
-      }
+      // Speech bubbles ride along with the bug.
+      if (bubbleRef.current) placeBubble(bubbleRef.current, s, layoutRef.current.workArea);
+      if (callBubbleRef.current) placeBubble(callBubbleRef.current, s, layoutRef.current.workArea);
       // On-screen velocity, so drags (which move x outside this loop) count too.
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
       prevX = s.x;
@@ -749,7 +774,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     {showBubble && <section
       ref={bubbleRef}
       key={warning.id}
-      className="pet-warning"
+      className="pet-bubble pet-warning"
       role="alertdialog"
       aria-labelledby="pet-warning-title"
       aria-describedby="pet-warning-summary"
@@ -769,7 +794,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
         {warning.reason && <p className="pet-warning-reason">{warning.reason}</p>}
         <p className="pet-warning-url" title={warning.url}>{warning.url}</p>
       </div>
-      <div className="pet-warning-actions">
+      <div className="pet-bubble-actions">
         <button type="button" className="primary" disabled={busy} onClick={() => choose(warning.id, "exit")}>Get me out of here</button>
         <button type="button" className="ghost" disabled={busy} onPointerEnter={fret} onFocus={fret} onClick={() => choose(warning.id, "continue")}>Continue anyway</button>
       </div>
@@ -782,6 +807,16 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
         </p>
       )}
     </section>}
+    <section
+      ref={callBubbleRef}
+      className="pet-bubble pet-call"
+      aria-label="Support call"
+      data-overlay-interactive
+      hidden={!call.open}
+      style={{ maxWidth: layout.workArea.width - BUBBLE_MARGIN * 2 }}
+    >
+      {call.content}
+    </section>
     {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Ladybugg" data-overlay-interactive
       style={{ maxWidth: layout.workArea.width, maxHeight: layout.workArea.height }}
       onKeyDown={(e) => {

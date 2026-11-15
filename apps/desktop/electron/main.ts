@@ -6,6 +6,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   screen,
   shell,
   Tray,
@@ -382,6 +383,8 @@ app.on("window-all-closed", () => {
 });
 
 app.whenReady().then(() => {
+  // Keep renderer media queries and native menus aligned with the system theme.
+  nativeTheme.themeSource = "system";
   if (!windowedDev) {
     app.dock?.hide();
     createTray();

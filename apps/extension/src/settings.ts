@@ -52,6 +52,14 @@ export async function addRecent(check: RecentCheck) {
   await chrome.storage.session.set({ [RECENT_KEY]: [check, ...recent].slice(0, RECENT_LIMIT) });
 }
 
+/** Swaps in the verdict for a visit that was still being checked. */
+export async function updateRecent(url: string, at: number, result: RecentCheck["result"]) {
+  const recent = await getRecent();
+  await chrome.storage.session.set({
+    [RECENT_KEY]: recent.map((check) => (check.url === url && check.at === at ? { ...check, result } : check)),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Account. The token is kept in local storage, never synced to other browsers.
 

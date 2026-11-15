@@ -64,6 +64,13 @@ export type CheckResponse =
   /** Not something we check (non-http, localhost, private network, ...). */
   | { status: "skipped"; reason: string };
 
+/**
+ * `POST /api/check/status`: what the server knows about a URL right now,
+ * without counting a visit or starting an analysis. The extension polls this
+ * while a page it reported is still being analysed.
+ */
+export type CheckStatusResponse = CheckResponse | { status: "unknown"; url: string };
+
 // ---------------------------------------------------------------------------
 // Desktop pet alerts (server-sent events on /api/pet/stream, event name "alert")
 

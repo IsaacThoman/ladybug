@@ -12,6 +12,9 @@ import { getSession } from "../session";
 import { findHttpUrl, parseHttpUrl } from "../urls";
 import { LadybugRenderer } from "@ladybug/mascot";
 import type { LadybugMood } from "@ladybug/mascot";
+import type { BrainAct } from "../brain/behavior";
+import { useFlyBrain } from "../brain/useFlyBrain";
+import BrainActivity from "./BrainActivity";
 import "./Pet.css";
 
 // Hit box, roughly the ladybug's silhouette. Its bottom edge is the ground line.
@@ -144,6 +147,29 @@ const carriesLink = (data: DataTransfer) => data.types.some((type) => LINK_TYPES
 const dropEffectFor = (allowed: DataTransfer["effectAllowed"]): DataTransfer["dropEffect"] =>
   allowed === "link" || allowed === "linkMove" ? "link" : allowed === "move" ? "move" : "copy";
 
+type Bounds = { minX: number; maxX: number; minY: number; groundY: number };
+
+/**
+ * Walks, turns and takes off as the fly brain says. Heading into an edge, it
+ * stands there pressed against it rather than turning: the brain feels the bump.
+ */
+function followBrain(s: PhysicsState, act: BrainAct, dt: number, { minX, maxX, groundY }: Bounds, ladybug: LadybugRenderer) {
+  s.y = groundY;
+  s.heading = act.heading;
+  if (act.jump) {
+    s.vx = act.jump.vx;
+    s.vy = act.jump.vy;
+    s.mode = "airborne";
+    ladybug.startle();
+    return;
+  }
+  const x = Math.min(Math.max(s.x + act.vx * dt, minX), maxX);
+  s.mode = x !== s.x ? "walking" : "idle";
+  s.x = x;
+  // If the brain drops out mid-walk, the walk ends here.
+  s.targetX = x;
+}
+
 /**
  * Keeps a speech bubble next to the bug: above it (below it near the top of
  * the screen), on screen, with its tail pointing at the bug.
@@ -228,6 +254,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   const lastFretRef = useRef(0);
   /** Whether the page in the browser's active tab is being checked, from the server. */
   const [focus, setFocus] = useState<PetFocus | null>(null);
+  const { brain, showActivity } = useFlyBrain({ walkSpeed: WALK_SPEED, hopVelocity: HOP_VELOCITY, jumpVelocity: ALARM_JUMP_VELOCITY });
 
   const warning = warnings.at(-1) ?? null;
   // A support call has the bug's attention; blocked pages wait until it's over.
@@ -251,8 +278,10 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
     holdRef.current = showBubble || call.open;
   }, [showBubble, call.open]);
 
+  useEffect(() => brain.setLinkOver(dropHover), [brain, dropHover]);
+
   // Movement bounds are the display work area or the development window.
-  const getBounds = () => {
+  const getBounds = (): Bounds => {
     const { workArea } = layoutRef.current;
     return {
       minX: workArea.x,
@@ -307,7 +336,19 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
 
       // Searching with the magnifying glass, it stands still and faces forward.
       const holding = mood === "expectant" || mood === "sniffing" || holdRef.current || inspectingRef.current;
-      if (!menuOpenRef.current) switch (s.mode) {
+      // With the fly brain on, it decides where to go instead of wandering at
+      // random, but only when nothing else is keeping the bug busy.
+      const free = (s.mode === "idle" || s.mode === "walking") && !menuOpenRef.current && !holding && !pottering && !s.backing && now >= s.idleUntil;
+      const act = brain.frame({
+        now,
+        dt,
+        pet: { x: s.x, y: s.y, width: PET_WIDTH, height: PET_HEIGHT, mode: s.mode, heading: s.heading },
+        bounds: { minX, maxX },
+        held: dragRef.current !== null,
+        free,
+      });
+      if (act && free) followBrain(s, act, dt, { minX, maxX, minY, groundY }, ladybug);
+      else if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
           // Hold still while a link is dragged over it, while it's warning
@@ -398,7 +439,9 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
       prevX = s.x;
       if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
-      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current }, dt);
+      // Grooming only while the brain has it standing still.
+      const groom = act && free && s.mode === "idle" ? act.groom : undefined;
+      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current, wings: act?.wings, groom }, dt);
       frame = requestAnimationFrame(tick);
     };
 
@@ -408,7 +451,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       ladybugRef.current = null;
       ladybug.dispose();
     };
-  }, []);
+  }, [brain]);
 
   // Hold a verdict reaction for a while, then calm down.
   useEffect(() => {
@@ -760,7 +803,9 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
     e.preventDefault();
     setDropHover(false);
     const url = linkFromDrop(e.dataTransfer);
-    if (url) startScan(url);
+    if (!url) return;
+    brain.feed();
+    startScan(url);
   };
 
   const busy = answer !== null && answer.id === warning?.id && answer.state !== "failed";
@@ -814,6 +859,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
     >
       {call.content}
     </section>
+    {showActivity && <BrainActivity brain={brain} layout={layout} />}
     {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Computerbug" data-overlay-interactive
       style={{ maxWidth: layout.workArea.width, maxHeight: layout.workArea.height }}
       onKeyDown={(e) => {
@@ -849,6 +895,8 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onContextMenu={onContextMenu}
+      onPointerEnter={() => brain.setHovered(true)}
+      onPointerLeave={() => brain.setHovered(false)}
       onDragEnter={onDragOver}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}

@@ -1,6 +1,6 @@
 import type { CallState } from "../src/calls/types";
 import { contextBridge, ipcRenderer } from "electron";
-import type { LadybugApi, OverlayLayout } from "../src/ladybug-api";
+import type { BrainSettings, LadybugApi, OverlayLayout, Point } from "../src/ladybug-api";
 
 const api: LadybugApi = {
   getCallCaptureSource: (id) => ipcRenderer.invoke("ladybug:call-capture-source", id),
@@ -21,6 +21,20 @@ const api: LadybugApi = {
       const handler = (_event: Electron.IpcRendererEvent, state: CallState) => callback(state);
       ipcRenderer.on("ladybug:call-state", handler);
       return () => { ipcRenderer.removeListener("ladybug:call-state", handler); };
+    },
+  },
+  brain: {
+    getData: () => ipcRenderer.invoke("ladybug:brain-data"),
+    getSettings: () => ipcRenderer.invoke("ladybug:brain-settings"),
+    onSettingsChanged: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, settings: BrainSettings) => callback(settings);
+      ipcRenderer.on("ladybug:brain-settings", handler);
+      return () => { ipcRenderer.removeListener("ladybug:brain-settings", handler); };
+    },
+    onCursor: (callback) => {
+      const handler = (_event: Electron.IpcRendererEvent, point: Point) => callback(point);
+      ipcRenderer.on("ladybug:brain-cursor", handler);
+      return () => { ipcRenderer.removeListener("ladybug:brain-cursor", handler); };
     },
   },
   getLayout: () => ipcRenderer.invoke("ladybug:get-layout"),

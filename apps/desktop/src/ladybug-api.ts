@@ -12,8 +12,32 @@ export type OverlayLayout = {
   workArea: Rect;
 };
 
+export type Point = { x: number; y: number };
+
+/** The fly brain preferences from the tray menu. */
+export type BrainSettings = {
+  /** The fly brain decides how the pet moves. */
+  enabled: boolean;
+  /** Show what the brain is doing in a panel. */
+  showActivity: boolean;
+};
+
+export type BrainApi = {
+  /** The packed connectome, or null when it isn't installed. */
+  getData: () => Promise<Uint8Array | null>;
+  getSettings: () => Promise<BrainSettings>;
+  onSettingsChanged: (callback: (settings: BrainSettings) => void) => () => void;
+  /**
+   * The cursor anywhere on screen, in renderer coordinates, whenever it moves.
+   * Only sent while the fly brain is on, since the click-through overlay
+   * doesn't otherwise see it.
+   */
+  onCursor: (callback: (point: Point) => void) => () => void;
+};
+
 export type LadybugApi = {
   faceTime: FaceTimeApi;
+  brain: BrainApi;
   getCallCaptureSource: (id: string) => Promise<{ id: string; platform: string }>;
   /**
    * The signed-in session (or null after signing out). The main process

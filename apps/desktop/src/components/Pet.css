@@ -245,7 +245,8 @@
   overflow-wrap: anywhere;
 }
 
-.pet-call-status::before {
+.pet-call-status::before,
+.brain-panel-status::before {
   content: "";
   display: inline-block;
   width: 8px;
@@ -256,15 +257,18 @@
   vertical-align: 1px;
 }
 
-.pet-call-status[data-phase="active"]::before {
+.pet-call-status[data-phase="active"]::before,
+.brain-panel-status[data-status="running"]::before {
   background: #34c759;
 }
 
-.pet-call-status:is([data-phase="ended"], [data-phase="ending"])::before {
+.pet-call-status:is([data-phase="ended"], [data-phase="ending"])::before,
+.brain-panel-status:is([data-status="off"], [data-status="unavailable"])::before {
   background: #a1a1a6;
 }
 
-.pet-call-status[data-phase="error"]::before {
+.pet-call-status[data-phase="error"]::before,
+.brain-panel-status[data-status="failed"]::before {
   background: var(--red);
 }
 
@@ -292,8 +296,128 @@
   object-fit: fill;
 }
 
+/*
+ * What the fly brain is doing, in a corner of the work area. It never takes
+ * clicks, so the overlay stays click-through over it.
+ */
+.brain-panel {
+  box-sizing: border-box;
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 232px;
+  padding: 12px 14px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  animation: pet-bubble-in 0.2s ease-out both;
+}
+
+.brain-panel p {
+  margin: 0;
+}
+
+.brain-panel-status {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.brain-panel-note {
+  color: var(--muted-text);
+  overflow-wrap: anywhere;
+}
+
+.brain-panel-error {
+  color: var(--warning-text);
+}
+
+.brain-panel-stats {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: var(--surface-inset);
+}
+
+.brain-panel-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.brain-panel-stats dt {
+  color: var(--secondary-text);
+}
+
+.brain-panel-stats dd {
+  margin: 0;
+  font-weight: 650;
+}
+
+.brain-panel-meters {
+  display: grid;
+  gap: 5px;
+}
+
+.brain-panel-meter {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.brain-panel-meter-label {
+  color: var(--secondary-text);
+}
+
+.brain-panel-meter-track {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--surface-inset);
+}
+
+/* Turn: a centre mark, with the bar growing toward the side of the screen it heads for. */
+.brain-panel-meter-track[data-bipolar]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--border);
+}
+
+.brain-panel-meter-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--focus);
+  transition: width 0.1s linear, left 0.1s linear;
+}
+
+.brain-panel-meter[data-command="escape"] .brain-panel-meter-fill {
+  background: var(--red);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pet-bubble > * {
+  .pet-bubble > *,
+  .brain-panel {
     animation: none;
+  }
+
+  .brain-panel-meter-fill {
+    transition: none;
   }
 }

@@ -299,22 +299,17 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       const mood = moodRef.current;
       const { minX, maxX, minY, groundY } = getBounds();
       s.targetX = Math.min(Math.max(s.targetX, minX), maxX);
-      // Sniffing and nervous bugs potter about nearby instead of crossing the screen.
-      const pottering = mood === "sniffing" || mood === "nervous";
-      const speed = s.backing
-        ? WALK_SPEED * 0.6
-        : mood === "sniffing"
-          ? WALK_SPEED * 0.45
-          : mood === "nervous"
-            ? WALK_SPEED * 0.35
-            : WALK_SPEED;
+      // Nervous bugs potter about nearby instead of crossing the screen.
+      const pottering = mood === "nervous";
+      const speed = s.backing ? WALK_SPEED * 0.6 : pottering ? WALK_SPEED * 0.35 : WALK_SPEED;
 
-      const holding = mood === "expectant" || holdRef.current || inspectingRef.current;
+      // Searching with the magnifying glass, it stands still and faces forward.
+      const holding = mood === "expectant" || mood === "sniffing" || holdRef.current || inspectingRef.current;
       if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
           // Hold still while a link is dragged over it, while it's warning
-          // about a page, or while it inspects the active tab.
+          // about a page, or while it searches with the magnifying glass.
           if (holding) s.idleUntil = Math.max(s.idleUntil, now + 300);
           if (now >= s.idleUntil) {
             if (s.backing) {

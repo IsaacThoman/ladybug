@@ -1,7 +1,7 @@
 # Outbound FaceTime calls
 
 Click the ladybug and select **Request help** to call the server's `EMERGENCY_NUMBER` using this computer's
-camera and microphone. **Hang up** stops local capture immediately and asks the
+screen with a face inset and microphone. **Hang up** stops local capture immediately and asks the
 server to end the call. No AI model or model-provider API key is needed.
 
 ## Credentials and environment
@@ -35,7 +35,7 @@ uploaded or deployed automatically. Deployments require approval.
 The desktop requests a call from `/api/calls/prepare` using its account's
 session token. The server authenticates it, creates the LiveKit room, and returns a
 five-minute, room-scoped participant token. The desktop joins the room and
-publishes its camera and microphone, then asks the server to dial. The server
+publishes one composite camera video track (screen plus optional face inset) and one microphone track, then asks the server to dial. The server
 waits up to five seconds for LiveKit to confirm both tracks and places the
 outbound Chert call to its configured destination. The desktop cannot choose
 another phone number, project, line, room, or bridge token.
@@ -58,13 +58,47 @@ recover active calls automatically. Multi-replica operation and durable crash
 recovery require a shared session store. LiveKit and Chert usage may incur
 provider charges; this adapter makes no model API requests.
 
+## Screen sharing and permissions
+
+Both **Request help** and an emergency contact's SUPPORT message automatically
+start screen sharing. Ladybugg selects the primary full-screen source when its
+display ID is available, otherwise the first source. Under Wayland, it uses the
+source returned by the PipeWire portal. Ladybugg adds no display picker; the OS
+portal may still require approval or source selection and cannot be bypassed.
+Wayland needs PipeWire and a compatible desktop portal. On macOS, enable
+Ladybugg under **System Settings → Privacy & Security → Screen Recording**;
+microphone and camera permissions are requested independently.
+
+The screen fills the outgoing video at its original aspect ratio, capped at
+1920×1080 without upscaling, at 15 fps. The cropped face inset sits at the bottom
+right, at 22% of the output width. A screen-sharing indicator appears during
+capture; there is no local screen preview. Camera denial or loss shows
+“Camera unavailable; sharing screen only.” Screen or microphone failure prevents
+dialing; losing either during the call ends it. Microphone samples remain silent
+until `bridge_ready`. Incoming FaceTime audio and video still play in the panel.
+Screen sharing starts once a screen frame is available. A slow camera adds its
+inset when ready without changing the output dimensions; if it produces no frame
+within five seconds, the call continues with screen and microphone alone.
+Capture and canvas rendering continue when the overlay is hidden or unfocused.
+Hang-up, cancellation, sign-out, renderer teardown, and connection failure release
+all capture tracks, rendering timers, media elements, and the audio context.
+
+The preload source request and Electron `media` / `display-capture` permissions
+are restricted to the overlay main frame and the selected call in its ready
+phase, with another call check after OS dialogs complete. The renderer uses
+Electron desktop `getUserMedia` constraints, so SUPPORT messages do not depend
+on browser click activation. No additional LiveKit screen-share track, system
+audio, screen-switching control, remote input, or virtual camera is used.
+See [Electron capture permissions](https://www.electronjs.org/docs/latest/api/session)
+and [platform notes](https://www.electronjs.org/docs/latest/api/desktop-capturer).
+
 ## Development and verification
 
 Start the normal backend dependencies with `npm run services:up` if needed.
 Use `npm run dev:overlay` for overlay mode or `npm run dev` for an explicitly
 requested development window. The desktop no longer runs a privileged inbound
 agent worker or requires `chert dev`; outbound calls go through Ladybugg's server.
-Camera and microphone capture begins only when **Request help** is selected or a valid emergency-contact SUPPORT reply arrives.
+Screen, camera, and microphone capture begins only when **Request help** is selected or a valid emergency-contact SUPPORT reply arrives.
 
 ```sh
 npm test
@@ -77,12 +111,19 @@ With the server running and a recipient configured, sign the pet in to an
 approved account and turn on its calls in the admin UI. Then:
 
 1. Click the ladybug and select **Request help**, grant device access, and answer on the recipient's phone.
-2. Confirm the phone sees the computer's camera and hears its microphone after
+2. Confirm the phone sees readable screen content and a moving face inset in the bottom-right corner, and hears its microphone after
    Chert reports `bridge_ready`.
 3. Confirm Ladybugg plays the recipient's audio and displays available video.
 4. Press **Hang up** and verify capture stops immediately. Wait for cleanup and repeat.
 5. End the call on the phone and verify Ladybugg stops capture.
-6. Disconnect the desktop from the server and verify local capture stops and
+6. Repeat using an emergency contact's SUPPORT message, without clicking the overlay.
+7. Deny camera access: verify screen and microphone continue and the screen-only message appears.
+   Stop the camera during a call and confirm the inset disappears without ending the call.
+8. Deny screen or microphone access, or cancel the Wayland portal: verify no dialing and an actionable error.
+   Cancel while an OS dialog is open and verify late approval never starts capture or dialing.
+9. Hide the overlay and move focus away: verify the screen and face continue moving on the phone.
+   Repeat with widescreen and portrait displays and resolution changes.
+10. Disconnect the desktop from the server and verify local capture stops and
    the server ends the unattended call after its lease expires.
 
 The renderer controller is `src/calls/controller.ts`, the desktop HTTP transport
@@ -165,4 +206,7 @@ These tests clear that database. For acceptance after the emergency phone joins,
 visit a known unsafe URL, verify the message, reply SUPPORT, and confirm exactly
 one desktop starts one call after polling. Check duplicate/expired replies,
 wrong line or last-four digits, outbound texts, busy calls and offline/reconnected
-desktops. Device media permissions and actual FaceTime remain manual checks.
+desktops. Automated capture tests cover selection, call/frame authorization, cancellation,
+composition geometry, camera fallback, required-device failures, cleanup, publication
+ordering, and microphone gating. Real portal/device permissions and FaceTime delivery
+on Wayland and macOS remain manual checks.

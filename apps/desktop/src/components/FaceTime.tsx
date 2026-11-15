@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Pet from "./Pet";
 import { FaceTimeController } from "../calls/controller";
+import type { CaptureStatus } from "../calls/capture";
+import { CAMERA_UNAVAILABLE } from "../calls/capture";
 import { createCallMedia } from "../calls/media";
 import type { OverlayLayout } from "../ladybug-api";
 import { getSession } from "../session";
@@ -10,6 +12,7 @@ export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayL
   const audio = useRef<HTMLAudioElement>(null);
   const [hasVideo, setHasVideo] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const [capture, setCapture] = useState<CaptureStatus>({ sharing: false, cameraUnavailable: false });
   const [blocked, setBlocked] = useState(false);
   const [controller] = useState(() => new FaceTimeController(window.ladybug.faceTime, (prepared, disconnected) => {
     const videoElement = document.getElementById("facetime-video");
@@ -18,7 +21,7 @@ export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayL
       throw new Error("FaceTime media panel is not ready.");
     }
     setBlocked(false);
-    return createCallMedia(prepared, disconnected, videoElement, audioElement, setHasVideo, () => setBlocked(true));
+    return createCallMedia(prepared, disconnected, videoElement, audioElement, setHasVideo, () => setBlocked(true), setCapture);
   }));
   useEffect(() => controller.observe(), [controller]);
   useEffect(() => window.ladybug.faceTime.onSupportRequest(() => { void controller.start(); }), [controller]);
@@ -32,6 +35,8 @@ export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayL
     {visible && <section aria-label="FaceTime call">
       {busy ? <button onClick={() => { void controller.end(); }}>Hang up</button> : <button onClick={() => setDismissed(`${state.id}:${state.phase}:${state.message}`)}>Dismiss</button>}
       <p role="status">{state.message}</p>
+      {busy && capture.sharing && <p role="status">Sharing your screen</p>}
+      {busy && capture.sharing && capture.cameraUnavailable && <p>{CAMERA_UNAVAILABLE}</p>}
       {busy && !hasVideo && <p>Caller video unavailable</p>}
       {blocked && busy && <button onClick={() => {
         void audio.current?.play().then(() => setBlocked(false)).catch(() => setBlocked(true));

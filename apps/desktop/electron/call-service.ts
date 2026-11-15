@@ -71,7 +71,8 @@ export class CallService {
       if (!this.caller) throw new Error(SIGNED_OUT);
       // The server caches this request ID: a lost response must not allocate a second room.
       const prepared = await this.api<PreparedCall>("/prepare", { requestId });
-      this.update({ id: prepared.id, phase: "ready", message: "Connecting camera and microphone…", bridgeReady: false });
+      this.update({ id: prepared.id, phase: this.pendingEnd ? "ending" : "ready", message: "Connecting screen sharing and microphone…", bridgeReady: false });
+      if (this.pendingEnd) await this.end(prepared.id);
       this.schedule();
       return prepared;
     } catch (error) {
@@ -130,5 +131,8 @@ export class CallService {
       this.update({ id, phase: "ending", message: "Call server disconnected; stopping media and retrying hang-up…", bridgeReady: false });
     } finally { this.schedule(); }
   }
-  async endCurrent() { if (this.state.id && !terminal(this.state)) await this.end(this.state.id); }
+  async endCurrent() {
+    if (this.preparing) this.pendingEnd = true;
+    if (this.state.id && !terminal(this.state)) await this.end(this.state.id);
+  }
 }

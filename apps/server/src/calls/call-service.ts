@@ -67,7 +67,7 @@ export class CallService {
       const token = await this.token(s, s.device);
       if (s.canceled) throw new Error("Call canceled.");
       s.preparing = false;
-      this.update("ready", "Connecting camera and microphone…");
+      this.update("ready", "Connecting screen sharing and microphone…");
       this.schedule(s);
       return { id, url: config.url, token, bridgeIdentity: s.bridge };
     } catch (error) {
@@ -92,7 +92,7 @@ export class CallService {
     if (s.dialing || s.callId || s.createBody) return;
     s.dialing = true;
     try {
-      this.update("ready", "Waiting for camera and microphone to be ready…");
+      this.update("ready", "Waiting for screen video and microphone to be ready…");
       await this.waitForMedia(s);
       if (s.canceled) return;
       const bridgeToken = await this.token(s, s.bridge);
@@ -108,7 +108,7 @@ export class CallService {
       if (!s.createBody) {
         // No outbound request was sent, so local termination is sufficient.
         s.terminal = true; s.failed = !s.canceled;
-        s.terminalMessage = s.canceled ? "Call canceled" : error instanceof Error && error.message.startsWith("Camera and") ? error.message : "Could not verify device media in LiveKit.";
+        s.terminalMessage = s.canceled ? "Call canceled" : error instanceof Error && error.message.startsWith("Screen video and") ? error.message : "Could not verify device media in LiveKit.";
         await this.cleanup(s);
         if (!s.canceled) throw new Error(s.terminalMessage, { cause: error });
         return;
@@ -132,7 +132,7 @@ export class CallService {
       const device = participants.find((p) => p.identity === s.device);
       const audio = participants.flatMap((p) => p.tracks.filter((t) => t.type === TrackType.AUDIO && !t.muted));
       if (device && audio.length === 1 && device.tracks.some((t) => t.type === TrackType.AUDIO && !t.muted) && device.tracks.some((t) => t.type === TrackType.VIDEO && !t.muted)) return;
-      if (Date.now() >= deadline) throw new Error("Camera and exactly one microphone track must be published before dialing. LiveKit did not confirm both within five seconds; check the camera and try again.");
+      if (Date.now() >= deadline) throw new Error("Screen video and exactly one microphone track must be published before dialing. LiveKit did not confirm both within five seconds; check screen sharing and try again.");
       await delay(this.mediaReadyPollMs, undefined, { signal: s.cancellation.signal });
     }
   }

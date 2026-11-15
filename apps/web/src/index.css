@@ -630,6 +630,329 @@ p {
   white-space: nowrap;
 }
 
+/* ---------- story: why, and what it does ---------- */
+
+.story {
+  display: grid;
+  gap: clamp(64px, 11vh, 128px);
+  margin-top: clamp(64px, 11vh, 128px);
+  /* Jumping here from the hero leaves some sky above the heading. */
+  scroll-margin-top: 24px;
+}
+
+.story .eyebrow {
+  margin-bottom: 0.7rem;
+  color: var(--red-ink);
+}
+
+.story-title {
+  max-width: 22em;
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 3.4vw, 3rem);
+  font-weight: 560;
+  font-variation-settings: "SOFT" 100;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+.story-lede {
+  max-width: 40em;
+  margin-top: 1.1rem;
+  color: var(--ink-2);
+  font-size: 1.15rem;
+  text-wrap: pretty;
+}
+
+.story-link {
+  color: var(--red-ink);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.story-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.how-steps {
+  display: grid;
+  gap: clamp(64px, 10vh, 120px);
+  margin: clamp(36px, 6vh, 64px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.how-step {
+  display: grid;
+  gap: clamp(20px, 3vw, 36px);
+  min-width: 0;
+}
+
+.how-step.split {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: clamp(24px, 4vw, 64px);
+}
+
+.how-step.split.flip .how-copy {
+  order: 2;
+}
+
+.how-copy {
+  max-width: 44em;
+}
+
+.how-copy > p {
+  margin-top: 0.7rem;
+  color: var(--ink-2);
+  font-size: 1.06rem;
+  text-wrap: pretty;
+}
+
+.how-num {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  margin-bottom: 0.8rem;
+  border-radius: 50%;
+  background: var(--red);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 620;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--red) 30%, transparent);
+}
+
+.how-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.2vw, 1.9rem);
+  font-weight: 580;
+  font-variation-settings: "SOFT" 100;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.how-figure {
+  display: grid;
+  gap: clamp(12px, 2vw, 24px);
+  min-width: 0;
+}
+
+/* screenshots */
+
+.shot {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* A whole screen: it needs an edge of its own against the sky. */
+.shot-screen {
+  border: 1px solid var(--line-strong);
+  border-radius: clamp(8px, 1.1vw, 14px);
+  background: var(--paper-2);
+  box-shadow: var(--shadow-lift);
+}
+
+/* A long list, trailing off rather than cut mid-row. */
+.shot-fade {
+  mask-image: linear-gradient(#000 72%, transparent 97%);
+}
+
+.shot-figure {
+  display: grid;
+  gap: 0.8rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.shot-figure figcaption {
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* The extension's popup, tucked over the corner of the desktop. */
+.shot-stack {
+  position: relative;
+  margin-bottom: 6.5%;
+}
+
+.shot-float {
+  position: absolute;
+  left: 3%;
+  bottom: -9%;
+  width: 24%;
+  border-radius: clamp(6px, 0.9vw, 12px);
+}
+
+.shot-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0 clamp(4px, 1vw, 12px);
+}
+
+.shot-column {
+  display: grid;
+  min-width: 0;
+}
+
+.shot-window {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: clamp(8px, 1.1vw, 14px);
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+}
+
+.shot-window .shot-screen {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.shot-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-2);
+}
+
+.shot-window-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.shot-window-dots i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.shot-window-url {
+  min-width: 0;
+  padding: 0.2em 0.9em;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the family's side */
+
+.replies {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1.1rem 0 0;
+}
+
+.replies > div {
+  display: grid;
+  grid-template-columns: 6.6rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.9rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.replies dt {
+  color: var(--red-ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.replies dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.ask {
+  display: grid;
+  grid-template-columns: 10.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.ask p {
+  color: var(--ink-2);
+  font-size: 0.95rem;
+}
+
+.texts {
+  display: grid;
+  gap: 0.6rem;
+  width: min(100%, 26rem);
+  margin: 0 auto;
+  padding: 1.1rem 1.1rem 1.3rem;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+}
+
+.texts-from {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.text-bubble {
+  max-width: 88%;
+  padding: 0.7rem 0.95rem;
+  border-radius: 20px;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.text-bubble.in {
+  justify-self: start;
+  border-bottom-left-radius: 6px;
+  background: var(--paper-3);
+  color: var(--ink);
+}
+
+.text-bubble.out {
+  justify-self: end;
+  border-bottom-right-radius: 6px;
+  background: var(--pond);
+  color: var(--paper);
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
+.text-url {
+  display: block;
+  margin-bottom: 1.1em;
+  font-size: 0.84em;
+}
+
+.text-line {
+  display: block;
+}
+
 /* ---------- footer ---------- */
 
 .site-footer {
@@ -1898,6 +2221,14 @@ p {
   .topbar-mascot {
     display: none;
   }
+
+  .how-step.split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .how-step.split.flip .how-copy {
+    order: 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1978,6 +2309,24 @@ p {
 
   .demo-copy {
     display: none;
+  }
+
+  .shot-stack {
+    margin-bottom: 0;
+  }
+
+  .shot-float {
+    position: static;
+    width: min(70%, 17rem);
+    margin: 12px auto 0;
+  }
+
+  .shot-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shot-window-bar {
+    padding: 0.4rem 0.7rem;
   }
 }
 

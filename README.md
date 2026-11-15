@@ -133,7 +133,7 @@ It has five tabs:
 npm run dev:web              # http://localhost:5175
 ```
 
-Paste a URL to scan it. If you're signed out, Scan takes you to the sign-in page first and carries on with the link afterwards. Your recent scans are listed below. Or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs, the score, and earlier flagged scans of near-identical pages. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
+Paste a URL to scan it. If you're signed out, Scan takes you to the sign-in page first and carries on with the link afterwards. Your recent scans are listed below. Under that, the home page says why Computerbug exists and walks through what it does, with screenshots of the pet, the extension, the report page and the admin UI (`apps/web/src/assets/landing/`). Or open `/scans/<id>` (the pet's click goes there) to watch one live: screenshots, findings as the agent records them, the redirect chain, IOCs, the score, and earlier flagged scans of near-identical pages. `/demo` replays a recorded phishing scan without a server, as a backup for demos.
 
 To scan one URL without the queue, database or server, printing events as they happen and the report as JSON:
 

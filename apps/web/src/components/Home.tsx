@@ -10,6 +10,7 @@ import { navigate } from "../router.ts";
 import { getSession, useSession } from "../session.ts";
 import { useNow } from "../useNow.ts";
 import Link from "./Link.tsx";
+import Story from "./Story.tsx";
 import VerdictChip from "./VerdictChip.tsx";
 
 type Recent = { state: "loading" } | { state: "ok"; scans: ScanListItem[] } | { state: "error"; failure: ApiFailure };
@@ -132,6 +133,9 @@ export default function Home() {
             <Link href="/demo" className="link-button">
               Watch a recorded scan →
             </Link>
+            <a href="#story" className="link-button">
+              See what it does ↓
+            </a>
           </div>
           {session && session.account.status !== "approved" && (
             <p className="account-status" data-status={session.account.status} role="status">
@@ -148,9 +152,11 @@ export default function Home() {
         </div>
       </section>
 
-      {session && approved ? (
-        <YourScans key={session.token} />
-      ) : (
+      {session && approved && <YourScans key={session.token} />}
+
+      <Story />
+
+      {!(session && approved) && (
         <section className="recent" aria-label="Your scans">
           <h2 className="section-title">Your scans</h2>
           <p className="section-sub">

@@ -4,6 +4,7 @@ import type { BrainCommand } from "@ladybug/brain";
 import {
   BACK_SPEED,
   COMMAND_STALE_MS,
+  GROOM_LINGER,
   EDGE_PATIENCE,
   ESCAPE_REFRACTORY,
   ESCAPE_SIDE_SPEED,
@@ -195,4 +196,13 @@ test("idle wing and grooming activity doesn't reach the pose", () => {
   const busy = hold(behavior(), { wings: 1, groom: 0.6 }, 1);
   assert.ok(Math.abs(busy.wings - 1) < 0.01);
   assert.ok(Math.abs(busy.groom - 0.5) < 0.01);
+});
+
+test("a grooming bout outlasts the command that started it", () => {
+  const fly = behavior();
+  const started = hold(fly, { groom: 0.8 }, 0.5).groom;
+  assert.ok(Math.abs(started - 0.75) < 0.01);
+  const soon = hold(fly, {}, GROOM_LINGER / 3).groom;
+  assert.ok(soon > 0.2 && soon < started, `groom ${soon}`);
+  assert.equal(hold(fly, {}, GROOM_LINGER * 2).groom, 0);
 });

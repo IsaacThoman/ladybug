@@ -579,8 +579,8 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
       prevX = s.x;
       if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
-      // Grooming only while the brain has it standing still.
-      const groom = act && free && s.mode === "idle" ? act.groom : undefined;
+      // Grooming on the spot, whenever it's up, standing and has nothing in hand.
+      const groom = act && sleep === "awake" && s.mode === "idle" && !holding ? act.groom : undefined;
       ladybug.render(
         { mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current, sleep: sleep === "awake" ? undefined : sleep, wings: act?.wings, groom },
         dt,

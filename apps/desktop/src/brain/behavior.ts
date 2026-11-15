@@ -77,6 +77,13 @@ export const ESCAPE_SIDE_SPEED = [220, 480] as const;
 export const POSE_FLOOR = 0.2;
 const posed = (value: number) => Math.max(0, (value - POSE_FLOOR) / (1 - POSE_FLOOR));
 
+/**
+ * A grooming bout outlasts the command that started it, fading over about
+ * this long (s): the brain's grooming neurons fall silent as soon as the wind
+ * drops, where a fly finishes cleaning up.
+ */
+export const GROOM_LINGER = 1.5;
+
 /** `feed` has no action in the pet; it only shows in the activity panel. */
 type Smoothed = Omit<BrainCommand, "escape" | "feed">;
 const CHANNELS = ["walk", "turn", "back", "wings", "groom"] as const;
@@ -94,6 +101,7 @@ export class FlyBehavior {
   private backing = false;
   private turned = 0;
   private pressed = 0;
+  private grooming = 0;
   private armed = false;
   private refractory = 0;
 
@@ -119,6 +127,7 @@ export class FlyBehavior {
       this.backing = false;
       this.turned = 0;
       this.pressed = 0;
+      this.grooming = 0;
       this.armed = false;
       return null;
     }
@@ -134,7 +143,10 @@ export class FlyBehavior {
     else for (const channel of CHANNELS) this.smoothed[channel] += (target[channel] - this.smoothed[channel]) * ease(COMMAND_SMOOTHING, dt);
     const { walk, turn, back } = this.smoothed;
     const wings = posed(this.smoothed.wings);
-    const groom = posed(this.smoothed.groom);
+    const asked = posed(this.smoothed.groom);
+    this.grooming = asked >= this.grooming ? asked : this.grooming + (asked - this.grooming) * ease(3 / GROOM_LINGER, dt);
+    if (this.grooming < 0.01) this.grooming = 0;
+    const groom = this.grooming;
 
     // Escape is a brief burst from the giant fiber, so it's read unsmoothed.
     const escape = clamp(command.escape, 0, 1);

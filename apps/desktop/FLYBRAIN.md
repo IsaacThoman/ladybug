@@ -55,7 +55,7 @@ development window it's relative to the window's content area.
 The brain only replaces the pet's idle wandering. Everything that holds the bug
 still or moves it today wins: speech bubbles, the menu, sniffing and
 inspecting, a link dragged over it, dragging and throwing, reactions to
-verdicts and backing away from a dangerous page, and nervous pottering. When
+verdicts and backing away from a dangerous page, nervous pottering, and bedtime (the brain rests while the pet sleeps). When
 the brain is off, unavailable, failed, or its last command is over 500 ms old,
 the pet wanders exactly as it does without it.
 
@@ -66,7 +66,7 @@ the pet wanders exactly as it does without it.
 | `back` | When it beats `walk`, walks backwards at 0.6× speed, as when it backs away from a dangerous page. |
 | `escape` | Rising past 0.5 while on its feet: a startled take-off, from a hop to the alarm jump, away from the side that loomed. Then 1.5 s before it can again. |
 | `wings` | How far the wing cases open, passed to the renderer. Below 0.2 it's the brain idling, and nothing shows. |
-| `groom` | Grooming with the front legs, while it stands still. The same floor applies. |
+| `groom` | Grooming with the front legs, while it stands still. The same floor applies, and a bout outlasts the command that started it, fading over about 1.5 s. |
 | `feed` | Not acted on; shown in the activity panel. |
 
 One thing the body does by itself: pressed against an edge it faces for 2 s, it

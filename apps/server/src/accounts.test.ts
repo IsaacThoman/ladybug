@@ -322,9 +322,13 @@ test("a blocked page keeps the user's pets posted, and takes the choice made on 
   assert.equal((await choose("exit", other)).status, 404, "only the user's own pets can answer");
   assert.equal((await choose("exit")).status, 204);
   assert.deepEqual(await pageEvents.next<WarningStreamEvents["choice"]>("choice"), { choice: "exit" });
+  assert.deepEqual(
+    await petEvents.next<PetWarning[]>("warnings"),
+    [],
+    "the pet lets go of the page once its choice is on the way, without waiting for the page to close",
+  );
+  assert.equal((await choose("continue")).status, 404, "the page isn't blocked anymore");
 
   controller.abort();
-  assert.deepEqual(await petEvents.next<PetWarning[]>("warnings"), []);
-  assert.equal((await choose("continue")).status, 404, "the page isn't blocked anymore");
   pet.close();
 });

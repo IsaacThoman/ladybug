@@ -1,4 +1,4 @@
-# The whole Ladybugg backend, deployable as is (Coolify, or any Docker host).
+# The whole Computerbug backend, deployable as is (Coolify, or any Docker host).
 # It publishes no host ports: give service `web` a domain on port 8080 and
 # route to it (Coolify's Traefik, a Cloudflare Tunnel, ...). compose.local.yaml
 # publishes ports for local use:

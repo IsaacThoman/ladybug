@@ -10,9 +10,9 @@ export default function Header({ children }: { children?: ReactNode }) {
   const onSignIn = usePathname() === "/signin";
   return (
     <header className="app-header">
-      <Link href="/" className="brand" aria-label="ladybugg home">
+      <Link href="/" className="brand" aria-label="computerbug home">
         <LadybugMark size={38} className="brand-mark" />
-        <span className="brand-name">ladybugg</span>
+        <span className="brand-name">computerbug</span>
       </Link>
       <div className="app-header-actions">
         {children}

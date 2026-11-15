@@ -17,9 +17,9 @@ const TABS = [
   { id: "overview", label: "Overview", icon: "home", sub: "What's happening in the garden right now." },
   { id: "sandboxes", label: "Sandboxes", icon: "grid", sub: "Every sandboxed browser, live while it runs, and the ones that just finished." },
   { id: "activity", label: "Activity log", icon: "pulse", sub: "Every visit, decision and alert, newest first." },
-  { id: "urls", label: "URL database", icon: "database", sub: "Pages and hosts Ladybugg already has a verdict for." },
-  { id: "users", label: "Users", icon: "user", sub: "Who can use Ladybugg. New accounts wait here until you approve them." },
-  { id: "settings", label: "Settings", icon: "sliders", sub: "How this Ladybugg instance runs its scans." },
+  { id: "urls", label: "URL database", icon: "database", sub: "Pages and hosts Computerbug already has a verdict for." },
+  { id: "users", label: "Users", icon: "user", sub: "Who can use Computerbug. New accounts wait here until you approve them." },
+  { id: "settings", label: "Settings", icon: "sliders", sub: "How this Computerbug instance runs its scans." },
 ] as const satisfies readonly { id: string; label: string; icon: IconName; sub: string }[];
 type TabId = (typeof TABS)[number]["id"];
 
@@ -147,7 +147,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
       <aside className="sidebar">
         <a className="sidebar-brand" href="#overview">
           <LadybugMark size={34} className="brand-mark" />
-          <span className="brand-name">ladybugg</span>
+          <span className="brand-name">computerbug</span>
           <span className="brand-tag">admin</span>
         </a>
 

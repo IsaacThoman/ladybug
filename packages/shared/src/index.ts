@@ -10,10 +10,10 @@ import type { ScanStatus, ScanVerdict, Screenshot } from "./scan.ts";
 
 export const DEFAULT_SERVER_PORT = 3001;
 /**
- * The hosted Ladybugg: API, report pages and admin all live on this origin.
+ * The hosted Computerbug: API, report pages and admin all live on this origin.
  * Built apps talk to it by default; dev builds use localhost instead.
  */
-export const PUBLIC_URL = "https://ladybugg.garden";
+export const PUBLIC_URL = "https://computerbug.garden";
 export const DEFAULT_WEB_PORT = 5175;
 
 export type HealthResponse = {

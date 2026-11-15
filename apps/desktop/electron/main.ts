@@ -160,7 +160,7 @@ function createOverlayWindow() {
 
   overlayWin = new BrowserWindow({
     ...(windowedDev ? { width: 960, height: 640, minWidth: 480, minHeight: 360 } : bounds),
-    title: windowedDev ? "Ladybugg — Development" : "Ladybugg",
+    title: windowedDev ? "Computerbug — Development" : "Computerbug",
     show: false,
     transparent: !windowedDev,
     backgroundColor: windowedDev ? "#e8edf2" : "#00000000",
@@ -321,14 +321,14 @@ function buildMenu() {
       { label: "Show / Hide Pet", click: togglePetVisibility },
       { type: "separator" as const },
     ] : []),
-    { label: "Quit Ladybugg", role: "quit" },
+    { label: "Quit Computerbug", role: "quit" },
   ]);
 }
 
 function createTray() {
   const icon = nativeImage.createFromPath(ICON_PATH).resize({ width: 18, height: 18 });
   tray = new Tray(icon);
-  tray.setToolTip("Ladybugg");
+  tray.setToolTip("Computerbug");
   tray.setContextMenu(buildMenu());
 }
 

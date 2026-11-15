@@ -2,7 +2,7 @@ import { DEFAULT_SERVER_PORT, PUBLIC_URL } from "@ladybug/shared";
 import type { Account, ApiError, AuthResponse, CheckResponse, MeResponse } from "@ladybug/shared";
 
 export type Settings = {
-  /** Base URL of the Ladybugg server, without a trailing slash. */
+  /** Base URL of the Computerbug server, without a trailing slash. */
   serverUrl: string;
   /** Whether page visits are reported at all. */
   enabled: boolean;

@@ -3,7 +3,7 @@
 // comes from the background, so a site can't frame warning.html with made-up
 // text, or click "Continue" on a warning it didn't get.
 
-/** A page Ladybugg is warning about, shown over that page. */
+/** A page Computerbug is warning about, shown over that page. */
 export type Warning = {
   token: string;
   tabId: number;

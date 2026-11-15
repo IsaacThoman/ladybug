@@ -52,7 +52,7 @@ function show(details: NonNullable<WarningDetails>) {
   $("host").textContent = details.host;
   if (details.late) {
     $("summary").replaceChildren(
-      "Ladybugg just finished checking ",
+      "Computerbug just finished checking ",
       Object.assign(document.createElement("strong"), { textContent: details.host }),
       ", and it isn't safe, so it's blocked now.",
     );
@@ -114,7 +114,7 @@ async function stayInTouch(details: NonNullable<WarningDetails>) {
 async function init() {
   if (asPage) {
     document.documentElement.dataset.mode = "page";
-    document.title = "Unsafe page blocked · Ladybugg";
+    document.title = "Unsafe page blocked · Computerbug";
   }
   const details = token ? await send("warning:get").catch(() => null) : null;
   if (!details) {

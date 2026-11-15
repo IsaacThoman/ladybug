@@ -109,4 +109,4 @@ Worker only:
 
 Web and desktop (Vite, build time): `VITE_SERVER_URL` (desktop default `http://localhost:3001` in dev, `PUBLIC_URL` when packaged; web default same origin, Vite dev proxies `/api`), `VITE_WEB_URL` (desktop, default `http://localhost:5175` in dev, `PUBLIC_URL` when packaged), `VITE_API_KEY` (desktop, optional: sent as `x-api-key` with scans as well as the account token). The extension defaults to `http://localhost:3001` in `--mode development` builds and `PUBLIC_URL` otherwise.
 
-`PUBLIC_URL` (in shared) is `https://ladybugg.garden`: on Kubernetes the `edge` Service (Caddy, automatic HTTPS) serves it, proxying to `web`, which forwards `/api/` to `server`. `SITE_DOMAIN` in `ladybug-config` sets the domain Caddy serves.
+`PUBLIC_URL` (in shared) is `https://computerbug.garden`: on Kubernetes the `edge` Service (Caddy, automatic HTTPS) serves it, proxying to `web`, which forwards `/api/` to `server`. `SITE_DOMAIN` in `ladybug-config` sets the domain Caddy serves.

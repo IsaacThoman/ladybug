@@ -8,7 +8,7 @@ data:
   TYPESENSE_URL: http://typesense:8108
   ANALYZER: scan
   # Public domain the edge serves, with automatic HTTPS. bootstrap.sh sets it from SITE_DOMAIN.
-  SITE_DOMAIN: ladybugg.garden
+  SITE_DOMAIN: computerbug.garden
   # Client IPs pass through two proxies (edge, then the web nginx) before the server.
   TRUST_PROXY_HOPS: "2"
   # Replaced by bootstrap.sh from Terraform outputs.

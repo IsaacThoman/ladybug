@@ -14,7 +14,7 @@ import {
 } from "electron";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import type { OverlayLayout, Rect } from "../src/ladybug-api";
+import type { BrainSettings, OverlayLayout, Rect } from "../src/ladybug-api";
 import { parseHttpUrl, urlFromClipboardText } from "../src/urls";
 import { shutdownDevice } from "./device-shutdown";
 import { killChrome } from "./browser-kill";
@@ -23,6 +23,8 @@ import { CallService } from "./call-service";
 import { CapturePolicy, selectScreen } from "./capture-policy";
 import { parseCallAuth } from "./call-config";
 import type { CallAuth } from "./call-config";
+import { SettingsStore } from "./settings";
+import { brainDataPath, hasBrainData, readBrainData } from "./brain-data";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,6 +53,13 @@ const ICON_PATH = path.join(process.env.VITE_PUBLIC, "icon.png");
 
 const HOVER_POLL_MS = 16;
 
+const BRAIN_DATA = brainDataPath({
+  env: process.env,
+  packaged: app.isPackaged,
+  resourcesPath: process.resourcesPath,
+  appRoot: process.env.APP_ROOT,
+});
+
 let overlayWin: BrowserWindow | null = null;
 let tray: Tray | null = null;
 /** The pet's hit box in overlay-window coordinates, as reported by the renderer. */
@@ -60,6 +69,10 @@ let interactiveRects: Rect[] = [];
 /** The pet is being dragged; keep mouse events even if the cursor slips off it. */
 let petHeld = false;
 let ignoringMouse = true;
+/** Created once the app is ready, when userData is known. */
+let settings: SettingsStore | null = null;
+/** The cursor position last sent to the fly brain, so it's only sent when it moves. */
+let brainCursor: { x: number; y: number } | null = null;
 /** The signed-in account, from the renderer. Support calls are placed as this user. */
 let callAuth: CallAuth | null = null;
 let supportReady = false;
@@ -214,7 +227,7 @@ function createOverlayWindow() {
     void calls.endCurrent();
   };
   overlayWin.webContents.on("render-process-gone", endMedia);
-  overlayWin.webContents.on("did-start-loading", endMedia);
+  overlayWin.webContents.on("did-start-loading", () => { endMedia(); brainCursor = null; });
   const trustedMediaFrame = (contents: Electron.WebContents | null, details: { isMainFrame: boolean; requestingUrl?: string }) =>
     contents === overlayWin?.webContents && details.isMainFrame && details.requestingUrl === contents?.mainFrame.url;
   overlayWin.webContents.session.setPermissionCheckHandler((contents, permission, _origin, details) =>
@@ -292,6 +305,36 @@ function updateMouseTracking() {
   overlayWin.setIgnoreMouseEvents(ignore, { forward: true });
 }
 
+/**
+ * While the fly brain is on, passes the cursor to the renderer: the brain
+ * watches it anywhere on screen, but the click-through overlay only hears
+ * about it over the pet. In the development window, positions are relative to
+ * its content area, like the page's own coordinates.
+ */
+function updateBrainCursor() {
+  if (!settings?.get().flyBrain || !overlayWin || overlayWin.isDestroyed() || !overlayWin.isVisible()) return;
+  const cursor = screen.getCursorScreenPoint();
+  const origin = windowedDev ? overlayWin.getContentBounds() : overlayWin.getBounds();
+  const x = cursor.x - origin.x;
+  const y = cursor.y - origin.y;
+  if (brainCursor?.x === x && brainCursor.y === y) return;
+  brainCursor = { x, y };
+  overlayWin.webContents.send("ladybug:brain-cursor", brainCursor);
+}
+
+const brainSettings = (): BrainSettings => {
+  const { flyBrain, brainActivity } = settings?.get() ?? { flyBrain: false, brainActivity: false };
+  return { enabled: flyBrain, showActivity: brainActivity };
+};
+
+function changeBrainSettings(patch: { flyBrain?: boolean; brainActivity?: boolean }) {
+  if (!settings) return;
+  void settings.set(patch);
+  brainCursor = null;
+  tray?.setContextMenu(buildMenu());
+  if (overlayWin && !overlayWin.isDestroyed()) overlayWin.webContents.send("ladybug:brain-settings", brainSettings());
+}
+
 function showOverlay() {
   if (!overlayWin) createOverlayWindow();
   else if (windowedDev) overlayWin.show();
@@ -313,10 +356,35 @@ function showAccount() {
   else send();
 }
 
+function feed() {
+  showOverlay();
+  const send = () => overlayWin?.webContents.send("ladybug:feed");
+  if (overlayWin?.webContents.isLoading()) overlayWin.webContents.once("did-finish-load", send);
+  else send();
+}
+
 function buildMenu() {
+  const brainInstalled = hasBrainData(BRAIN_DATA);
+  const brainOn = brainInstalled && brainSettings().enabled;
   return Menu.buildFromTemplate([
     { label: "Scan Clipboard URL", click: () => void scanClipboard() },
+    { label: "Feed", click: feed },
     { label: "Account…", click: showAccount },
+    { type: "separator" },
+    {
+      label: brainInstalled ? "Fly Brain" : "Fly Brain (Data Not Installed)",
+      type: "checkbox",
+      checked: brainOn,
+      enabled: brainInstalled,
+      click: (item) => changeBrainSettings({ flyBrain: item.checked }),
+    },
+    {
+      label: "Show Brain Activity",
+      type: "checkbox",
+      checked: brainOn && brainSettings().showActivity,
+      enabled: brainOn,
+      click: (item) => changeBrainSettings({ brainActivity: item.checked }),
+    },
     { type: "separator" },
     ...(!windowedDev ? [
       { label: "Show / Hide Pet", click: togglePetVisibility },
@@ -334,6 +402,9 @@ function createTray() {
 }
 
 ipcMain.handle("ladybug:get-layout", () => getOverlayLayout());
+
+ipcMain.handle("ladybug:brain-data", (event) => { trustedCall(event); return readBrainData(BRAIN_DATA); });
+ipcMain.handle("ladybug:brain-settings", (event) => { trustedCall(event); return brainSettings(); });
 
 ipcMain.on("ladybug:set-pet-rect", (_event, rect: Rect) => {
   petRect = rect;
@@ -387,13 +458,15 @@ app.on("window-all-closed", () => {
 app.whenReady().then(() => {
   // Keep renderer media queries and native menus aligned with the system theme.
   nativeTheme.themeSource = "system";
+  settings = new SettingsStore(path.join(app.getPath("userData"), "settings.json"));
   if (!windowedDev) {
     app.dock?.hide();
     createTray();
   }
   createOverlayWindow();
-  // Click-through only applies to the overlay; the development window takes clicks.
-  if (!windowedDev) setInterval(updateMouseTracking, HOVER_POLL_MS);
+  // Click-through only applies to the overlay (updateMouseTracking skips the
+  // development window), but the fly brain follows the cursor in both.
+  setInterval(() => { updateMouseTracking(); updateBrainCursor(); }, HOVER_POLL_MS);
 
   screen.on("display-metrics-changed", fitOverlayToDisplay);
   screen.on("display-added", fitOverlayToDisplay);

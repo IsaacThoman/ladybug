@@ -12,8 +12,32 @@ export type OverlayLayout = {
   workArea: Rect;
 };
 
+export type Point = { x: number; y: number };
+
+/** The fly brain preferences from the tray menu. */
+export type BrainSettings = {
+  /** The fly brain decides how the pet moves. */
+  enabled: boolean;
+  /** Show what the brain is doing in a panel. */
+  showActivity: boolean;
+};
+
+export type BrainApi = {
+  /** The packed connectome, or null when it isn't installed. */
+  getData: () => Promise<Uint8Array | null>;
+  getSettings: () => Promise<BrainSettings>;
+  onSettingsChanged: (callback: (settings: BrainSettings) => void) => () => void;
+  /**
+   * The cursor anywhere on screen, in renderer coordinates, whenever it moves.
+   * Only sent while the fly brain is on, since the click-through overlay
+   * doesn't otherwise see it.
+   */
+  onCursor: (callback: (point: Point) => void) => () => void;
+};
+
 export type LadybugApi = {
   faceTime: FaceTimeApi;
+  brain: BrainApi;
   getCallCaptureSource: (id: string) => Promise<{ id: string; platform: string }>;
   /**
    * The signed-in session (or null after signing out). The main process
@@ -30,7 +54,7 @@ export type LadybugApi = {
   setPetRect: (rect: Rect) => void;
   /** Other clickable surfaces, polled with the pet's hit box in the main process. */
   setInteractiveRects: (rects: Rect[]) => void;
-  /** true while the pet is being dragged, so the overlay stays interactive. */
+  /** true while the pet or its berry is being dragged, so the overlay stays interactive. */
   setPetHeld: (held: boolean) => void;
   scanClipboard: () => void;
   setMenuOpen: (open: boolean) => void;
@@ -41,6 +65,8 @@ export type LadybugApi = {
    * clipboard didn't hold one.
    */
   onScanRequested: (callback: (url: string | null) => void) => () => void;
+  /** "Feed" was picked from the tray or right-click menu. */
+  onFeedRequested: (callback: () => void) => () => void;
   /** "Account…" was picked from a menu. */
   onAccountRequested: (callback: () => void) => () => void;
   /** Gives the overlay keyboard focus, for typing into the sign-in form. */

@@ -28,6 +28,7 @@ npm-workspaces monorepo:
 | `apps/sandbox` | Sandbox image: headful Chrome on Xvfb plus an HTTP tool daemon the worker drives. |
 | `apps/web` | Vite + React landing page and live scan report, with a recorded demo at `/demo`. |
 | `packages/shared` | Types and constants shared by all of the above. |
+| `packages/brain` | The fly brain: a spiking simulation of the fruit fly's nervous system, wired from the FlyEM male CNS connectome, that can drive the desktop pet. See [`packages/brain/README.md`](packages/brain/README.md). |
 | `packages/mascot` | The 3D ladybug (three.js), used by the desktop pet, plus the garden look the web and admin pages share: colors, fonts, the ladybug on its leaf, the hills. |
 | `packages/backend` | Node-only helpers for the server and worker: Postgres (with the TimescaleDB and pgvector parts, and community reports), Valkey, the artifact store. |
 | `infra/` | Vultr deployment: Terraform, kustomize manifests with NetworkPolicies, the mitmproxy egress gateway. See [`infra/README.md`](infra/README.md). |
@@ -270,9 +271,28 @@ Things to know:
 - Drop a link on it, or choose "Scan clipboard URL" from the tray or right-click menu, and it goes to investigate. When the scan finishes it reacts to the verdict: a happy wiggle, nervous, or alarmed.
 - Click it during or after a scan to open the report. Otherwise, a click makes it hop and say something (greeting comes from the server). Clicking also dismisses an alert. While you're signed out or waiting for approval, a click brings up the sign-in panel instead.
 - Drag it around and throw it.
+- Choose "Feed" from its menu (click it), or from the tray or right-click menu, and a berry drops beside it. It walks over and eats it. You can pick the berry up, carry it and throw it too.
 - Right-click it, or use the tray icon, to hide it, open "Account…" (sign in or out) or quit.
 
 Everything else on the overlay is click-through, so it never gets in the way of the apps underneath.
+
+### Fly brain
+
+The pet can be driven by a simulated fly brain: a spiking model of the fruit fly's whole central nervous system, 166,700 neurons wired as they are in the real animal ([FlyEM male CNS connectome](https://male-cns.janelia.org/), Janelia Research Campus, CC-BY 4.0). It's off by default.
+
+```sh
+npm run brain:fetch          # download the packed connectome (21 MB), once
+```
+
+Then check **Fly Brain** in the tray or right-click menu. **Show Brain Activity** opens a small panel with what the brain is doing.
+
+- It wanders in bouts and turns around when the brain says so, instead of picking random spots.
+- Swat at it with the cursor and it takes off: the looming detectors in its eyes fire the giant fiber, as in a real fly. Reaching over to click it doesn't.
+- Throw it and it wipes its face when it lands: wind on the antennae sets off grooming.
+- It doesn't go looking for a berry, since the model has no sense of smell to follow. Put one where it touches it, or wait for it to wander onto it: the taste stops it walking and fires the motor neuron that extends a fly's proboscis, and it eats for as long as that keeps firing. Leave it alone and it eats faster: touch dampens feeding.
+- Everything the pet does for its job (scans, warnings, reactions, bedtime) still comes first.
+
+The brain uses about a tenth of one CPU core on a recent laptop while the pet is awake. [`packages/brain/README.md`](packages/brain/README.md) covers the model, what it does and doesn't reproduce, and the data; [`apps/desktop/FLYBRAIN.md`](apps/desktop/FLYBRAIN.md) covers how the pet's senses and actions map onto it.
 
 ## Scripts
 
@@ -285,6 +305,7 @@ Everything else on the overlay is click-through, so it never gets in the way of 
 | `npm run services:up` / `services:down` | Start Typesense, Postgres (TimescaleDB) and Valkey in Docker / stop them |
 | `npm run stack:up` / `stack:down` | The whole backend in Docker, ports on localhost |
 | `npm run scan -w @ladybug/worker -- <url>` | One-off sandbox scan, report to stdout |
+| `npm run brain:fetch` / `brain:pack` | Download the packed fly connectome / pack it from the CSV export |
 | `npm run build` | Typecheck and build every workspace |
 | `npm run typecheck` | Typecheck every workspace |
 | `npm test` | Unit tests (Node's test runner) |

@@ -40,3 +40,6 @@ Thumbs.db
 # Generated Kubernetes credentials and deployment config
 infra/k8s/secrets.env
 infra/k8s/.generated/
+
+# The packed fly connectome (see packages/brain/README.md)
+packages/brain/data/

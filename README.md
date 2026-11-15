@@ -28,6 +28,7 @@ npm-workspaces monorepo:
 | `apps/sandbox` | Sandbox image: headful Chrome on Xvfb plus an HTTP tool daemon the worker drives. |
 | `apps/web` | Vite + React landing page and live scan report, with a recorded demo at `/demo`. |
 | `packages/shared` | Types and constants shared by all of the above. |
+| `packages/brain` | The fly brain: a spiking simulation of the fruit fly's nervous system, wired from the FlyEM male CNS connectome, that can drive the desktop pet. See [`packages/brain/README.md`](packages/brain/README.md). |
 | `packages/mascot` | The 3D ladybug (three.js), used by the desktop pet, plus the garden look the web and admin pages share: colors, fonts, the ladybug on its leaf, the hills. |
 | `packages/backend` | Node-only helpers for the server and worker: Postgres (with the TimescaleDB and pgvector parts, and community reports), Valkey, the artifact store. |
 | `infra/` | Vultr deployment: Terraform, kustomize manifests with NetworkPolicies, the mitmproxy egress gateway. See [`infra/README.md`](infra/README.md). |
@@ -274,6 +275,23 @@ Things to know:
 
 Everything else on the overlay is click-through, so it never gets in the way of the apps underneath.
 
+### Fly brain
+
+The pet can be driven by a simulated fly brain: a spiking model of the fruit fly's whole central nervous system, 166,700 neurons wired as they are in the real animal ([FlyEM male CNS connectome](https://male-cns.janelia.org/), Janelia Research Campus, CC-BY 4.0). It's off by default.
+
+```sh
+npm run brain:fetch          # download the packed connectome (21 MB), once
+```
+
+Then check **Fly Brain** in the tray or right-click menu. **Show Brain Activity** opens a small panel with what the brain is doing.
+
+- It wanders in bouts and turns around when the brain says so, instead of picking random spots.
+- Swat at it with the cursor and it takes off: the looming detectors in its eyes fire the giant fiber, as in a real fly. Reaching over to click it doesn't.
+- Carry it about and it grooms its antennae when you set it down: wind on the antennae sets off grooming.
+- Everything the pet does for its job (scans, warnings, reactions, bedtime) still comes first.
+
+The brain uses about a tenth of one CPU core on a recent laptop while the pet is awake. [`packages/brain/README.md`](packages/brain/README.md) covers the model, what it does and doesn't reproduce, and the data; [`apps/desktop/FLYBRAIN.md`](apps/desktop/FLYBRAIN.md) covers how the pet's senses and actions map onto it.
+
 ## Scripts
 
 | Command | Does |
@@ -285,6 +303,7 @@ Everything else on the overlay is click-through, so it never gets in the way of 
 | `npm run services:up` / `services:down` | Start Typesense, Postgres (TimescaleDB) and Valkey in Docker / stop them |
 | `npm run stack:up` / `stack:down` | The whole backend in Docker, ports on localhost |
 | `npm run scan -w @ladybug/worker -- <url>` | One-off sandbox scan, report to stdout |
+| `npm run brain:fetch` / `brain:pack` | Download the packed fly connectome / pack it from the CSV export |
 | `npm run build` | Typecheck and build every workspace |
 | `npm run typecheck` | Typecheck every workspace |
 | `npm test` | Unit tests (Node's test runner) |

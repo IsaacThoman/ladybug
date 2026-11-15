@@ -6,7 +6,13 @@ A spiking simulation of the male fruit fly's whole central nervous system, about
 
 The wiring is the [FlyEM male CNS](https://male-cns.janelia.org/) connectome from Janelia Research Campus, published under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). Anything that ships the packed file, or shows behaviour derived from it, should credit "FlyEM male CNS connectome, Janelia Research Campus (CC-BY 4.0)". The packed file records the dataset, license and URL in its header.
 
-It is not in git. Export the neuron and connection tables from Codex (`neurons.csv` and `connections_princeton.csv`; either may be gzipped, whatever the file name says) and pack them:
+It is not in git. The quickest way to get it is to download the packed file (21 MB) from this repository's releases, which checks it against a known hash:
+
+```sh
+npm run brain:fetch
+```
+
+Or build it yourself: export the neuron and connection tables from Codex (`neurons.csv` and `connections_princeton.csv`; either may be gzipped, whatever the file name says) and pack them:
 
 ```sh
 npm run brain:pack -- --neurons neurons.csv --connections connections_princeton.csv
@@ -146,7 +152,7 @@ From the response matrix (`report.ts` section a):
 
 Not reproduced:
 
-- **Bump** does nothing much: Johnston's organ input reaches no walking, steering or backing readout (it drives other descending neurons, DNbe001, DNp18, DNg29, pIP1). The pet won't turn or back away from an edge it presses into.
+- **Bump** does nothing much: Johnston's organ input reaches no walking, steering or backing readout (it drives other descending neurons, DNbe001, DNp18, DNg29, pIP1). So the pet's body turns it around at an edge by itself (see `apps/desktop/FLYBRAIN.md`); the brain doesn't.
 - **Touch → grooming.** The body bristles mostly drive unnamed GNG descending neurons (DNge104, DNge122) and wing and haltere steering motor neurons, none of them a readout.
 - **Losing ground contact → flight.** Airborne is the same as standing, except the load sensors' slight drive to the flight motor neurons goes away; real flies start flying when their legs lose contact.
 - **DNp09 (forward walking toward objects) and DNa01** barely fire at rest and aren't read.

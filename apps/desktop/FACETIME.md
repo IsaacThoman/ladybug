@@ -160,7 +160,15 @@ messages to be missed; the endpoint provides no durable event cursor here.
 
 Browser visits to known unsafe sites and analyses finding unsafe sites queue:
 
-> The user is accessing a website that might not be trustworthy: {url}. Within 30 minutes, reply SUPPORT to start or restart a FaceTime support call, or KILL to force-close all Google Chrome windows on this account’s connected computers.
+```text
+Computerbug warning: The user is accessing a website that might not be trustworthy:
+{url}
+
+Reply within 30 minutes:
+SUPPORT: Start or restart a remote FaceTime support call.
+KILL: Force-close Google Chrome on all connected computers on this account.
+SHUTDOWN: Shut down all connected computers on this account. Unsaved work may be lost.
+```
 
 URLs have credentials and fragments removed. Admin checks and manual scans alone
 do not message anyone. Redis reserves one notification per normalized hostname
@@ -173,10 +181,10 @@ Messaging failures do not interrupt site checks or pet alerts.
 
 A confirmed send opens a 30-minute support window scoped to the project, line,
 and emergency contact, retaining the originating account. Only inbound `received`
-text equal to SUPPORT or KILL (ignoring case and surrounding whitespace) is eligible.
+text equal to SUPPORT, KILL, or SHUTDOWN (ignoring case and surrounding whitespace) is eligible.
 Both the message's `created_at` and the polling receipt must fall inside the window. IDs are deduplicated in
 Redis atomically; distinct replies keep the original window open without extending
-its expiry. SUPPORT can restart an ended call; replies during an active or ending
+its expiry. SUPPORT can restart an ended call; SUPPORT replies during an active or ending
 call are ignored without queuing. Messages predating server startup are ignored.
 When windows overlap, the newest confirmed alert preceding the reply determines
 the destination account. Legacy jobs and windows without an account are ignored.
@@ -188,11 +196,12 @@ sharing those digits cannot be distinguished. Full unmasked numbers, if returned
 are compared exactly. No phone number or private message text is written to logs.
 
 SUPPORT reaches the originating account's most recently connected eligible
-desktop through an authenticated main-process SSE connection. KILL reaches all
+desktop through an authenticated main-process SSE connection. KILL and SHUTDOWN reach all
 eligible connected desktops for that account, even during calls or after leaving
-the unsafe page. Approval and calls-enabled access are required for either command;
+the unsafe page. Approval and calls-enabled access are required for all commands;
 sign-out, access revocation, and subscription shutdown stop further execution.
-Expired events are discarded by desktops. Older desktops ignore `browser-kill`.
+Expired events are discarded by desktops. Older desktops ignore unknown command types. SHUTDOWN event IDs are deduplicated
+in the desktop main process before OS execution, including across subscription restarts.
 
 KILL runs `/usr/bin/pkill` without a shell, using `-KILL`, the current OS UID,
 and an exact process-name match: `chrome` on Linux, `Google Chrome` on macOS.
@@ -200,6 +209,43 @@ Only stable Google Chrome is targeted; all its windows for that OS user close,
 possibly losing unsaved work. Computerbug and its call continue running. Missing Chrome
 is a successful no-op, and other platforms do nothing. No confirmation or reply
 message is sent.
+
+SHUTDOWN powers off every eligible connected Linux or macOS computer on that
+account, including during support calls. Unsaved work may be lost and calls end
+when the computer powers off. Windows ignores SHUTDOWN. There is no local save
+prompt, remote confirmation, or password prompt; missing setup and execution
+failures produce a local `[support] device shutdown failed` error.
+
+An administrator must enable shutdown once on **each computer**, for the local
+non-root user running Computerbug. From this repository:
+
+```sh
+sudo sh apps/desktop/scripts/install-shutdown.sh LOCAL_USERNAME
+# To remove the permission later:
+sudo sh apps/desktop/scripts/uninstall-shutdown.sh LOCAL_USERNAME
+```
+
+Desktop releases include the three scripts under `resources/shutdown-setup`
+(`Computerbug.app/Contents/Resources/shutdown-setup` on macOS; beside the app
+inside the extracted AppImage on Linux). Run the same install/uninstall scripts
+there with `sudo sh /path/to/shutdown-setup/install-shutdown.sh LOCAL_USERNAME`.
+Keep the scripts together. Uninstall before changing the authorized user or
+reinstalling the rule. Removing the app alone does not remove the sudoers rule.
+
+Setup requires sudo, `/usr/sbin/visudo`, an active `/etc/sudoers.d` include, and
+the platform shutdown executable. It installs a root-owned mode-0440 rule at
+`/etc/sudoers.d/computerbug-shutdown-LOCAL_USERNAME`, validates the rule and the
+full configuration, confirms the rule was included, and lists effective command
+permission without executing shutdown. Failed installation removes its rule.
+Only that user receives passwordless root permission for the exact command:
+Linux `/usr/bin/systemctl poweroff --force`, macOS `/sbin/shutdown -h now`.
+This permission is available to other processes running as that local user too.
+Existing administrator grants are unaffected by removal.
+
+The desktop uses fixed arguments with `execFile` and `/usr/bin/sudo -n`.
+Linux uses one `--force`, terminating processes while retaining filesystem
+shutdown handling ([systemctl documentation](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)).
+macOS uses `shutdown -h now`, bypassing application save prompts.
 
 A desktop must already have been connected when the reply was recorded. Offline
 requests are discarded and reconnects have no backlog. Busy calls ignore additional
@@ -236,3 +282,10 @@ desktops. Automated capture tests cover selection, call/frame authorization, can
 composition geometry, camera fallback, required-device failures, cleanup, publication
 ordering, and microphone gating. Real portal/device permissions and FaceTime delivery
 on Wayland and macOS remain manual checks.
+
+Test SHUTDOWN acceptance only on disposable Linux and macOS machines: install
+setup, send SHUTDOWN during a call and after leaving the page, and confirm all
+eligible account computers power off. Check another account stays online. After
+restarting, verify offline/duplicate/expired replies do not execute; uninstall
+setup and verify a fresh reply logs a permission failure without prompting.
+Never run actual power-off acceptance tests on a development workstation.

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { OverlayLayout, Rect } from "../src/ladybug-api";
 import { parseHttpUrl, urlFromClipboardText } from "../src/urls";
+import { shutdownDevice } from "./device-shutdown";
 import { killChrome } from "./browser-kill";
 import { SupportSubscription } from "./support-stream";
 import { CallService } from "./call-service";
@@ -69,7 +70,7 @@ const support = new SupportSubscription(() => {
     showOverlay();
     overlayWin.webContents.send("ladybug:support-request");
   }
-}, { auth: () => callAuth, kill: () => { void killChrome(); } });
+}, { auth: () => callAuth, kill: () => { void killChrome(); }, shutdown: () => { void shutdownDevice(); } });
 const fromOverlay = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
   event.sender === overlayWin?.webContents && event.senderFrame === event.sender.mainFrame;
 ipcMain.on("ladybug:support-ready", (event, ready: boolean) => {

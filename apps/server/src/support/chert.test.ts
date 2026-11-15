@@ -18,7 +18,7 @@ test("shared-line send uses the app endpoint, project header, line_id and Idempo
     assert.deepEqual(init?.headers, { Authorization: "Bearer ftk_shared", "X-Chert-Project-Id": "project", "Content-Type": "application/json", "Idempotency-Key": "stable-key" });
     assert.deepEqual(JSON.parse(String(init?.body)), {
       line_id: "line", recipient: config.destination,
-      text: "The user is accessing a website that might not be trustworthy: https://bad.example/. Within 30 minutes, reply SUPPORT to start or restart a FaceTime support call, or KILL to force-close all Google Chrome windows on this account’s connected computers.",
+      text: "Computerbug warning: The user is accessing a website that might not be trustworthy:\nhttps://bad.example/\n\nReply within 30 minutes:\nSUPPORT: Start or restart a remote FaceTime support call.\nKILL: Force-close Google Chrome on all connected computers on this account.\nSHUTDOWN: Shut down all connected computers on this account. Unsaved work may be lost.",
     });
     return Response.json({ data: { id: "message", state: "pending" } }, { status: 202 });
   });

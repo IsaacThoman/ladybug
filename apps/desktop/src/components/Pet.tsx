@@ -4,7 +4,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import type { AlertLevel, PetAlert, ScanStatus, ScanVerdict } from "@ladybug/shared";
+import type { AlertLevel, PetAlert, PetFocus, ScanStatus, ScanVerdict } from "@ladybug/shared";
 import { createScan, getScan, reportUrl, subscribeToAlerts, watchScan } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
 import { getSession } from "../session";
@@ -90,13 +90,14 @@ function remember(set: Set<string>, id: string) {
   if (set.size > SEEN_SCANS_LIMIT) set.delete(set.values().next().value!);
 }
 
-function moodFor(scan: ScanState, dropHover: boolean): LadybugMood {
+function moodFor(scan: ScanState, dropHover: boolean, inspecting: boolean): LadybugMood {
   if (dropHover) return "expectant";
-  if (scan.phase === "scanning") return "sniffing";
-  if (scan.phase !== "done") return "calm";
-  if (scan.verdict === "benign") return "happy";
-  if (scan.verdict === "suspicious") return "nervous";
-  if (scan.verdict === "malicious") return "alarmed";
+  if (scan.phase === "done") {
+    if (scan.verdict === "benign") return "happy";
+    if (scan.verdict === "suspicious") return "nervous";
+    if (scan.verdict === "malicious") return "alarmed";
+  }
+  if (scan.phase === "scanning" || inspecting) return "sniffing";
   return "calm";
 }
 
@@ -167,8 +168,14 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
   const [dragging, setDragging] = useState(false);
   const [dropHover, setDropHover] = useState(false);
   const [scan, setScan] = useState<ScanState>({ phase: "idle" });
+  /** Whether the page in the browser's active tab is being checked, from the server. */
+  const [focus, setFocus] = useState<PetFocus | null>(null);
 
-  const mood = moodFor(scan, dropHover);
+  // The page the user is looking at is being checked: stand still and look it
+  // over through the magnifying glass. Reactions and drops come first.
+  const inspecting = Boolean(focus?.investigating) && !dropHover && scan.phase !== "done";
+  const inspectingRef = useRef(false);
+  const mood = moodFor(scan, dropHover, inspecting);
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -176,7 +183,8 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
 
   useEffect(() => {
     moodRef.current = mood;
-  }, [mood]);
+    inspectingRef.current = inspecting;
+  }, [mood, inspecting]);
 
   // Movement bounds are the display work area or the development window.
   const getBounds = () => {
@@ -226,6 +234,8 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       last = now;
       const s = stateRef.current!;
       const mood = moodRef.current;
+      // Holds still while a link is dragged over it, or while it inspects the active tab.
+      const holdStill = mood === "expectant" || inspectingRef.current;
       const { minX, maxX, minY, groundY } = getBounds();
       s.targetX = Math.min(Math.max(s.targetX, minX), maxX);
       // Sniffing and nervous bugs potter about nearby instead of crossing the screen.
@@ -241,8 +251,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
-          // Hold still while a link is dragged over it.
-          if (mood === "expectant") s.idleUntil = Math.max(s.idleUntil, now + 300);
+          if (holdStill) s.idleUntil = Math.max(s.idleUntil, now + 300);
           if (now >= s.idleUntil) {
             if (s.backing) {
               s.targetX = s.x - s.heading * randomBetween(110, 180);
@@ -260,7 +269,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
 
         case "walking": {
           s.y = groundY;
-          if (mood === "expectant") {
+          if (holdStill) {
             s.mode = "idle";
             s.idleUntil = now + 300;
             break;
@@ -325,7 +334,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
       prevX = s.x;
       if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
-      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood }, dt);
+      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current }, dt);
       frame = requestAnimationFrame(tick);
     };
 
@@ -533,7 +542,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     react(verdict);
   });
 
-  useEffect(() => subscribeToAlerts((alert) => onAlert(alert)), []);
+  useEffect(() => subscribeToAlerts((alert) => onAlert(alert), setFocus), []);
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;

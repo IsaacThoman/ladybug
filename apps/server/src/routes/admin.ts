@@ -20,6 +20,7 @@ import { listPending } from "../analyzer.ts";
 import { checkVisit } from "../checker.ts";
 import { visitTimeline } from "../checks.ts";
 import { config } from "../config.ts";
+import { focus } from "../focus.ts";
 import {
   HttpError,
   optionalEnum,
@@ -142,6 +143,7 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, 
     // Pets reconnect and find out they no longer have access.
     if (action.status !== "approved") {
       petChannel.close(user.id);
+      focus.forget(user.id);
       revokeCalls(user.id);
     }
     logEvent({
@@ -156,6 +158,7 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, 
     const user = await accounts.remove(req.params.id);
     if (!user) throw new HttpError(404, "No such user");
     petChannel.close(user.id);
+    focus.forget(user.id);
     revokeCalls(user.id);
     logEvent({
       type: "admin",

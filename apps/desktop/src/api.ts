@@ -13,6 +13,7 @@ import type {
   CreateScanResponse,
   GreetingResponse,
   PetAlert,
+  PetFocus,
   ScanEvent,
   ScanResponse,
 } from "@ladybug/shared";
@@ -168,11 +169,13 @@ async function readEvents(body: ReadableStream<Uint8Array>, onEvent: (event: str
 
 /**
  * Listens for the signed-in user's alerts (unsafe or unknown sites their
- * browser extension reported). Connects whenever someone signs in, and keeps
- * checking back while the account waits for approval. Uses fetch rather than
- * EventSource so the token travels in a header. Returns an unsubscribe function.
+ * browser extension reported), and for whether the page in their active tab
+ * is being checked (`onFocus`; null while disconnected). Connects whenever
+ * someone signs in, and keeps checking back while the account waits for
+ * approval. Uses fetch rather than EventSource so the token travels in a
+ * header. Returns an unsubscribe function.
  */
-export function subscribeToAlerts(onAlert: (alert: PetAlert) => void) {
+export function subscribeToAlerts(onAlert: (alert: PetAlert) => void, onFocus: (focus: PetFocus | null) => void) {
   let closed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | null = null;
@@ -186,6 +189,8 @@ export function subscribeToAlerts(onAlert: (alert: PetAlert) => void) {
   const connect = async () => {
     clearTimeout(retry);
     controller?.abort();
+    // Whatever the old stream said may be out of date by now.
+    onFocus(null);
     const session = getSession();
     connectedToken = session?.token ?? null;
     if (closed || !session) return;
@@ -208,11 +213,18 @@ export function subscribeToAlerts(onAlert: (alert: PetAlert) => void) {
       setAccountStatus("approved");
       await readEvents(res.body, (event, data) => {
         if (event === "alert") onAlert(JSON.parse(data) as PetAlert);
+        else if (event === "focus") onFocus(JSON.parse(data) as PetFocus);
       });
       // The server ended the stream (a restart, or access was revoked): reconnecting tells which.
-      if (!current.signal.aborted) schedule(ALERT_RECONNECT_MS);
+      if (!current.signal.aborted) {
+        onFocus(null);
+        schedule(ALERT_RECONNECT_MS);
+      }
     } catch {
-      if (!current.signal.aborted && !closed) schedule(ALERT_RECONNECT_MS);
+      if (!current.signal.aborted && !closed) {
+        onFocus(null);
+        schedule(ALERT_RECONNECT_MS);
+      }
     }
   };
 

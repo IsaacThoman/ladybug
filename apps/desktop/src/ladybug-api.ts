@@ -14,12 +14,24 @@ export type OverlayLayout = {
 
 export type Point = { x: number; y: number };
 
+/**
+ * Whether the bug's eyes can see the real screen:
+ * - allowed: yes
+ * - not-allowed: macOS hasn't given Computerbug Screen Recording permission
+ * - unavailable: not here (the development window, or a Wayland session,
+ *   which would ask every time the capture starts)
+ */
+export type ScreenAccess = "allowed" | "not-allowed" | "unavailable";
+
 /** The fly brain preferences from the tray menu. */
 export type BrainSettings = {
   /** The fly brain decides how the pet moves. */
   enabled: boolean;
   /** Show what the brain is doing in a panel. */
   showActivity: boolean;
+  /** Fly Eyes: the brain sees the screen, or a plain wall when it can't. Only while it's enabled. */
+  eyes: boolean;
+  screen: ScreenAccess;
 };
 
 export type BrainApi = {
@@ -33,6 +45,11 @@ export type BrainApi = {
    * doesn't otherwise see it.
    */
   onCursor: (callback: (point: Point) => void) => () => void;
+  /**
+   * The primary display's capture source, for the bug's eyes. Only while Fly
+   * Eyes is on and the screen can be seen; it allows one capture stream.
+   */
+  getEyesSource: () => Promise<{ id: string }>;
 };
 
 export type LadybugApi = {

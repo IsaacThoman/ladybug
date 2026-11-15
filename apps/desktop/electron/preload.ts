@@ -36,6 +36,7 @@ const api: LadybugApi = {
       ipcRenderer.on("ladybug:brain-cursor", handler);
       return () => { ipcRenderer.removeListener("ladybug:brain-cursor", handler); };
     },
+    getEyesSource: () => ipcRenderer.invoke("ladybug:eyes-capture-source"),
   },
   getLayout: () => ipcRenderer.invoke("ladybug:get-layout"),
   onLayoutChanged: (callback) => {

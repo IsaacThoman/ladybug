@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { BrainRequest, BrainResponse, BrainSenses } from "@ladybug/brain";
 import { BrainClient, LOAD_TIMEOUT_MS, MAX_TICK_MS, STALL_MS } from "./client.ts";
 import type { BrainWorkerFactory } from "./client.ts";
-import { RESTING, stateWith } from "./test-helpers.ts";
+import { RESTING, latticeEyes, stateWith } from "./test-helpers.ts";
 
 type FakeWorker = {
   posted: { request: BrainRequest; transfer?: Transferable[] }[];
@@ -68,6 +68,24 @@ test("starting loads the connectome and hands it to the worker without copying",
   assert.equal(client.status, "running");
   assert.equal(client.neurons, 166_700);
   assert.equal(client.connections, 50);
+});
+
+test("the brain's eyes come with it, and go when it stops; it's ready for a tick only when the last is answered", async () => {
+  const { client, workers } = setup();
+  client.start();
+  await flush();
+  assert.equal(client.ready, false);
+  const eyes = latticeEyes();
+  workers[0].reply({ type: "ready", neurons: 1, connections: 0, eyes });
+  assert.equal(client.eyes, eyes);
+  assert.equal(client.ready, true);
+  client.tick(16, RESTING);
+  assert.equal(client.ready, false);
+  workers[0].reply({ type: "state", state: stateWith({}) });
+  assert.equal(client.ready, true);
+  client.stop();
+  assert.equal(client.eyes, null);
+  assert.equal(client.ready, false);
 });
 
 test("bytes that are a view into a larger buffer are copied out before transfer", async () => {

@@ -1,10 +1,8 @@
 import type { PointerEvent as ReactPointerEvent, Ref } from "react";
-import { FOOD_SIZE } from "../food";
+import { BERRY_PX, BERRY_RADIUS, FOOD_SIZE } from "../food";
 
-/** The drawn berry, px across. It sits at the bottom of its grab box, in the middle. */
-const BERRY_PX = 24;
-/** Half the drawing's width, in its own units. */
-const HALF = 12;
+/** Half the drawing's width, in its own units (px at BERRY_PX). */
+const HALF = BERRY_PX / 2;
 
 /**
  * The berry the bug is fed. The pet's animation loop moves it and takes the
@@ -49,7 +47,7 @@ export default function Berry({ ref, ...handlers }: {
           <ellipse className="pet-food-shadow" cx={0} cy={10.6} rx={9} ry={1.4} mask="url(#berry-skin-bite)" />
           <circle cx={0} cy={0.5} r={9.3} fill="#d7c9ec" mask="url(#berry-flesh-bite)" />
           <g mask="url(#berry-skin-bite)">
-            <circle cx={0} cy={0.5} r={10} fill="url(#berry-skin)" />
+            <circle cx={0} cy={0.5} r={BERRY_RADIUS} fill="url(#berry-skin)" />
             {/* The crown at the top, and the bloom on the skin. */}
             <path d="M-3.2 -7.4 L-1.6 -8.6 L0 -7.3 L1.6 -8.6 L3.2 -7.4 L2 -5.9 L-2 -5.9 Z" fill="#1d2460" />
             <ellipse cx={-3.6} cy={-2.6} rx={2.6} ry={1.7} fill="#fff" opacity={0.28} transform="rotate(-28 -3.6 -2.6)" />

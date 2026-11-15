@@ -5,6 +5,9 @@
 export const FOOD_SIZE = 40;
 /** How far below the bug's ground line the box rests: a berry in front of the bug is nearer the viewer. */
 export const FOOD_SINK = 3;
+/** The berry as drawn, px across, at the bottom of its grab box in the middle; and its radius. */
+export const BERRY_PX = 24;
+export const BERRY_RADIUS = 10;
 /** From the middle of the bug to the middle of a berry at its mouth, px. */
 export const MOUTH_REACH = 56;
 /** The bug tastes a berry whose middle is this close to its own (px): under its feet or at its mouth. */

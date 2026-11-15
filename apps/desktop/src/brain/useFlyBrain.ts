@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { BrainSettings } from "../ladybug-api";
 import { BrainClient } from "./client";
+import { captureScreen, openScreen } from "./eyes-capture";
 import { FlyBrain } from "./fly-brain";
 import { createBrainWorker } from "./worker";
 
-const OFF: BrainSettings = { enabled: false, showActivity: false };
+const OFF: BrainSettings = { enabled: false, showActivity: false, eyes: false, screen: "unavailable" };
 
 /**
  * The fly brain, started and stopped with its setting in the tray menu. The
@@ -36,5 +37,13 @@ export function useFlyBrain(behavior: ConstructorParameters<typeof FlyBrain>[1])
     };
   }, [brain, settings.enabled]);
 
-  return { brain, showActivity: settings.enabled && settings.showActivity };
+  const eyes = settings.enabled && settings.eyes;
+  const screen = settings.screen === "allowed";
+  useEffect(() => {
+    if (!eyes) return;
+    brain.setEyes({ capture: screen ? captureScreen(openScreen) : null });
+    return () => brain.setEyes(null);
+  }, [brain, eyes, screen]);
+
+  return { brain, showActivity: settings.enabled && settings.showActivity, eyes: eyes ? settings.screen : null };
 }

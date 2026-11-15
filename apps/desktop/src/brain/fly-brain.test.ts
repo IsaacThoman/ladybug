@@ -4,8 +4,8 @@ import type { BrainRequest, BrainResponse } from "@ladybug/brain";
 import { BrainClient } from "./client.ts";
 import { FlyBrain } from "./fly-brain.ts";
 import type { BrainAct } from "./behavior.ts";
-import type { FrameInput } from "./fly-brain.ts";
-import { stateWith } from "./test-helpers.ts";
+import type { FrameInput, FrameScene, ScreenCapture } from "./fly-brain.ts";
+import { latticeEyes, stateWith } from "./test-helpers.ts";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -114,4 +114,110 @@ test("while the pet sleeps the brain rests, and picks up again when it wakes", a
   advance(16);
   reply({ type: "state", state: stateWith({ walk: 1 }) });
   assert.ok(brain.frame(frame({ now: 5016 })));
+});
+
+const SCENE: FrameScene = {
+  width: 1000, height: 700, ledgeY: 560, yaw: 0,
+  sprite: { x: 460, y: 424, width: 180, height: 150 }, berry: null, ball: null,
+};
+
+test("with Fly Eyes on, the senses carry what each facet sees, and the cursor no longer looms by itself", async () => {
+  const { client, brain, posted, frame, reply, advance } = setup();
+  const eyes = latticeEyes();
+  brain.setEyes({ capture: null });
+  client.start();
+  await flush();
+  reply({ type: "ready", neurons: 1, connections: 0, eyes });
+
+  // A swat from the right of the screen, which would loom in the left eye.
+  let now = 0;
+  for (let x = 1000; x > 560; x -= 100) {
+    brain.setCursor({ x, y: 530 });
+    brain.frame(frame({ now, scene: SCENE }));
+    advance(16);
+    now += 16;
+    reply({ type: "state", state: stateWith({}) });
+  }
+  const sent = ticks(posted);
+  assert.ok(sent.length >= 4);
+  for (const { senses } of sent) {
+    assert.equal(senses.loomLeft, 0);
+    assert.equal(senses.loomRight, 0);
+    assert.ok(senses.light, "light every tick");
+    assert.equal(senses.light.left.length, eyes.left.directions.length / 3);
+    assert.equal(senses.light.right.length, eyes.right.directions.length / 3);
+  }
+  // The arrays are reused from tick to tick; the worker gets a copy of each.
+  const { light } = sent.at(-1)!.senses;
+  assert.ok([...Array.from(light!.left), ...Array.from(light!.right)].every((v) => v >= 0 && v <= 1));
+  assert.ok(brain.seeing(), "the panel can show it");
+
+  // Without a scene, or with Fly Eyes off, it's as before.
+  brain.setEyes(null);
+  brain.setCursor({ x: 1000, y: 530 });
+  brain.frame(frame({ now, scene: SCENE }));
+  assert.equal(ticks(posted).at(-1)!.senses.light, undefined);
+  assert.equal(brain.seeing(), null);
+});
+
+test("with Fly Eyes on but a brain without eyes, nothing changes", async () => {
+  const { client, brain, posted, frame, reply } = setup();
+  brain.setEyes({ capture: null });
+  client.start();
+  await flush();
+  reply({ type: "ready", neurons: 1, connections: 0, eyes: null });
+  brain.frame(frame({ scene: SCENE }));
+  assert.equal(ticks(posted)[0].senses.light, undefined);
+  assert.equal(brain.seeing(), null);
+});
+
+test("the screen is only captured while the eyes are in use, and a failed capture isn't retried until asked", async () => {
+  const { client, brain, frame, reply, advance } = setup();
+  const started: { ended: (failed: boolean) => void; stopped: boolean }[] = [];
+  const capture: ScreenCapture = (_vision, ended) => {
+    const run = { ended, stopped: false };
+    started.push(run);
+    return () => { run.stopped = true; };
+  };
+  brain.setEyes({ capture });
+  brain.frame(frame({ scene: SCENE }));
+  assert.equal(started.length, 0, "not before the brain runs");
+  client.start();
+  await flush();
+  reply({ type: "ready", neurons: 1, connections: 0, eyes: latticeEyes() });
+  let now = 0;
+  const step = (input: Partial<FrameInput> = {}) => {
+    brain.frame(frame({ now, scene: SCENE, ...input }));
+    advance(16);
+    now += 16;
+    reply({ type: "state", state: stateWith({}) });
+  };
+  step();
+  step();
+  assert.equal(started.length, 1);
+
+  // Asleep, the brain rests and the capture stops; awake again, it starts again.
+  step({ asleep: true });
+  assert.equal(started[0].stopped, true);
+  step();
+  assert.equal(started.length, 2);
+
+  // It stopped by itself because nothing looked: the next look starts it again.
+  started[1].ended(false);
+  step();
+  assert.equal(started.length, 3);
+
+  // It failed: the plain wall until Fly Eyes is turned off and on.
+  started[2].ended(true);
+  step();
+  step();
+  assert.equal(started.length, 3);
+  brain.setEyes({ capture });
+  step();
+  assert.equal(started.length, 4);
+
+  brain.setEyes(null);
+  assert.equal(started[3].stopped, true);
+  step();
+  assert.equal(started.length, 4);
 });

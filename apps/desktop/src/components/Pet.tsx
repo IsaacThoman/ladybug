@@ -14,7 +14,7 @@ import { LadybugRenderer } from "@ladybug/mascot";
 import type { LadybugMood } from "@ladybug/mascot";
 import type { BrainAct } from "../brain/behavior";
 import { useFlyBrain } from "../brain/useFlyBrain";
-import { EAT_SECONDS, EAT_SLOP, FOOD_SINK, FOOD_SIZE, OWN_APPETITE, dropFood, eatingSpot, stepFood, stepToward, throwFood, touchesFood } from "../food";
+import { BERRY_PX, BERRY_RADIUS, EAT_SECONDS, EAT_SLOP, FOOD_SINK, FOOD_SIZE, OWN_APPETITE, dropFood, eatingSpot, stepFood, stepToward, throwFood, touchesFood } from "../food";
 import type { Food, FoodBounds } from "../food";
 import Berry from "./Berry";
 import { drawBerry } from "./drawBerry";
@@ -509,6 +509,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       const centreX = s.x + PET_WIDTH / 2;
       const spot = food ? eatingSpot({ centreX, heading: s.heading }, food.x + FOOD_SIZE / 2, minX + PET_WIDTH / 2, maxX + PET_WIDTH / 2) : null;
       const onFeet = s.mode === "idle" || s.mode === "walking";
+      const { width, height } = layoutRef.current;
       const act = brain.frame({
         now,
         dt,
@@ -518,6 +519,16 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
         free,
         asleep: sleep === "asleep",
         food: food && onFeet && touchesFood(centreX, food, foodBounds) ? spot : null,
+        // For the eyes: the bug stands on a ledge along its ground line, just in front of the screen.
+        scene: {
+          width,
+          height,
+          ledgeY: groundY + PET_HEIGHT,
+          yaw: ladybug.facing,
+          sprite: { x: s.x + (PET_WIDTH - CANVAS_WIDTH) / 2, y: s.y + PET_HEIGHT + GROUND_PX - CANVAS_HEIGHT, width: CANVAS_WIDTH, height: CANVAS_HEIGHT },
+          berry: food && { x: food.x, y: food.y, width: FOOD_SIZE, height: FOOD_SIZE },
+          ball: food && { x: food.x + FOOD_SIZE / 2, y: food.y + FOOD_SIZE - BERRY_PX / 2, radius: BERRY_RADIUS },
+        },
       });
       const own: BrainAct | null = !act && free && spot && food?.mode === "resting"
         ? { vx: stepToward(spot.dx, speed, dt), heading: spot.heading, jump: null, wings: 0, groom: 0, eat: Math.abs(spot.dx) <= EAT_SLOP ? OWN_APPETITE : 0 }

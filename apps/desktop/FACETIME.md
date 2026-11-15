@@ -108,11 +108,10 @@ Shared-line contract, checked against the live API:
 - Send the project API key as `Authorization: Bearer ftk...`, the project UUID as
   `X-Chert-Project-Id`, and a stable `Idempotency-Key` for every POST retry.
 - Poll GET on the same endpoint for the newest 50 messages. There is currently
-  no shared-line text webhook. The separate `console.trychert.com` messaging API
-  requires another product's tenant and is not used by this deployment.
+  no shared-line text webhook.
 
-A live POST returned `{ data: { id, state: "sent" } }`. The POST uses `line_id`
-(the initially supplied `lineid` spelling was rejected with HTTP 422).
+A successful POST returns `{ data: { id, state: "sent" } }`; queued sends return
+their message ID and current state for polling.
 
 The live GET returns `{ data: { items, total, limit, offset } }`; rows include
 `id`, `line_id`, `direction`, `state`, `masked_recipient`, `created_at`, and `text`.

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { BrainRequest, BrainResponse } from "@ladybug/brain";
 import { BrainClient } from "./client.ts";
 import { FlyBrain } from "./fly-brain.ts";
+import type { BrainAct } from "./behavior.ts";
 import type { FrameInput } from "./fly-brain.ts";
 import { stateWith } from "./test-helpers.ts";
 
@@ -61,6 +62,30 @@ test("each frame tells the brain what the bug feels and returns what it wants", 
   // Too old: carry on without it.
   advance(600);
   assert.equal(brain.frame(frame({ now: 616 })), null);
+});
+
+test("a berry in reach is tasted, and eaten once the brain wants to feed", async () => {
+  const { client, brain, posted, frame, reply, advance } = setup();
+  client.start();
+  await flush();
+  reply({ type: "ready", neurons: 1, connections: 0 });
+
+  brain.frame(frame());
+  assert.equal(ticks(posted)[0].senses.sweet, 0);
+  advance(16);
+  reply({ type: "state", state: stateWith({ walk: 1 }) });
+  const food = { dx: 0, heading: -1 as const };
+  const walking = brain.frame(frame({ now: 16, food }));
+  assert.equal(ticks(posted)[1].senses.sweet, 1);
+  assert.ok(walking && walking.vx > 0 && walking.eat === 0, "the brain hasn't answered the taste yet");
+
+  let act: BrainAct | null = walking;
+  for (let now = 32; now < 600; now += 16) {
+    advance(16);
+    reply({ type: "state", state: stateWith({ feed: 0.9 }) });
+    act = brain.frame(frame({ now, food }));
+  }
+  assert.ok(act && act.vx === 0 && act.heading === -1 && act.eat > 0.8);
 });
 
 test("while the pet sleeps the brain rests, and picks up again when it wakes", async () => {

@@ -14,6 +14,10 @@ import { LadybugRenderer } from "@ladybug/mascot";
 import type { LadybugMood } from "@ladybug/mascot";
 import type { BrainAct } from "../brain/behavior";
 import { useFlyBrain } from "../brain/useFlyBrain";
+import { EAT_SECONDS, EAT_SLOP, FOOD_SINK, FOOD_SIZE, OWN_APPETITE, dropFood, eatingSpot, stepFood, stepToward, throwFood, touchesFood } from "../food";
+import type { Food, FoodBounds } from "../food";
+import Berry from "./Berry";
+import { drawBerry } from "./drawBerry";
 import BrainActivity from "./BrainActivity";
 import "./Pet.css";
 
@@ -90,6 +94,8 @@ type DragState = {
   lastY: number;
   lastT: number;
 };
+
+type FoodDrag = Pick<DragState, "pointerId" | "offsetX" | "offsetY" | "lastX" | "lastY" | "lastT">;
 
 /** "manual": the user dropped a link or scanned the clipboard. "alert": the server started it. */
 type ScanOrigin = "manual" | "alert";
@@ -308,6 +314,11 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   /** Something needs the bug awake right now. */
   const restlessRef = useRef(false);
   const snoreLayerRef = useRef<HTMLDivElement>(null);
+  /** The berry on screen, if the bug has been given one. The animation loop moves and eats it. */
+  const foodRef = useRef<Food | null>(null);
+  const foodElRef = useRef<HTMLDivElement>(null);
+  const foodDragRef = useRef<FoodDrag | null>(null);
+  const [hasFood, setHasFood] = useState(false);
 
   const warning = warnings.at(-1) ?? null;
   // A support call has the bug's attention; blocked pages wait until it's over.
@@ -369,6 +380,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   // For the animation loop, which is set up once.
   const wakeFromLoop = useEffectEvent(() => wake());
   const settleFromLoop = useEffectEvent((next: Sleep) => settle(next));
+  const foodGoneFromLoop = useEffectEvent(() => setHasFood(false));
 
   const flagHosts = (hosts: string[]) => {
     if (hosts.length === 0) return;
@@ -390,6 +402,29 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       groundY: workArea.y + workArea.height - PET_HEIGHT - GROUND_LIFT,
     };
   };
+
+  // Where the berry's grab box can be. It rests just in front of the bug's ground line.
+  const getFoodBounds = (): FoodBounds => {
+    const { workArea } = layoutRef.current;
+    return {
+      minX: workArea.x,
+      maxX: workArea.x + workArea.width - FOOD_SIZE,
+      minY: workArea.y,
+      groundY: workArea.y + workArea.height - GROUND_LIFT + FOOD_SINK - FOOD_SIZE,
+    };
+  };
+
+  /** A berry pops out next to the bug, replacing any it already has. */
+  const feed = () => {
+    const s = stateRef.current;
+    if (!s) return;
+    wake();
+    foodRef.current = dropFood({ centreX: s.x + PET_WIDTH / 2, y: s.y, heading: s.heading }, getFoodBounds());
+    setHasFood(true);
+  };
+
+  const onFeedRequested = useEffectEvent(() => feed());
+  useEffect(() => window.ladybug.onFeedRequested(() => onFeedRequested()), []);
 
   // Physics / behaviour loop. Writes directly to the DOM to avoid re-rendering every frame.
   useEffect(() => {
@@ -465,6 +500,15 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       // random, but only when nothing else is keeping the bug busy. Bedtime
       // is the pet's own: the brain doesn't walk it to bed, and rests while it sleeps.
       const free = sleep === "awake" && (s.mode === "idle" || s.mode === "walking") && !menuOpenRef.current && !holding && !pottering && !s.backing && now >= s.idleUntil;
+      // The berry: it falls where it's dropped, and the bug eats it standing
+      // beside it. With the fly brain, that's when the brain tastes it and
+      // wants to feed; without, the bug walks over to it by itself.
+      const food = foodRef.current;
+      const foodBounds = getFoodBounds();
+      if (food) stepFood(food, dt, foodBounds);
+      const centreX = s.x + PET_WIDTH / 2;
+      const spot = food ? eatingSpot({ centreX, heading: s.heading }, food.x + FOOD_SIZE / 2, minX + PET_WIDTH / 2, maxX + PET_WIDTH / 2) : null;
+      const onFeet = s.mode === "idle" || s.mode === "walking";
       const act = brain.frame({
         now,
         dt,
@@ -473,11 +517,18 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
         held: dragRef.current !== null,
         free,
         asleep: sleep === "asleep",
+        food: food && onFeet && touchesFood(centreX, food, foodBounds) ? spot : null,
       });
-      if (act && free) {
+      const own: BrainAct | null = !act && free && spot && food?.mode === "resting"
+        ? { vx: stepToward(spot.dx, speed, dt), heading: spot.heading, jump: null, wings: 0, groom: 0, eat: Math.abs(spot.dx) <= EAT_SLOP ? OWN_APPETITE : 0 }
+        : null;
+      const lead = act ?? own;
+      let eating = 0;
+      if (lead && free) {
         // A fright keeps it up.
-        if (act.jump) wakeFromLoop();
-        followBrain(s, act, dt, { minX, maxX, minY, groundY }, ladybug);
+        if (lead.jump) wakeFromLoop();
+        followBrain(s, lead, dt, { minX, maxX, minY, groundY }, ladybug);
+        if (food && s.mode === "idle") eating = lead.eat;
       }
       else if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
@@ -563,6 +614,22 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       s.x = Math.min(Math.max(s.x, minX), maxX);
       s.y = Math.min(Math.max(s.y, minY), groundY);
 
+      if (food) {
+        if (eating > 0) {
+          food.left -= (eating * dt) / EAT_SECONDS;
+          // The bites come out of the side the bug is on.
+          food.biteFrom = s.heading === 1 ? -1 : 1;
+          // No dozing off over dinner.
+          wakeFromLoop();
+        }
+        if (food.left <= 0) {
+          foodRef.current = null;
+          foodGoneFromLoop();
+        } else if (foodElRef.current) {
+          drawBerry(foodElRef.current, food);
+        }
+      }
+
       if (petRef.current) {
         petRef.current.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
       }
@@ -580,9 +647,9 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       prevX = s.x;
       if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
       // Grooming on the spot, whenever it's up, standing and has nothing in hand.
-      const groom = act && sleep === "awake" && s.mode === "idle" && !holding ? act.groom : undefined;
+      const groom = act && sleep === "awake" && s.mode === "idle" && !holding && eating === 0 ? act.groom : undefined;
       ladybug.render(
-        { mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current, sleep: sleep === "awake" ? undefined : sleep, wings: act?.wings, groom },
+        { mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current, sleep: sleep === "awake" ? undefined : sleep, wings: act?.wings, groom, eat: eating },
         dt,
       );
       const snore = ladybug.takeSnore();
@@ -909,6 +976,50 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
     }
   };
 
+  // The berry is grabbed, carried and thrown like the bug.
+  const onFoodPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const food = foodRef.current;
+    if (e.button !== 0 || !food) return;
+    wake();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    window.ladybug.setPetHeld(true);
+    food.mode = "dragging";
+    food.vx = 0;
+    food.vy = 0;
+    foodDragRef.current = {
+      pointerId: e.pointerId,
+      offsetX: e.clientX - food.x,
+      offsetY: e.clientY - food.y,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      lastT: performance.now(),
+    };
+  };
+
+  const onFoodPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = foodDragRef.current;
+    const food = foodRef.current;
+    if (!drag || drag.pointerId !== e.pointerId || !food) return;
+    const now = performance.now();
+    const dt = Math.max((now - drag.lastT) / 1000, 1 / 240);
+    food.vx = (e.clientX - drag.lastX) / dt;
+    food.vy = (e.clientY - drag.lastY) / dt;
+    food.x = e.clientX - drag.offsetX;
+    food.y = e.clientY - drag.offsetY;
+    drag.lastX = e.clientX;
+    drag.lastY = e.clientY;
+    drag.lastT = now;
+  };
+
+  const onFoodPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = foodDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    foodDragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    window.ladybug.setPetHeld(false);
+    if (foodRef.current) throwFood(foodRef.current);
+  };
+
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el || !menu) return;
@@ -1025,8 +1136,16 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       }}>
       <button role="menuitem" disabled={callBusy} onClick={() => { closeMenu(); requestHelp(); }}>Request help</button>
       <button role="menuitem" onClick={() => { closeMenu(); window.ladybug.scanClipboard(); }}>Scan clipboard URL</button>
+      <button role="menuitem" onClick={() => { closeMenu(); feed(); }}>Feed</button>
       {reportId && <button role="menuitem" onClick={() => { closeMenu(); window.ladybug.openExternal(reportUrl(reportId)); }}>View report</button>}
     </div>}
+    {hasFood && <Berry
+      ref={foodElRef}
+      onPointerDown={onFoodPointerDown}
+      onPointerMove={onFoodPointerMove}
+      onPointerUp={onFoodPointerUp}
+      onPointerCancel={onFoodPointerUp}
+    />}
     <div
       ref={petRef}
       role="button"

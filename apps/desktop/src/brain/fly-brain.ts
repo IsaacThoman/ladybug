@@ -3,6 +3,7 @@ import type { BrainAct } from "./behavior.ts";
 import type { BrainClient } from "./client.ts";
 import { BUMP_SLOP, SenseTracker } from "./senses.ts";
 import type { PetMode } from "./senses.ts";
+import type { EatingSpot } from "../food.ts";
 
 export type FrameInput = {
   /** performance.now() time of this frame. */
@@ -17,6 +18,8 @@ export type FrameInput = {
   free: boolean;
   /** The pet is asleep in bed: the brain rests too, and picks up where it left off. */
   asleep?: boolean;
+  /** A berry the bug is touching, and where it would stand to eat it; see BehaviorInput. */
+  food?: EatingSpot | null;
 };
 
 /**
@@ -46,7 +49,7 @@ export class FlyBrain {
   feed() { this.fed = true; }
 
   /** What the brain wants done this frame, or null to carry on as without it. */
-  frame({ now, dt, pet, bounds, held, free, asleep = false }: FrameInput): BrainAct | null {
+  frame({ now, dt, pet, bounds, held, free, asleep = false, food = null }: FrameInput): BrainAct | null {
     const { status } = this.client;
     if (asleep || (status !== "loading" && status !== "running")) {
       if (this.active) {
@@ -67,6 +70,7 @@ export class FlyBrain {
       held,
       linkOver: this.linkOver,
       fed: this.fed,
+      food: food !== null,
     });
     this.fed = false;
     this.client.tick(dt * 1000, senses);
@@ -81,6 +85,7 @@ export class FlyBrain {
       blocked: pet.heading === 1 ? pet.x >= bounds.maxX - BUMP_SLOP : pet.x <= bounds.minX + BUMP_SLOP,
       loomLeft: senses.loomLeft,
       loomRight: senses.loomRight,
+      food,
     });
   }
 }

@@ -25,6 +25,8 @@ export type SenseInput = {
   linkOver: boolean;
   /** A link was dropped on the pet since the last update. */
   fed: boolean;
+  /** A berry is under its feet or at its mouth. */
+  food?: boolean;
 };
 
 /**
@@ -58,6 +60,8 @@ const WIND_SMOOTHING = 15;
 /** A link dragged over the bug smells sweet; one dropped on it is a taste that fades over SWEET_FADE (s). */
 export const SWEET_LINK_OVER = 0.5;
 export const SWEET_FADE = 2;
+/** A berry it's touching: flies taste with their feet as well as their mouthparts. */
+export const SWEET_FOOD = 1;
 
 const clamp01 = (value: number) => (Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0);
 /** Frame-rate independent smoothing factor. */
@@ -83,7 +87,7 @@ export class SenseTracker {
   private wind = 0;
   private taste = 0;
 
-  update({ dt: rawDt, pet, bounds, cursor, hovered, held, linkOver, fed }: SenseInput): BrainSenses {
+  update({ dt: rawDt, pet, bounds, cursor, hovered, held, linkOver, fed, food = false }: SenseInput): BrainSenses {
     const dt = Number.isFinite(rawDt) ? Math.max(0, rawDt) : 0;
     const centre = { x: pet.x + pet.width / 2, y: pet.y + pet.height / 2 };
     const dragged = held || pet.mode === "dragging";
@@ -150,7 +154,7 @@ export class SenseTracker {
       bumpLeft: clamp01(this.bumpLeft),
       bumpRight: clamp01(this.bumpRight),
       wind: clamp01(this.wind),
-      sweet: clamp01(Math.max(linkOver ? SWEET_LINK_OVER : 0, this.taste)),
+      sweet: clamp01(Math.max(linkOver ? SWEET_LINK_OVER : 0, this.taste, food ? SWEET_FOOD : 0)),
       grounded: pet.mode === "idle" || pet.mode === "walking",
     };
   }

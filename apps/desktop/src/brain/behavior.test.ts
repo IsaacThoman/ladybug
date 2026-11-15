@@ -4,6 +4,7 @@ import type { BrainCommand } from "@ladybug/brain";
 import {
   BACK_SPEED,
   COMMAND_STALE_MS,
+  EAT_STEP_SPEED,
   GROOM_LINGER,
   EDGE_PATIENCE,
   ESCAPE_REFRACTORY,
@@ -125,6 +126,49 @@ test("held by something else, it doesn't move, but wings and grooming still come
   assert.equal(act.jump, null);
   assert.ok(Math.abs(act.wings - 0.5) < 0.01);
   assert.ok(Math.abs(act.groom - 0.25) < 0.01);
+});
+
+test("with a berry in reach it eats once feed rises, and until it falls away", () => {
+  const fly = behavior();
+  const here = { food: { dx: 0, heading: 1 as const } };
+  // Not hungry: the berry changes nothing.
+  assert.ok(hold(fly, { walk: 1, feed: 0.1 }, 1, here).vx > 0);
+  assert.equal(hold(fly, { walk: 1, feed: 0.1 }, 1, here).eat, 0);
+  // Feeding beats whatever walking is left.
+  const eating = hold(fly, { walk: 0.4, feed: 0.8 }, 1, here);
+  assert.equal(eating.vx, 0);
+  assert.ok(Math.abs(eating.eat - 0.8) < 0.01);
+  // Between the thresholds it keeps eating, less eagerly; below the lower one it stops.
+  assert.ok(Math.abs(hold(fly, { feed: 0.1 }, 1, here).eat - 0.1) < 0.01);
+  assert.equal(hold(fly, { feed: 0.02 }, 1, here).eat, 0);
+  assert.equal(hold(fly, { feed: 0.1 }, 1, here).eat, 0);
+  // Wanting to feed with nothing in reach does nothing.
+  assert.equal(hold(behavior(), { feed: 1 }, 1).eat, 0);
+});
+
+test("it steps up to a berry it's touching before it eats, facing it", () => {
+  const fly = behavior();
+  hold(fly, { feed: 1 }, 0.5);
+  // The berry is behind it: it turns to it and shuffles over, without overshooting.
+  const far = step(fly, input({ feed: 1 }, { food: { dx: -30, heading: -1 } }));
+  assert.equal(far.heading, -1);
+  assert.equal(far.vx, -WALK_SPEED * EAT_STEP_SPEED);
+  assert.equal(far.eat, 0);
+  const near = step(fly, input({ feed: 1 }, { heading: -1, food: { dx: -0.2, heading: -1 } }));
+  assert.equal(near.vx, 0);
+  assert.ok(near.eat > 0.9);
+  const close = step(fly, input({ feed: 1 }, { heading: -1, food: { dx: 0.4 + 2, heading: -1 } }));
+  assert.ok(Math.abs(close.vx - WALK_SPEED * EAT_STEP_SPEED) < 1e-9);
+});
+
+test("eating waits while something else has the bug, and a fright interrupts it", () => {
+  const fly = behavior();
+  const here = { food: { dx: 0, heading: 1 as const } };
+  assert.equal(hold(fly, { feed: 1 }, 1, { ...here, free: false }).eat, 0);
+  assert.ok(hold(fly, { feed: 1 }, 0.5, here).eat > 0.9);
+  const act = step(fly, input({ feed: 1, escape: 1 }, { ...here, loomLeft: 1 }));
+  assert.ok(act.jump);
+  assert.equal(act.eat, 0);
 });
 
 test("escape takes off away from the loom, scaled by strength, then rests", () => {

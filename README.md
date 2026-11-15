@@ -271,6 +271,7 @@ Things to know:
 - Drop a link on it, or choose "Scan clipboard URL" from the tray or right-click menu, and it goes to investigate. When the scan finishes it reacts to the verdict: a happy wiggle, nervous, or alarmed.
 - Click it during or after a scan to open the report. Otherwise, a click makes it hop and say something (greeting comes from the server). Clicking also dismisses an alert. While you're signed out or waiting for approval, a click brings up the sign-in panel instead.
 - Drag it around and throw it.
+- Choose "Feed" from its menu (click it), or from the tray or right-click menu, and a berry drops beside it. It walks over and eats it. You can pick the berry up, carry it and throw it too.
 - Right-click it, or use the tray icon, to hide it, open "Account…" (sign in or out) or quit.
 
 Everything else on the overlay is click-through, so it never gets in the way of the apps underneath.
@@ -288,6 +289,7 @@ Then check **Fly Brain** in the tray or right-click menu. **Show Brain Activity*
 - It wanders in bouts and turns around when the brain says so, instead of picking random spots.
 - Swat at it with the cursor and it takes off: the looming detectors in its eyes fire the giant fiber, as in a real fly. Reaching over to click it doesn't.
 - Throw it and it wipes its face when it lands: wind on the antennae sets off grooming.
+- It doesn't go looking for a berry, since the model has no sense of smell to follow. Put one where it touches it, or wait for it to wander onto it: the taste stops it walking and fires the motor neuron that extends a fly's proboscis, and it eats for as long as that keeps firing. Leave it alone and it eats faster: touch dampens feeding.
 - Everything the pet does for its job (scans, warnings, reactions, bedtime) still comes first.
 
 The brain uses about a tenth of one CPU core on a recent laptop while the pet is awake. [`packages/brain/README.md`](packages/brain/README.md) covers the model, what it does and doesn't reproduce, and the data; [`apps/desktop/FLYBRAIN.md`](apps/desktop/FLYBRAIN.md) covers how the pet's senses and actions map onto it.

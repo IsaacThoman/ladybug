@@ -43,7 +43,7 @@ screen**. Everything below follows from that.
 | `touch` | 0.4 while the pointer rests on the bug, 1 while it's pressed or dragged, easing out over ~300 ms. |
 | `bumpLeft`, `bumpRight` | 1 while the bug is pressed against the right or left edge of its bounds, facing it or thrown against it (the left screen edge presses its right antenna), easing out. |
 | `wind` | Its own speed while airborne or dragged, full at 1500 px/s. |
-| `sweet` | 0.5 while a link is dragged over it; 1 when one is dropped on it, fading over 2 s. |
+| `sweet` | 1 while it's on its feet and touching a berry: one within 66 px of its middle, on or near the ground, so under its feet or at its mouth (flies taste with both). 0.5 while a link is dragged over it; 1 when one is dropped on it, fading over 2 s. |
 | `grounded` | Standing or walking. |
 
 The main process sends the cursor position to the renderer while the brain is
@@ -67,11 +67,35 @@ the pet wanders exactly as it does without it.
 | `escape` | Rising past 0.5 while on its feet: a startled take-off, from a hop to the alarm jump, away from the side that loomed. Then 1.5 s before it can again. |
 | `wings` | How far the wing cases open, passed to the renderer. Below 0.2 it's the brain idling, and nothing shows. |
 | `groom` | Grooming with the front legs, while it stands still. The same floor applies, and a bout outlasts the command that started it: set off in the air, it waits until the bug is back on its feet, then fades over about 1.5 s. |
-| `feed` | Not acted on; shown in the activity panel. |
+| `feed` | With a berry in reach, it eats once this passes 0.15 and until it falls below 0.05. The berry goes down in proportion to the command: about 6 s for a whole one with the bug left alone (`feed` settles near 0.5), about 10 s with the pointer resting on it, since touch brings `feed` down to about 0.33. Without a berry it does nothing. |
 
-One thing the body does by itself: pressed against an edge it faces for 2 s, it
-turns around. The brain feels the edge on its antenna, but nothing in the model
-turns the fly away from it.
+Two things the body does by itself:
+
+- Pressed against an edge it faces for 2 s, it turns around. The brain feels
+  the edge on its antenna, but nothing in the model turns the fly away from it.
+- Once the brain wants to feed, it turns to the berry and shuffles the last
+  few steps (at 0.6× walking speed) until the berry is at its mouth. Stopping
+  for the berry is the brain's doing: `walk` falls to about zero while it
+  tastes sugar. Lining its mouth up with it isn't; the model has no sense of
+  where the food is.
+
+## Feeding
+
+**Feed**, in the menu that opens when the bug is clicked and in the tray and
+right-click menu, drops a berry about 130 px from the bug (`src/food.ts`,
+`src/components/Berry.tsx`). There is one berry at a time; asking again
+replaces it with a fresh one. It can be picked up, carried and thrown like the
+bug, and it stays where it lands until it's eaten.
+
+With the fly brain on, the bug doesn't go to the berry: nothing in the model
+could lead it there. It eats one it's touching, so hand it over or wait for the
+bug to wander onto it. With the fly brain off (or unavailable, failed or
+stale), the pet walks over to a berry lying on the ground and eats it at a
+steady rate, as part of its own wandering.
+
+Either way the bug only eats while it's free: awake, on its feet, and with
+nothing the product does (a bubble, a scan, a reaction, the menu) holding it.
+A fright interrupts a meal, and eating keeps it from going to bed.
 
 Commands are smoothed a little, since they arrive at uneven intervals; `escape`
 is read raw because the giant fiber fires in short bursts.
@@ -79,5 +103,5 @@ is read raw because the giant fiber fires in short bursts.
 ## Tests
 
 `npm test -w @ladybug/desktop` covers the settings store, the connectome path,
-the worker protocol, the client (with a fake worker), the senses and the
-behaviour.
+the worker protocol, the client (with a fake worker), the senses, the
+behaviour and the berry.

@@ -489,3 +489,47 @@
     }
   }
 }
+
+/*
+ * The berry the bug is fed. Moved from the animation loop. The box is bigger
+ * than the berry so it's easy to grab; the berry sits at the bottom of it.
+ */
+.pet-food {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  will-change: transform;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  animation: pet-food-pop 0.18s ease-out;
+}
+
+.pet-food[data-mode="dragging"] {
+  cursor: grabbing;
+}
+
+.pet-food svg {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* The same contact shadow as under the bug, only while the berry is on the ground. */
+.pet-food-shadow {
+  fill: rgb(40 18 10 / 0.28);
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+
+.pet-food[data-mode="resting"] .pet-food-shadow {
+  opacity: 1;
+}
+
+@keyframes pet-food-pop {
+  from { opacity: 0; }
+}

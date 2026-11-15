@@ -10,7 +10,7 @@
     "build": "npm run typecheck && vite build",
     "dist": "npm run build && electron-builder",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
-    "test": "node --test electron/*.test.ts src/calls/*.test.ts src/brain/*.test.ts"
+    "test": "node --test electron/*.test.ts src/*.test.ts src/calls/*.test.ts src/brain/*.test.ts"
   },
   "dependencies": {
     "@ladybug/brain": "^0.0.0",

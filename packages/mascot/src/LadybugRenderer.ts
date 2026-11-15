@@ -39,6 +39,12 @@ export type LadybugPose = {
    */
   groom?: number;
   /**
+   * 0 to 1: eating. Standing still, it turns the way it's heading, puts its
+   * head down to what's on the ground in front of it and nibbles, faster as
+   * this rises.
+   */
+  eat?: number;
+  /**
    * 0 to 1: how far the wing cases are held open, with the wings buzzing
    * underneath. Adds to whatever the mood and reactions already do.
    */
@@ -88,6 +94,11 @@ const GROOM_DIP = 0.12;
 /** How far the front hips shift out, up and forward to reach the face, and the legs stretch. */
 const GROOM_HIP = new THREE.Vector3(0.02, 0.05, 0.12);
 const GROOM_STRETCH = 0.3;
+/** Nibbles per second while eating, at the lowest and highest appetite. */
+const NIBBLE_RATE = [3.5, 6.5] as const;
+/** How far (radians) the head goes down to the food, and bobs with each nibble. */
+const EAT_DIP = 0.34;
+const EAT_NIBBLE = 0.07;
 /** One snore: a breath in, then a long breath out. */
 const SNORE_SECONDS = 3.4;
 /** The part of each snore spent breathing in. */
@@ -174,6 +185,10 @@ export class LadybugRenderer {
   /** Smoothed 0–1 grooming intensity, and its stroke phase in cycles. */
   private groom = 0;
   private groomPhase = 0;
+  /** Smoothed 0–1: head down at the food. Then the appetite, and the nibbling phase in cycles. */
+  private eat = 0;
+  private appetite = 0;
+  private nibblePhase = 0;
   private readonly hips: THREE.Vector3[];
   private readonly reach = new THREE.Vector3();
   private readonly bend = new THREE.Vector3();
@@ -423,6 +438,18 @@ export class LadybugRenderer {
     /** 0–1: this side's foot is rubbing down over the eye. */
     const rubbing = (side: 1 | -1) => grooming * Math.max(0, Math.sin(stroke(side))) ** 2;
 
+    // Eating: only standing still, and not while searching with the glass.
+    const eatGoal = mode === "idle" ? THREE.MathUtils.clamp(pose.eat ?? 0, 0, 1) * (1 - this.lens) : 0;
+    this.eat = approach(this.eat, eatGoal > 0 ? 1 : 0, eatGoal > 0 ? 7 : 10, dt);
+    if (eatGoal === 0 && this.eat < 0.001) this.eat = 0;
+    this.appetite = approach(this.appetite, eatGoal, 6, dt);
+    const eating = THREE.MathUtils.smootherstep(this.eat, 0, 1);
+    this.nibblePhase =
+      this.eat > 0
+        ? this.nibblePhase + THREE.MathUtils.lerp(NIBBLE_RATE[0], NIBBLE_RATE[1], this.appetite) * dt
+        : 0;
+    const nibble = eating * Math.sin(this.nibblePhase * Math.PI * 2);
+
     // Facing: three-quarter view while moving, straight ahead while idle
     // (unless asked to look somewhere). Looking up at a dragged link, or
     // celebrating, it faces the viewer.
@@ -431,11 +458,12 @@ export class LadybugRenderer {
       mode === "idle" && !facesViewer && pose.look !== undefined
         ? THREE.MathUtils.clamp(pose.look, -0.7, 0.7)
         : 0;
+    // Eating, it stays side-on to the food it walked up to.
     const targetYaw =
       mode === "idle"
-        ? asleep ? pose.heading * SLEEP_YAW : glance
+        ? asleep ? pose.heading * SLEEP_YAW : eatGoal > 0 ? pose.heading * WALK_YAW : glance
         : held ? pose.heading * 0.3 : pose.heading * WALK_YAW;
-    this.yaw += (targetYaw - this.yaw) * ease(walking ? 8 : asleep ? 2.5 : 5, dt);
+    this.yaw += (targetYaw - this.yaw) * ease(walking || eatGoal > 0 ? 8 : asleep ? 2.5 : 5, dt);
     let spinYaw = 0;
     if (this.spin >= 0) {
       this.spin = Math.min(1, this.spin + dt / SPIN_SECONDS);
@@ -481,7 +509,8 @@ export class LadybugRenderer {
       this.nervous * 0.13 -
       this.alarmed * 0.1 -
       this.expect * 0.05 -
-      grooming * 0.05;
+      grooming * 0.05 +
+      eating * 0.09;
     rig.body.position.y =
       (walking ? stepBob * 0.012 : 0) +
       Math.abs(Math.sin(t * 7.5)) * 0.025 * wiggle +
@@ -501,7 +530,7 @@ export class LadybugRenderer {
     // Asleep: head tipped over to one side, nodding with each breath.
     const tiltTarget =
       mode === "idle"
-        ? THREE.MathUtils.lerp(Math.sin(t * 0.6) * (0.14 - this.expect * 0.08), -pose.heading * 0.26, this.rest)
+        ? THREE.MathUtils.lerp(Math.sin(t * 0.6) * (0.14 - this.expect * 0.08), -pose.heading * 0.26, this.rest) * (1 - eating)
         : 0;
     this.headTilt += (tiltTarget - this.headTilt) * ease(3, dt);
     rig.head.rotation.z = this.headTilt;
@@ -515,7 +544,9 @@ export class LadybugRenderer {
       this.alarmed * 0.12 +
       this.drowse * 0.06 * (1 - this.rest) -
       this.rest * (0.16 - breath * 0.06) +
-      grooming * (GROOM_DIP + Math.sin(this.groomPhase * Math.PI * 4) * 0.04);
+      grooming * (GROOM_DIP + Math.sin(this.groomPhase * Math.PI * 4) * 0.04) +
+      eating * EAT_DIP +
+      nibble * EAT_NIBBLE;
     // Grooming: leans into whichever leg is rubbing.
     rig.head.rotation.z += (rubbing(-1) - rubbing(1)) * 0.07;
 
@@ -544,7 +575,10 @@ export class LadybugRenderer {
         this.nervous * 0.4 +
         this.expect * 0.25 -
         this.rest * 0.2 +
-        comb;
+        comb +
+        // Eating: they reach down to the food and tap at it between nibbles.
+        eating * 0.55 +
+        nibble * 0.1 * side;
       pivot.rotation.z -= side * comb * 0.5;
     }
 

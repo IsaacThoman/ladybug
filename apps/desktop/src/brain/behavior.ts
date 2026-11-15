@@ -4,6 +4,8 @@
 // the right of the screen: a turn toward its left heads it right, and a turn
 // toward its right heads it left.
 import type { BrainCommand } from "@ladybug/brain";
+import { EAT_SLOP } from "../food.ts";
+import type { EatingSpot } from "../food.ts";
 
 export type BehaviorInput = {
   /** The latest command, or null when there isn't one. */
@@ -25,6 +27,8 @@ export type BehaviorInput = {
   /** What the eyes see looming now, to jump away from it. */
   loomLeft: number;
   loomRight: number;
+  /** A berry it's touching: how far it has to step to bring it to its mouth, and which way it faces there. */
+  food?: EatingSpot | null;
 };
 
 export type BrainAct = {
@@ -37,6 +41,8 @@ export type BrainAct = {
   /** 0 to 1, for the pose. */
   wings: number;
   groom: number;
+  /** 0 to 1: how eagerly it's eating the berry at its mouth. 0 unless it's standing at one. */
+  eat: number;
 };
 
 /** Older commands are treated as absent: the brain has fallen behind or stopped. */
@@ -87,9 +93,18 @@ const posed = (value: number) => Math.max(0, (value - POSE_FLOOR) / (1 - POSE_FL
  */
 export const GROOM_LINGER = 1.5;
 
-/** `feed` has no action in the pet; it only shows in the activity panel. */
-type Smoothed = Omit<BrainCommand, "escape" | "feed">;
-const CHANNELS = ["walk", "turn", "back", "wings", "groom"] as const;
+/**
+ * Eats when `feed` passes FEED_ON with a berry in reach, until it falls below
+ * FEED_OFF. The brain stops walking by itself when it tastes sugar; the body
+ * adds the last step, shuffling over at EAT_STEP_SPEED of its walking speed so
+ * the berry is at its mouth.
+ */
+export const FEED_ON = 0.15;
+export const FEED_OFF = 0.05;
+export const EAT_STEP_SPEED = 0.6;
+
+type Smoothed = Omit<BrainCommand, "escape">;
+const CHANNELS = ["walk", "turn", "back", "wings", "groom", "feed"] as const;
 
 const clamp = (value: number, min: number, max: number) => (Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : 0);
 const ease = (rate: number, dt: number) => 1 - Math.exp(-rate * dt);
@@ -105,6 +120,7 @@ export class FlyBehavior {
   private turned = 0;
   private pressed = 0;
   private grooming = 0;
+  private feeding = false;
   private armed = false;
   private refractory = 0;
 
@@ -121,7 +137,7 @@ export class FlyBehavior {
   }
 
   /** What to do this frame, or null when there's no fresh command and the pet should behave as it does without a brain. */
-  update({ command, ageMs, dt: rawDt, heading, free, onFeet, blocked, loomLeft, loomRight }: BehaviorInput): BrainAct | null {
+  update({ command, ageMs, dt: rawDt, heading, free, onFeet, blocked, loomLeft, loomRight, food = null }: BehaviorInput): BrainAct | null {
     const dt = Number.isFinite(rawDt) ? Math.max(0, rawDt) : 0;
     this.refractory = Math.max(0, this.refractory - dt);
     if (!command || !(ageMs <= COMMAND_STALE_MS)) {
@@ -131,6 +147,7 @@ export class FlyBehavior {
       this.turned = 0;
       this.pressed = 0;
       this.grooming = 0;
+      this.feeding = false;
       this.armed = false;
       return null;
     }
@@ -141,10 +158,11 @@ export class FlyBehavior {
       back: clamp(command.back, 0, 1),
       wings: clamp(command.wings, 0, 1),
       groom: clamp(command.groom, 0, 1),
+      feed: clamp(command.feed, 0, 1),
     };
     if (!this.smoothed) this.smoothed = target;
     else for (const channel of CHANNELS) this.smoothed[channel] += (target[channel] - this.smoothed[channel]) * ease(COMMAND_SMOOTHING, dt);
-    const { walk, turn, back } = this.smoothed;
+    const { walk, turn, back, feed } = this.smoothed;
     const wings = posed(this.smoothed.wings);
     const asked = posed(this.smoothed.groom);
     if (asked >= this.grooming) this.grooming = asked;
@@ -158,11 +176,12 @@ export class FlyBehavior {
 
     this.walking = this.walking ? walk >= WALK_OFF : walk > WALK_ON;
     this.backing = this.backing ? back >= BACK_OFF && back >= walk : back > BACK_ON && back > walk + BACK_MARGIN;
+    this.feeding = this.feeding ? feed >= FEED_OFF : feed > FEED_ON;
 
     if (!free) {
       this.turned = 0;
       this.pressed = 0;
-      return { vx: 0, heading, jump: null, wings, groom };
+      return { vx: 0, heading, jump: null, wings, groom, eat: 0 };
     }
 
     if (this.armed && this.refractory <= 0 && escape >= ESCAPE_ON) {
@@ -180,7 +199,17 @@ export class FlyBehavior {
         jump: { vx: away * side, vy: this.hopVelocity + (this.jumpVelocity - this.hopVelocity) * strength },
         wings,
         groom,
+        eat: 0,
       };
+    }
+
+    if (food && this.feeding) {
+      this.turned = 0;
+      this.pressed = 0;
+      const there = Math.abs(food.dx) <= EAT_SLOP;
+      const reach = this.walkSpeed * EAT_STEP_SPEED;
+      const vx = there || dt === 0 ? 0 : clamp(food.dx / dt, -reach, reach);
+      return { vx, heading: food.heading, jump: null, wings, groom, eat: there ? feed : 0 };
     }
 
     this.turned = this.turned * (1 - ease(TURN_LEAK, dt)) + turn * dt;
@@ -202,6 +231,6 @@ export class FlyBehavior {
       : this.walking
         ? next * this.walkSpeed * (WALK_SLOWEST + (WALK_FASTEST - WALK_SLOWEST) * walk)
         : 0;
-    return { vx, heading: next, jump: null, wings, groom };
+    return { vx, heading: next, jump: null, wings, groom, eat: 0 };
   }
 }

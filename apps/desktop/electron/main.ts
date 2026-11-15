@@ -356,11 +356,19 @@ function showAccount() {
   else send();
 }
 
+function feed() {
+  showOverlay();
+  const send = () => overlayWin?.webContents.send("ladybug:feed");
+  if (overlayWin?.webContents.isLoading()) overlayWin.webContents.once("did-finish-load", send);
+  else send();
+}
+
 function buildMenu() {
   const brainInstalled = hasBrainData(BRAIN_DATA);
   const brainOn = brainInstalled && brainSettings().enabled;
   return Menu.buildFromTemplate([
     { label: "Scan Clipboard URL", click: () => void scanClipboard() },
+    { label: "Feed", click: feed },
     { label: "Account…", click: showAccount },
     { type: "separator" },
     {

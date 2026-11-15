@@ -181,6 +181,9 @@ test("sweet: a link over it smells sweet, a dropped one tastes sweet and fades",
   assert.ok(Math.abs(sweet - 0.5) < 0.05, `sweet ${sweet}`);
   for (let t = 0; t < SWEET_FADE / 2 + 0.1; t += DT) sweet = tracker.update(frame()).sweet;
   assert.equal(sweet, 0);
+  // A berry it's touching tastes sweet for as long as it's there.
+  assert.equal(tracker.update(frame({ food: true })).sweet, 1);
+  assert.equal(tracker.update(frame({ food: true })).sweet, 1);
 });
 
 test("the senses don't depend on the frame rate", () => {

@@ -145,7 +145,7 @@ Over 10 minutes at rest (seed 1, through the pet's thresholds; `report.ts` secti
 From the response matrix (`report.ts` section a):
 
 - **Looming → escape.** LPLC2 and LC4 drive the giant fiber to 190–230 Hz and the flight power motor neurons to ~100 Hz: a take-off. The pet's looming pulse at full strength passes escape 0.5 in 32 ms and falls below 0.3 within 40 ms of fading; at half strength it still passes 0.5, in 48 ms. Other looming-sensitive descending neurons (DNp02, DNp04, DNp11) respond too. Escape stays below 0.3 at rest and under every other sense.
-- **Sweet → feed.** The chosen taste neurons drive MN9 to ~31 Hz (feed 0.76). They were chosen for this (see Senses), so it is a demonstration that the pathway carries through the network, not evidence of which neurons are sweet.
+- **Sweet → feed.** The chosen taste neurons drive MN9 to ~31 Hz (feed 0.76). They were chosen for this (see Senses), so it is a demonstration that the pathway carries through the network, not evidence of which neurons are sweet. Held on, feed settles at 0.48–0.50 (seeds 1–3, seconds 2 to 10), and at 0.32–0.33 with touch at 0.4 and 0.16 with full touch. Walking stops too: over 20 s of sugar `walk` averaged 0.001–0.010. The taste neurons were chosen for MN9 alone, not for that.
 - **Wind → groom.** Wind-sensitive Johnston's organ neurons drive the head-grooming DNg12 neurons to ~29 Hz (groom 0.48), as JO-C/E activation drives antennal grooming in flies (Hampel et al. 2015). Wind also opens the wings a little (0.22).
 - **Touch → back.** Full touch drives MDN to ~25 Hz (back 0.63), mostly through the head bristles: touched, it backs away. Touch at the pointer-resting level (0.4) does very little.
 - **Spontaneous walking and steering** as above.

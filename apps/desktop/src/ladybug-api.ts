@@ -54,7 +54,7 @@ export type LadybugApi = {
   setPetRect: (rect: Rect) => void;
   /** Other clickable surfaces, polled with the pet's hit box in the main process. */
   setInteractiveRects: (rects: Rect[]) => void;
-  /** true while the pet is being dragged, so the overlay stays interactive. */
+  /** true while the pet or its berry is being dragged, so the overlay stays interactive. */
   setPetHeld: (held: boolean) => void;
   scanClipboard: () => void;
   setMenuOpen: (open: boolean) => void;
@@ -65,6 +65,8 @@ export type LadybugApi = {
    * clipboard didn't hold one.
    */
   onScanRequested: (callback: (url: string | null) => void) => () => void;
+  /** "Feed" was picked from the tray or right-click menu. */
+  onFeedRequested: (callback: () => void) => () => void;
   /** "Account…" was picked from a menu. */
   onAccountRequested: (callback: () => void) => () => void;
   /** Gives the overlay keyboard focus, for typing into the sign-in form. */

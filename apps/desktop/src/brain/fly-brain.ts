@@ -52,7 +52,7 @@ export class FlyBrain {
       if (this.active) {
         this.active = false;
         this.senses = new SenseTracker();
-        this.behavior.update({ command: null, ageMs: Infinity, dt, heading: pet.heading, free, blocked: false, loomLeft: 0, loomRight: 0 });
+        this.behavior.update({ command: null, ageMs: Infinity, dt, heading: pet.heading, free, onFeet: true, blocked: false, loomLeft: 0, loomRight: 0 });
       }
       this.fed = false;
       return null;
@@ -77,6 +77,7 @@ export class FlyBrain {
       dt,
       heading: pet.heading,
       free,
+      onFeet: pet.mode === "idle" || pet.mode === "walking",
       blocked: pet.heading === 1 ? pet.x >= bounds.maxX - BUMP_SLOP : pet.x <= bounds.minX + BUMP_SLOP,
       loomLeft: senses.loomLeft,
       loomRight: senses.loomRight,

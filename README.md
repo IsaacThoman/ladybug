@@ -287,7 +287,7 @@ Then check **Fly Brain** in the tray or right-click menu. **Show Brain Activity*
 
 - It wanders in bouts and turns around when the brain says so, instead of picking random spots.
 - Swat at it with the cursor and it takes off: the looming detectors in its eyes fire the giant fiber, as in a real fly. Reaching over to click it doesn't.
-- Carry it about and it grooms its antennae when you set it down: wind on the antennae sets off grooming.
+- Throw it and it wipes its face when it lands: wind on the antennae sets off grooming.
 - Everything the pet does for its job (scans, warnings, reactions, bedtime) still comes first.
 
 The brain uses about a tenth of one CPU core on a recent laptop while the pet is awake. [`packages/brain/README.md`](packages/brain/README.md) covers the model, what it does and doesn't reproduce, and the data; [`apps/desktop/FLYBRAIN.md`](apps/desktop/FLYBRAIN.md) covers how the pet's senses and actions map onto it.

@@ -24,7 +24,7 @@ const JUMP = -1000;
 const behavior = () => new FlyBehavior({ walkSpeed: WALK_SPEED, hopVelocity: HOP, jumpVelocity: JUMP });
 
 function input(values: Partial<BrainCommand> | null, overrides: Partial<BehaviorInput> = {}): BehaviorInput {
-  return { command: values ? command(values) : null, ageMs: 0, dt: DT, heading: 1, free: true, blocked: false, loomLeft: 0, loomRight: 0, ...overrides };
+  return { command: values ? command(values) : null, ageMs: 0, dt: DT, heading: 1, free: true, onFeet: true, blocked: false, loomLeft: 0, loomRight: 0, ...overrides };
 }
 
 /** One update that must give an act. */
@@ -205,4 +205,15 @@ test("a grooming bout outlasts the command that started it", () => {
   const soon = hold(fly, {}, GROOM_LINGER / 3).groom;
   assert.ok(soon > 0.2 && soon < started, `groom ${soon}`);
   assert.equal(hold(fly, {}, GROOM_LINGER * 2).groom, 0);
+});
+
+test("a grooming bout set off in the air waits until it's back on its feet", () => {
+  const fly = behavior();
+  const inAir = { free: false, onFeet: false };
+  const started = hold(fly, { groom: 0.8 }, 0.5, inAir).groom;
+  // The wind drops while it's still falling: the bout is kept.
+  assert.equal(hold(fly, {}, 3, inAir).groom, started);
+  const landed = hold(fly, {}, GROOM_LINGER / 3, { free: false }).groom;
+  assert.ok(landed > 0.2 && landed < started, `groom ${landed}`);
+  assert.equal(hold(fly, {}, GROOM_LINGER * 2, { free: false }).groom, 0);
 });

@@ -18,6 +18,8 @@ export type BehaviorInput = {
    * product does (a bubble, a reaction, a menu, a drag) is holding it.
    */
   free: boolean;
+  /** Standing or walking, rather than held or in the air. */
+  onFeet: boolean;
   /** Pressed against an edge of its world that it's facing. */
   blocked: boolean;
   /** What the eyes see looming now, to jump away from it. */
@@ -79,8 +81,9 @@ const posed = (value: number) => Math.max(0, (value - POSE_FLOOR) / (1 - POSE_FL
 
 /**
  * A grooming bout outlasts the command that started it, fading over about
- * this long (s): the brain's grooming neurons fall silent as soon as the wind
- * drops, where a fly finishes cleaning up.
+ * this long (s) once the bug is on its feet: the brain's grooming neurons fire
+ * while the wind blows and fall silent as soon as it drops, where a fly cleans
+ * up after it lands.
  */
 export const GROOM_LINGER = 1.5;
 
@@ -118,7 +121,7 @@ export class FlyBehavior {
   }
 
   /** What to do this frame, or null when there's no fresh command and the pet should behave as it does without a brain. */
-  update({ command, ageMs, dt: rawDt, heading, free, blocked, loomLeft, loomRight }: BehaviorInput): BrainAct | null {
+  update({ command, ageMs, dt: rawDt, heading, free, onFeet, blocked, loomLeft, loomRight }: BehaviorInput): BrainAct | null {
     const dt = Number.isFinite(rawDt) ? Math.max(0, rawDt) : 0;
     this.refractory = Math.max(0, this.refractory - dt);
     if (!command || !(ageMs <= COMMAND_STALE_MS)) {
@@ -144,7 +147,8 @@ export class FlyBehavior {
     const { walk, turn, back } = this.smoothed;
     const wings = posed(this.smoothed.wings);
     const asked = posed(this.smoothed.groom);
-    this.grooming = asked >= this.grooming ? asked : this.grooming + (asked - this.grooming) * ease(3 / GROOM_LINGER, dt);
+    if (asked >= this.grooming) this.grooming = asked;
+    else if (onFeet) this.grooming += (asked - this.grooming) * ease(3 / GROOM_LINGER, dt);
     if (this.grooming < 0.01) this.grooming = 0;
     const groom = this.grooming;
 

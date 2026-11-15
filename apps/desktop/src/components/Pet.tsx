@@ -304,7 +304,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   const lastFretRef = useRef(0);
   /** Whether the page in the browser's active tab is being checked, from the server. */
   const [focus, setFocus] = useState<PetFocus | null>(null);
-  const { brain, showActivity } = useFlyBrain({ walkSpeed: WALK_SPEED, hopVelocity: HOP_VELOCITY, jumpVelocity: ALARM_JUMP_VELOCITY });
+  const { brain, showActivity, eyes } = useFlyBrain({ walkSpeed: WALK_SPEED, hopVelocity: HOP_VELOCITY, jumpVelocity: ALARM_JUMP_VELOCITY });
   /** Hosts the server flagged as unsafe on a visit, or blocked. Being on one keeps the bug up. */
   const [flaggedHosts, setFlaggedHosts] = useState<ReadonlySet<string>>(() => new Set());
   const [sleep, setSleep] = useState<Sleep>("awake");
@@ -1132,7 +1132,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
     >
       {call.content}
     </section>
-    {showActivity && <BrainActivity brain={brain} layout={layout} />}
+    {showActivity && <BrainActivity brain={brain} layout={layout} eyes={eyes} />}
     {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Computerbug" data-overlay-interactive
       style={{ maxWidth: layout.workArea.width, maxHeight: layout.workArea.height }}
       onKeyDown={(e) => {

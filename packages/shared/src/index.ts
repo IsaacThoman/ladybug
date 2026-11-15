@@ -50,7 +50,25 @@ export type UrlRecord = {
   source: VerdictSource;
   /** Epoch ms. */
   checkedAt: number;
+  /**
+   * Demo staging, for unsafe records only. A visit gets a pretend analysis
+   * that reveals the verdict after this many seconds, instead of an instant
+   * alert, so a demo doesn't wait for a real sandbox scan.
+   */
+  demoDelaySeconds?: number;
+  /** After a demo reveal, how long the record stays plainly known-unsafe before staging again. */
+  demoHoldSeconds?: number;
+  /** Admin API only, not stored: epoch ms until which a demo record is revealed. */
+  demoRevealedUntil?: number;
 };
+
+/** Limits for UrlRecord demo staging, in seconds. */
+export const DEMO_DEFAULT_DELAY_SECONDS = 10;
+export const DEMO_DEFAULT_HOLD_SECONDS = 120;
+export const DEMO_MAX_DELAY_SECONDS = 600;
+/** The extension polls every 5 s while a page is pending, so a shorter hold could slip past it. */
+export const DEMO_MIN_HOLD_SECONDS = 10;
+export const DEMO_MAX_HOLD_SECONDS = 3600;
 
 /** Sent by the browser extension for every page the user visits. */
 export type CheckRequest = {

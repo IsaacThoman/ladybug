@@ -3,6 +3,7 @@ import { logEvent, sendPetAlert } from "./activity.ts";
 import type { AlertRecipient } from "./activity.ts";
 import { isAnalysisRunning, pendingAnalysis, startAnalysis } from "./analyzer.ts";
 import { recordVisit } from "./checks.ts";
+import { demoDelayMs } from "./demo.ts";
 import { findRecord } from "./store.ts";
 import { notifyUnsafeVisit } from "./support/service.ts";
 import { normalizeUrl } from "./urls.ts";
@@ -14,6 +15,7 @@ export type CheckOrigin = "extension" | "admin";
  * - known safe: nothing else happens,
  * - known unsafe: the pet raises an alert,
  * - unknown: the pet says it's checking, and an analysis starts.
+ * A staged demo record (see demo.ts) acts unknown, then reveals its verdict.
  *
  * Alerts go to the pets of the user who reported the visit. Admin checks
  * alert every pet.
@@ -48,8 +50,10 @@ export async function checkVisit(
   const started = performance.now();
   const record = await findRecord(url, host);
   const durationMs = Math.round(performance.now() - started);
+  const delayMs = record ? demoDelayMs(record) : null;
+  const demo = record && delayMs !== null ? { record, delayMs } : undefined;
 
-  if (record) {
+  if (record && !demo) {
     recordVisit({ url, host, decision: record.verdict === "safe" ? "known_safe" : "known_unsafe", origin, durationMs });
     const match = record.scope === "host" ? `host-wide record for ${record.host}` : "exact URL";
     logEvent({
@@ -76,13 +80,15 @@ export async function checkVisit(
     decision: "unknown",
     message: alreadyRunning
       ? `Unknown: ${url} (analysis already running)`
-      : `Unknown: ${url}, starting analysis`,
+      : demo
+        ? `Demo: ${url} acts unknown, revealing ${demo.record.verdict} in ${demo.delayMs / 1000}s`
+        : `Unknown: ${url}, starting analysis`,
     url,
     host,
     durationMs,
-    details: { alreadyRunning },
+    details: { alreadyRunning, ...(demo ? { demo: true, recordId: demo.record.id } : {}) },
   });
-  const { analysis, joined } = startAnalysis(url, host, recipient, origin === "extension");
+  const { analysis, joined } = startAnalysis(url, host, recipient, origin === "extension", demo);
   // Someone else's visit may have started it; this user's pet still needs to hear.
   if (joined) {
     sendPetAlert(recipient, "info", `Hmm, I don't know ${host} yet. Checking it…`, url, host, analysis.scanId);
@@ -99,7 +105,8 @@ export async function lookupVisit(rawUrl: string): Promise<CheckStatusResponse> 
   if (!target.ok) return { status: "skipped", reason: target.reason };
   const { url, host } = target;
   const record = await findRecord(url, host);
-  if (record) return { status: "known", verdict: record.verdict, record };
+  // A staged demo record stays secret until its pretend analysis reveals it.
+  if (record && demoDelayMs(record) === null) return { status: "known", verdict: record.verdict, record };
   const analysis = pendingAnalysis(url);
   if (analysis) return { status: "pending", url, etaMs: Math.max(0, analysis.etaAt - Date.now()) };
   return { status: "unknown", url };

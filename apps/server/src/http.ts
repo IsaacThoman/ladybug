@@ -42,6 +42,14 @@ export function requireEnum<T extends string>(value: unknown, allowed: readonly 
   return result;
 }
 
+/** A whole number in [min, max]. */
+export function requireInteger(value: unknown, name: string, min: number, max: number) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    throw new HttpError(400, `"${name}" must be a whole number from ${min} to ${max}`);
+  }
+  return value;
+}
+
 export function pageParams(query: Request["query"]) {
   const page = Math.max(1, Math.floor(Number(query.page) || 1));
   const perPage = Math.min(100, Math.max(1, Math.floor(Number(query.perPage) || 25)));

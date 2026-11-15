@@ -1,5 +1,11 @@
 import express from "express";
-import { TIMELINE_RANGES } from "@ladybug/shared";
+import {
+  DEMO_DEFAULT_HOLD_SECONDS,
+  DEMO_MAX_DELAY_SECONDS,
+  DEMO_MAX_HOLD_SECONDS,
+  DEMO_MIN_HOLD_SECONDS,
+  TIMELINE_RANGES,
+} from "@ladybug/shared";
 import type {
   AccountStatus,
   AdminAccountsResponse,
@@ -20,6 +26,11 @@ import { listPending } from "../analyzer.ts";
 import { checkVisit } from "../checker.ts";
 import { visitTimeline } from "../checks.ts";
 import { config } from "../config.ts";
+import {
+  resetDemoReveal,
+  withDemoState,
+  withoutDemo,
+} from "../demo.ts";
 import { focus } from "../focus.ts";
 import {
   HttpError,
@@ -28,6 +39,7 @@ import {
   optionalString,
   pageParams,
   requireEnum,
+  requireInteger,
   requireStore,
   requireString,
 } from "../http.ts";
@@ -237,15 +249,15 @@ export function adminRouter(
   });
 
   router.get("/urls", async (req, res) => {
-    res.json(
-      await searchRecords({
-        q: optionalString(req.query.q, "q", 200),
-        verdict: optionalEnum(req.query.verdict, VERDICTS, "verdict"),
-        scope: optionalEnum(req.query.scope, SCOPES, "scope"),
-        source: optionalEnum(req.query.source, SOURCES, "source"),
-        ...pageParams(req.query),
-      }),
-    );
+    const page = await searchRecords({
+      q: optionalString(req.query.q, "q", 200),
+      verdict: optionalEnum(req.query.verdict, VERDICTS, "verdict"),
+      scope: optionalEnum(req.query.scope, SCOPES, "scope"),
+      source: optionalEnum(req.query.source, SOURCES, "source"),
+      ...pageParams(req.query),
+    });
+    const now = Date.now();
+    res.json({ ...page, items: page.items.map((record) => withDemoState(record, now)) });
   });
 
   // Hosts with community reports, beside the stored verdict (from Typesense).
@@ -284,8 +296,10 @@ export function adminRouter(
   router.put("/urls/:id", async (req, res) => {
     const verdict = requireEnum(req.body?.verdict, VERDICTS, "verdict");
     const existing = await getRecord(req.params.id);
+    // Demo staging only means something for unsafe records.
+    if (verdict === "safe") resetDemoReveal(existing.id);
     const record = await saveRecord({
-      ...existing,
+      ...(verdict === "safe" ? withoutDemo(existing) : existing),
       verdict,
       reason: optionalString(req.body?.reason, "reason", 500) ?? `Changed to ${verdict} by admin`,
       source: "admin",
@@ -298,6 +312,41 @@ export function adminRouter(
       host: record.host,
       verdict,
       details: { recordId: record.id, previous: existing.verdict },
+    });
+    res.json(record);
+  });
+
+  // Demo staging: visits act unknown, then reveal "unsafe" after a delay (see demo.ts).
+  // Saving also stages the record again if it was revealed.
+  router.put("/urls/:id/demo", async (req, res) => {
+    const delaySeconds = requireInteger(req.body?.delaySeconds, "delaySeconds", 1, DEMO_MAX_DELAY_SECONDS);
+    const holdSeconds =
+      req.body?.holdSeconds === undefined
+        ? DEMO_DEFAULT_HOLD_SECONDS
+        : requireInteger(req.body.holdSeconds, "holdSeconds", DEMO_MIN_HOLD_SECONDS, DEMO_MAX_HOLD_SECONDS);
+    const existing = await getRecord(req.params.id);
+    if (existing.verdict !== "unsafe") throw new HttpError(409, "Only unsafe records can be staged for a demo");
+    const record = await saveRecord({ ...existing, demoDelaySeconds: delaySeconds, demoHoldSeconds: holdSeconds });
+    resetDemoReveal(record.id);
+    logEvent({
+      type: "admin",
+      message: `Admin staged ${record.scope === "host" ? record.host : record.url} for a demo: unsafe after ${delaySeconds}s, held ${holdSeconds}s`,
+      url: record.url,
+      host: record.host,
+      details: { recordId: record.id, delaySeconds, holdSeconds },
+    });
+    res.json(record);
+  });
+
+  router.delete("/urls/:id/demo", async (req, res) => {
+    const record = await saveRecord(withoutDemo(await getRecord(req.params.id)));
+    resetDemoReveal(record.id);
+    logEvent({
+      type: "admin",
+      message: `Admin stopped staging ${record.scope === "host" ? record.host : record.url} for a demo`,
+      url: record.url,
+      host: record.host,
+      details: { recordId: record.id },
     });
     res.json(record);
   });

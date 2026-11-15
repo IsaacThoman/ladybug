@@ -89,6 +89,12 @@ export const api = {
       body: JSON.stringify({ verdict }),
     }),
 
+  /** Stages an unsafe record for a demo (or re-arms it): visits reveal "unsafe" after `delaySeconds`. */
+  setDemo: (id: string, body: { delaySeconds: number; holdSeconds: number }) =>
+    request<UrlRecord>(`/api/admin/urls/${id}/demo`, { method: "PUT", body: JSON.stringify(body) }),
+
+  clearDemo: (id: string) => request<UrlRecord>(`/api/admin/urls/${id}/demo`, { method: "DELETE" }),
+
   /** Hosts with community reports, newest report first. */
   reports: (limit: number) => request<AdminReportsResponse>(`/api/admin/reports${query({ limit })}`),
 

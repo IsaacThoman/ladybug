@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import {
+  DEMO_DEFAULT_DELAY_SECONDS,
+  DEMO_DEFAULT_HOLD_SECONDS,
+  DEMO_MAX_DELAY_SECONDS,
+  DEMO_MAX_HOLD_SECONDS,
+  DEMO_MIN_HOLD_SECONDS,
+} from "@ladybug/shared";
 import type { UrlRecord, UrlScope, Verdict } from "@ladybug/shared";
 import { api } from "../api";
 import { formatFull, timeAgo } from "../format";
+import { useNow } from "../useAdminStream";
 import { VerdictBadge } from "./Badge";
 import CommunityReports from "./CommunityReports";
 
@@ -22,6 +30,9 @@ export default function UrlsView({ version }: { version: number }) {
   const [found, setFound] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  // The record whose demo delay is being edited.
+  const [editingDemo, setEditingDemo] = useState<string | null>(null);
+  const now = useNow(1_000);
 
   useEffect(() => {
     const timer = setTimeout(() => setQ(input.trim()), 250);
@@ -103,45 +114,73 @@ export default function UrlsView({ version }: { version: number }) {
               </thead>
               <tbody>
                 {records.map((record) => (
-                  <tr key={record.id}>
-                    <td>
-                      <VerdictBadge verdict={record.verdict} />
-                    </td>
-                    <td className="url-cell">
-                      <span className="mono truncate" title={record.url}>
-                        {record.scope === "host" ? record.host : record.url}
-                      </span>
-                      {record.scope === "host" && <span className="scope-tag">Whole host</span>}
-                    </td>
-                    <td className="reason-cell">{record.reason}</td>
-                    <td>{SOURCE_LABEL[record.source]}</td>
-                    <td className="muted" title={formatFull(record.checkedAt)}>
-                      {timeAgo(record.checkedAt)}
-                    </td>
-                    <td className="actions">
-                      <button
-                        type="button"
-                        className="secondary small"
-                        onClick={() =>
-                          act(() => api.setVerdict(record.id, record.verdict === "safe" ? "unsafe" : "safe"))
-                        }
-                      >
-                        Mark {record.verdict === "safe" ? "unsafe" : "safe"}
-                      </button>
-                      <button
-                        type="button"
-                        className="danger small"
-                        onClick={() => {
-                          const name = record.scope === "host" ? record.host : record.url;
-                          if (confirm(`Forget ${name}? It will be analysed again next time it's visited.`)) {
-                            void act(() => api.deleteUrl(record.id));
+                  <Fragment key={record.id}>
+                    <tr>
+                      <td>
+                        <VerdictBadge verdict={record.verdict} />
+                      </td>
+                      <td className="url-cell">
+                        <span className="mono truncate" title={record.url}>
+                          {record.scope === "host" ? record.host : record.url}
+                        </span>
+                        {record.scope === "host" && <span className="scope-tag">Whole host</span>}
+                        {record.verdict === "unsafe" && record.demoDelaySeconds !== undefined && (
+                          <span className="demo-tag">{demoStatus(record, now)}</span>
+                        )}
+                      </td>
+                      <td className="reason-cell">{record.reason}</td>
+                      <td>{SOURCE_LABEL[record.source]}</td>
+                      <td className="muted" title={formatFull(record.checkedAt)}>
+                        {timeAgo(record.checkedAt)}
+                      </td>
+                      <td className="actions">
+                        {record.verdict === "unsafe" && (
+                          <button
+                            type="button"
+                            className="secondary small"
+                            aria-expanded={editingDemo === record.id}
+                            onClick={() => setEditingDemo((id) => (id === record.id ? null : record.id))}
+                          >
+                            Demo delay
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="secondary small"
+                          onClick={() =>
+                            act(() => api.setVerdict(record.id, record.verdict === "safe" ? "unsafe" : "safe"))
                           }
-                        }}
-                      >
-                        Forget
-                      </button>
-                    </td>
-                  </tr>
+                        >
+                          Mark {record.verdict === "safe" ? "unsafe" : "safe"}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger small"
+                          onClick={() => {
+                            const name = record.scope === "host" ? record.host : record.url;
+                            if (confirm(`Forget ${name}? It will be analysed again next time it's visited.`)) {
+                              void act(() => api.deleteUrl(record.id));
+                            }
+                          }}
+                        >
+                          Forget
+                        </button>
+                      </td>
+                    </tr>
+                    {editingDemo === record.id && record.verdict === "unsafe" && (
+                      <tr className="demo-row">
+                        <td colSpan={6}>
+                          <DemoForm
+                            record={record}
+                            onDone={() => {
+                              setEditingDemo(null);
+                              refresh();
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -149,6 +188,96 @@ export default function UrlsView({ version }: { version: number }) {
         )}
       </section>
     </div>
+  );
+}
+
+/** "m:ss" for a countdown. */
+function countdown(ms: number) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function demoStatus(record: UrlRecord, now: number) {
+  if (record.demoRevealedUntil !== undefined && record.demoRevealedUntil > now) {
+    return `Demo · revealed, re-arms in ${countdown(record.demoRevealedUntil - now)}`;
+  }
+  return `Demo · reveals unsafe ${record.demoDelaySeconds}s after a visit`;
+}
+
+/**
+ * Stages an unsafe record for a demo: a visit acts unknown while the bug
+ * pretends to check, then it's revealed as unsafe after the delay, and stays
+ * that way for the hold time before staging again.
+ */
+function DemoForm({ record, onDone }: { record: UrlRecord; onDone: () => void }) {
+  const staged = record.demoDelaySeconds !== undefined;
+  const [delay, setDelay] = useState(String(record.demoDelaySeconds ?? DEMO_DEFAULT_DELAY_SECONDS));
+  const [hold, setHold] = useState(String(record.demoHoldSeconds ?? DEMO_DEFAULT_HOLD_SECONDS));
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await action();
+      setError(null);
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void run(() => api.setDemo(record.id, { delaySeconds: Number(delay), holdSeconds: Number(hold) }));
+  };
+
+  return (
+    <form className="demo-form" onSubmit={submit}>
+      <p className="hint">
+        Visits act unknown while the bug pretends to check, then get flagged unsafe after the delay. It stays
+        flagged for the hold time, then re-arms for the next run.
+      </p>
+      <div className="demo-fields">
+        <label>
+          Reveal after
+          <input
+            type="number"
+            min={1}
+            max={DEMO_MAX_DELAY_SECONDS}
+            step={1}
+            value={delay}
+            onChange={(e) => setDelay(e.target.value)}
+            required
+          />
+          s
+        </label>
+        <label>
+          Hold for
+          <input
+            type="number"
+            min={DEMO_MIN_HOLD_SECONDS}
+            max={DEMO_MAX_HOLD_SECONDS}
+            step={1}
+            value={hold}
+            onChange={(e) => setHold(e.target.value)}
+            required
+          />
+          s
+        </label>
+        <button type="submit" className="small" disabled={busy}>
+          {staged ? "Save and re-arm" : "Stage demo"}
+        </button>
+        {staged && (
+          <button type="button" className="danger small" disabled={busy} onClick={() => run(() => api.clearDemo(record.id))}>
+            Stop staging
+          </button>
+        )}
+      </div>
+      {error && <p className="form-error">{error}</p>}
+    </form>
   );
 }
 

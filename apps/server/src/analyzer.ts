@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isIP } from "node:net";
-import type { AdminStreamEvent, PendingAnalysis, ScanReport, Verdict } from "@ladybug/shared";
+import type { AdminStreamEvent, PendingAnalysis, ScanReport, UrlRecord, Verdict } from "@ladybug/shared";
 import { logEvent, sendPetAlert } from "./activity.ts";
 import type { AlertRecipient } from "./activity.ts";
 import { config } from "./config.ts";
+import { markDemoRevealed } from "./demo.ts";
 import { createScan, waitForScan } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { adminChannel } from "./sse.ts";
@@ -88,12 +89,23 @@ export function placeholderVerdict(url: string, host: string): { verdict: Verdic
   return { verdict: "safe", reason: "Nothing suspicious in the URL" };
 }
 
+/** A pretend analysis for a demo record: reveals its stored verdict after `delayMs`. */
+export type DemoReveal = { record: UrlRecord; delayMs: number };
+
 /**
  * Starts analysing a URL unless it's already being analysed. The result is
  * remembered in Typesense and pushed to the pets of everyone who visited the
  * URL meanwhile. `joined` is false when this recipient was already waiting.
+ * With `demo`, nothing is scanned or saved: the demo record's verdict is
+ * revealed once its delay is up.
  */
-export function startAnalysis(url: string, host: string, recipient: AlertRecipient, browserVisit = false) {
+export function startAnalysis(
+  url: string,
+  host: string,
+  recipient: AlertRecipient,
+  browserVisit = false,
+  demo?: DemoReveal,
+) {
   if (browserVisit && recipient !== "everyone") {
     const visitors = browserVisits.get(url) ?? new Set<string>();
     visitors.add(recipient.userId);
@@ -109,12 +121,12 @@ export function startAnalysis(url: string, host: string, recipient: AlertRecipie
   if (existing) return { analysis: existing, joined };
 
   const startedAt = Date.now();
-  const scan = useScans();
+  const scan = !demo && useScans();
   const analysis: PendingAnalysis = {
     url,
     host,
     startedAt,
-    etaAt: startedAt + (scan ? config.scanEtaMs : config.analysisDelayMs),
+    etaAt: startedAt + (demo ? demo.delayMs : scan ? config.scanEtaMs : config.analysisDelayMs),
     ...(scan ? { scanId: randomUUID() } : {}),
   };
   pending.set(url, analysis);
@@ -124,11 +136,13 @@ export function startAnalysis(url: string, host: string, recipient: AlertRecipie
     message: `Analysis started for ${url}`,
     url,
     host,
-    details: scan
-      ? { analyzer: "scan", scanId: analysis.scanId }
-      : { analyzer: "placeholder", delayMs: config.analysisDelayMs },
+    details: demo
+      ? { analyzer: "demo", recordId: demo.record.id, delayMs: demo.delayMs }
+      : scan
+        ? { analyzer: "scan", scanId: analysis.scanId }
+        : { analyzer: "placeholder", delayMs: config.analysisDelayMs },
   });
-  void runAnalysis(analysis, recipient === "everyone" ? null : recipient.userId);
+  void runAnalysis(analysis, recipient === "everyone" ? null : recipient.userId, demo);
   return { analysis, joined };
 }
 
@@ -162,14 +176,17 @@ async function scanReport(url: string, scanId: string, userId: string | null) {
   return scan.report;
 }
 
-async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, userId: string | null) {
+async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, userId: string | null, demo?: DemoReveal) {
   const alertAll = (level: "danger" | "ok" | "info", message: string) => {
     for (const recipient of recipientsFor(url)) sendPetAlert(recipient, level, message, url, host, scanId);
   };
   try {
     let result: { verdict: Verdict; reason: string };
     let report: ScanReport | null = null;
-    if (scanId) {
+    if (demo) {
+      await sleep(demo.delayMs);
+      result = { verdict: demo.record.verdict, reason: demo.record.reason };
+    } else if (scanId) {
       report = await scanReport(url, scanId, userId);
       result = verdictFromReport(report);
     } else {
@@ -177,15 +194,19 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
       result = placeholderVerdict(url, host);
     }
     const { verdict, reason } = result;
-    const record = await saveRecord({
-      scope: "url",
-      url,
-      host,
-      verdict,
-      reason,
-      source: "analysis",
-      checkedAt: Date.now(),
-    });
+    // A demo record already holds its verdict; it only needs to stay revealed for a while.
+    const record = demo
+      ? demo.record
+      : await saveRecord({
+          scope: "url",
+          url,
+          host,
+          verdict,
+          reason,
+          source: "analysis",
+          checkedAt: Date.now(),
+        });
+    if (demo) markDemoRevealed(demo.record);
     if (report && scanId) {
       try {
         scanListener?.(host, scanId, report);
@@ -200,7 +221,7 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
       host,
       verdict,
       durationMs: Date.now() - startedAt,
-      details: { analyzer: scanId ? "scan" : "placeholder", recordId: record.id, reason, scanId },
+      details: { analyzer: demo ? "demo" : scanId ? "scan" : "placeholder", recordId: record.id, reason, scanId },
     });
     if (verdict === "unsafe") {
       for (const accountId of browserVisits.get(url) ?? []) notifyUnsafeVisit(url, accountId);

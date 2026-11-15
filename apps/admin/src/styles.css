@@ -548,6 +548,7 @@ button.login-submit {
 
 input[type="text"],
 input[type="search"],
+input[type="number"],
 select {
   min-width: 0;
   padding: 7px 12px;
@@ -918,6 +919,40 @@ button.small {
 .actions {
   white-space: nowrap;
   text-align: right;
+}
+
+.demo-tag {
+  display: block;
+  margin-top: 2px;
+  color: var(--accent-ink);
+  font-size: 12px;
+}
+
+.table tr:has(+ .demo-row) td {
+  border-bottom: 0;
+}
+
+.demo-form .hint {
+  margin-bottom: 8px;
+}
+
+.demo-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.demo-fields label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.demo-fields input {
+  width: 80px;
 }
 
 .actions button + button {

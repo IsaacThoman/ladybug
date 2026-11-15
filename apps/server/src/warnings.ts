@@ -15,6 +15,8 @@ type OpenWarning = {
   warning: PetWarning;
   userId: string;
   send: <E extends keyof WarningStreamEvents>(event: E, data: WarningStreamEvents[E]) => void;
+  /** Stops listing the page as blocked and ends its stream. */
+  end: () => void;
 };
 
 const open = new Map<string, OpenWarning>();
@@ -39,7 +41,6 @@ export function openWarning(
 ) {
   const warning: PetWarning = { id: randomUUID(), ...input, at: Date.now() };
   const send = warningChannel.attach(req, res, user.id) as OpenWarning["send"];
-  open.set(warning.id, { warning, userId: user.id, send });
 
   let closed = false;
   const close = () => {
@@ -50,6 +51,7 @@ export function openWarning(
   };
   req.on("close", close);
   res.on("close", close);
+  open.set(warning.id, { warning, userId: user.id, send, end: () => (close(), res.end()) });
 
   const pets = petChannel.sizeOf(user.id);
   send("ready", { id: warning.id, pets });
@@ -66,11 +68,17 @@ export function openWarning(
 /**
  * Passes what the user picked on their pet to the blocked page. False when
  * that page isn't blocked anymore (or isn't this user's).
+ *
+ * The page is done once it has the choice, so the pets let go of it straight
+ * away rather than waiting to notice its stream close (which can lag, or not
+ * happen at all if the page vanished without hanging up). A page that's still
+ * there after acting on it checks in again.
  */
 export function chooseForWarning(user: { id: string; username: string }, id: string, choice: WarningChoice) {
   const entry = open.get(id);
   if (!entry || entry.userId !== user.id) return false;
   entry.send("choice", { choice });
+  entry.end();
   logEvent({
     type: "alert",
     message: `${user.username} chose ${choice === "exit" ? "to leave" : "to continue to"} ${entry.warning.url} on their pet`,

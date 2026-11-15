@@ -63,11 +63,21 @@ function show(details: NonNullable<WarningDetails>) {
   $("show-here").addEventListener("click", () => setView("here"));
 }
 
+/** Ends the stream to the server (see stayInTouch). */
+let hangUp = () => {};
+/** The choice being acted on, if any. */
+let acting: Promise<unknown> | null = null;
+
 const act = (type: "warning:exit" | "warning:continue") => {
+  // Hang up first so the desktop ladybug lets go of this page straight away.
+  // Taking the overlay away doesn't reliably close the stream.
+  hangUp();
   exitEl.disabled = continueEl.disabled = true;
-  void send(type).finally(() => {
+  const done = send(type).finally(() => {
     exitEl.disabled = continueEl.disabled = false;
+    if (acting === done) acting = null;
   });
+  acting = done;
 };
 
 /**
@@ -113,11 +123,14 @@ async function stayInTouch(details: NonNullable<WarningDetails>) {
   }
   const body: OpenWarningRequest = { url: details.url, host: details.host, reason: details.reason, late: details.late };
   for (;;) {
+    const controller = new AbortController();
+    hangUp = () => controller.abort();
     try {
       const res = await fetch(`${settings.serverUrl}/api/pet/warnings`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       // An older server, or the account can't use it: no ladybug will hear.
       if (!res.ok || !res.body) {
@@ -134,11 +147,17 @@ async function stayInTouch(details: NonNullable<WarningDetails>) {
         }
       });
     } catch {
-      // Offline, or the server went away.
+      // Offline, the server went away, or this page hung up to act on a choice.
     }
-    // Show the options here while out of touch, and keep trying so the
-    // desktop ladybug hears about this page again when the server is back.
-    setView("here");
+    if (acting) {
+      // Hung up to act on a choice. The page is normally gone by now; if it's
+      // still here, check in again so the desktop ladybug hears about it.
+      await acting.catch(() => {});
+    } else {
+      // Show the options here while out of touch, and keep trying so the
+      // desktop ladybug hears about this page again when the server is back.
+      setView("here");
+    }
     await sleep(RECONNECT_MS);
   }
 }

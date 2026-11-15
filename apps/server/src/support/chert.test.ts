@@ -42,8 +42,15 @@ test("polling parses the observed shared-line response without inferring an unma
     return Response.json({ data: { items: [row], total: 1, limit: 50, offset: 0 } });
   });
   assert.deepEqual(messages, [row]);
-  for (const body of [{}, { data: { items: [{}] } }, { data: { items: [{ ...row, created_at: "invalid" }] } }]) {
+  for (const body of [{}, { data: {} }, { data: { items: "none" } }]) {
     await assert.rejects(readMessages(config, async () => Response.json(body)));
   }
+});
+
+test("polling skips unreadable rows instead of failing the whole page", async () => {
+  const row = { id: "message", line_id: "line", direction: "inbound", state: "received", masked_recipient: "•••4567", created_at: "2026-11-14T23:00:00.000Z", text: "SUPPORT" };
+  const unreadable = [{}, null, "row", { ...row, id: "image", text: null }, { ...row, id: "untexted", text: undefined }, { ...row, created_at: "invalid" }, { ...row, direction: "sideways" }];
+  const messages = await readMessages(config, async () => Response.json({ data: { items: [...unreadable, row], total: 8, limit: 50, offset: 0 } }));
+  assert.deepEqual(messages, [row]);
   await assert.rejects(readMessages(config, async () => new Response(null, { status: 503 })));
 });

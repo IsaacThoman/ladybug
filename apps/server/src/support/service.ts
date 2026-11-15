@@ -5,6 +5,8 @@ import { readMessagingConfig, sendMessage, readMessages, SendError } from "./che
 import type { MessagingConfig, SharedMessage } from "./chert.ts";
 
 const HOUR = 3_600_000, WINDOW = 1_800_000;
+/** How long one notification blocks another for the same host. */
+const HOST_COOLDOWN_MS = 120_000;
 const POLL_INTERVAL_MS = 15_000;
 const jobs = "support:shared:jobs";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -12,10 +14,18 @@ const windows = (config: MessagingConfig) => `support:shared:windows:${hash(`${c
 export type SupportCommand = { id: string; accountId: string; kind: "support" | "browser-kill" | "device-shutdown"; sentAt: number; expiresAt: number };
 type Job = { accountId: string; id: string; url: string; config: Pick<MessagingConfig, "destination" | "line" | "project">; created: number; attempts: number; messageId?: string };
 
-/** Atomic reservation and outbox insertion; pending sends survive process restarts. */
+/**
+ * Atomic reservation and outbox insertion; pending sends survive process restarts.
+ * An existing cooldown longer than the current one (left by an older build, say)
+ * is trimmed, so shortening HOST_COOLDOWN_MS takes effect on live keys too.
+ */
 const reserve = `
-if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
-redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[3])
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl ~= -2 then
+ if ttl == -1 or ttl > tonumber(ARGV[5]) then redis.call('PEXPIRE', KEYS[1], ARGV[5]) end
+ return 0
+end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[5])
 redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[3])
 redis.call('ZADD', KEYS[3], ARGV[4], KEYS[2])
 return 1`;
@@ -58,7 +68,7 @@ export class SupportService {
     if (!target.ok || !config || !accountId) return;
     const job: Job = { accountId, id: randomUUID(), url: target.url, config: { destination: config.destination, line: config.line, project: config.project }, created: this.now(), attempts: 0 };
     await this.redis.eval(reserve, 3, `support:host:${hash(`${accountId}:${target.host}`)}`, `support:job:${job.id}`, jobs,
-      job.id, JSON.stringify(job), HOUR, this.now());
+      job.id, JSON.stringify(job), HOUR, this.now(), HOST_COOLDOWN_MS);
   }
   async drain() {
     if (this.running) return;

@@ -5,6 +5,7 @@ export * from "./scan.ts";
 export * from "./sandbox.ts";
 export * from "./accounts.ts";
 export * from "./sse.ts";
+export * from "./reports.ts";
 
 import type { ScanStatus, ScanVerdict, Screenshot } from "./scan.ts";
 
@@ -158,6 +159,8 @@ export type LogEventType =
   | "alert"
   | "admin"
   | "account"
+  /** A community report (see reports.ts). */
+  | "report"
   | "error";
 
 export type Decision = "known_safe" | "known_unsafe" | "unknown" | "skipped";

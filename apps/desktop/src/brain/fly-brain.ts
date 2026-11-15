@@ -15,6 +15,8 @@ export type FrameInput = {
   held: boolean;
   /** Nothing but the brain wants to move the bug this frame; see BehaviorInput. */
   free: boolean;
+  /** The pet is asleep in bed: the brain rests too, and picks up where it left off. */
+  asleep?: boolean;
 };
 
 /**
@@ -44,9 +46,9 @@ export class FlyBrain {
   feed() { this.fed = true; }
 
   /** What the brain wants done this frame, or null to carry on as without it. */
-  frame({ now, dt, pet, bounds, held, free }: FrameInput): BrainAct | null {
+  frame({ now, dt, pet, bounds, held, free, asleep = false }: FrameInput): BrainAct | null {
     const { status } = this.client;
-    if (status !== "loading" && status !== "running") {
+    if (asleep || (status !== "loading" && status !== "running")) {
       if (this.active) {
         this.active = false;
         this.senses = new SenseTracker();

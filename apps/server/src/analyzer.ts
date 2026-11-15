@@ -14,9 +14,17 @@ import { normaliseScanUrl } from "./validate.ts";
 
 let scanDeps: ScanDeps | null = null;
 
-/** Gives the analyzer what it needs to start sandbox scans. Without it, the placeholder runs. */
-export function configureAnalyzer(deps: ScanDeps) {
+/** Hears about each sandbox report the analyzer saved a verdict from. Must not throw. */
+export type ScanListener = (host: string, scanId: string, report: ScanReport) => void;
+let scanListener: ScanListener | null = null;
+
+/**
+ * Gives the analyzer what it needs to start sandbox scans. Without it, the
+ * placeholder runs. `onScan` is how verdicts get notarised on Solana.
+ */
+export function configureAnalyzer(deps: ScanDeps, onScan?: ScanListener) {
   scanDeps = deps;
+  scanListener = onScan ?? null;
 }
 
 const useScans = () => config.analyzer === "scan" && scanDeps !== null;
@@ -144,14 +152,14 @@ function hostOf(url: string) {
 }
 
 /** Runs a sandbox scan and waits for its report. The scan is listed under `userId`. */
-async function scanVerdict(url: string, scanId: string, userId: string | null) {
+async function scanReport(url: string, scanId: string, userId: string | null) {
   const deps = scanDeps!;
   const parsed = normaliseScanUrl(url);
   if ("error" in parsed) throw new Error(`can't scan ${url}: ${parsed.error}`);
   await createScan(deps, parsed.url, { apiKey: null, userId }, scanId);
   const scan = await waitForScan(deps, scanId, config.scanTimeoutMs);
   if (scan.status !== "done" || !scan.report) throw new Error(scan.error ?? "the scan failed");
-  return verdictFromReport(scan.report);
+  return scan.report;
 }
 
 async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, userId: string | null) {
@@ -160,8 +168,10 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
   };
   try {
     let result: { verdict: Verdict; reason: string };
+    let report: ScanReport | null = null;
     if (scanId) {
-      result = await scanVerdict(url, scanId, userId);
+      report = await scanReport(url, scanId, userId);
+      result = verdictFromReport(report);
     } else {
       await sleep(config.analysisDelayMs);
       result = placeholderVerdict(url, host);
@@ -176,6 +186,13 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
       source: "analysis",
       checkedAt: Date.now(),
     });
+    if (report && scanId) {
+      try {
+        scanListener?.(host, scanId, report);
+      } catch (error) {
+        console.error(`[server] notarising the scan of ${host} failed:`, error);
+      }
+    }
     logEvent({
       type: "analysis_completed",
       message: `Analysis finished: ${verdict} — ${url} (${reason})`,

@@ -1,13 +1,14 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { SCAN_STATUSES, isTerminalStatus } from "@ladybug/shared";
-import type { ScanStatus, ScanVerdict } from "@ladybug/shared";
+import type { CommunityTally, ScanStatus, ScanVerdict } from "@ladybug/shared";
 import { MascotStage } from "@ladybug/mascot/react";
 import type { LadybugMascotHandle, LadybugMood } from "@ladybug/mascot/react";
 import { formatElapsed } from "../format.ts";
 import type { ScanState } from "../scanState.ts";
 import { useNow } from "../useNow.ts";
 import ActivityLog from "./ActivityLog.tsx";
+import CommunityPanel from "./CommunityPanel.tsx";
 import Header from "./Header.tsx";
 import Link from "./Link.tsx";
 import Findings from "./Findings.tsx";
@@ -24,9 +25,11 @@ type Props = {
   notice?: ReactNode;
   /** Shown in the page header, e.g. demo controls. */
   headerExtra?: ReactNode;
+  /** A fixed community tally instead of the live one (the demo). */
+  communitySample?: CommunityTally;
 };
 
-export default function ReportView({ scan, artifactSrc, notice, headerExtra }: Props) {
+export default function ReportView({ scan, artifactSrc, notice, headerExtra, communitySample }: Props) {
   const terminal = isTerminalStatus(scan.status);
   const running = !terminal;
   const now = useNow(running && scan.createdAt !== null);
@@ -43,6 +46,7 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
 
   const finalUrl = report?.finalUrl ?? scan.redirectChain.at(-1) ?? null;
   const showFinal = finalUrl && finalUrl !== scan.inputUrl;
+  const siteUrl = finalUrl ?? scan.inputUrl;
   const showActivity = scan.activity.length > 0 || running;
   const verdict = scan.result?.verdict ?? null;
   const mascotRef = useRef<LadybugMascotHandle>(null);
@@ -106,6 +110,7 @@ export default function ReportView({ scan, artifactSrc, notice, headerExtra }: P
           </div>
           <div className="report-right">
             {report && <ReportSummary report={report} />}
+            {terminal && siteUrl && <CommunityPanel key={siteUrl} url={siteUrl} sample={communitySample} />}
             <Findings findings={scan.findings} artifactSrc={artifactSrc} running={running} />
             {showActivity && <ActivityLog items={scan.activity} running={running} />}
             <RedirectChain chain={scan.redirectChain} />

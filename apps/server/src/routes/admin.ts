@@ -41,6 +41,7 @@ import {
   searchEvents,
   searchRecords,
 } from "../store.ts";
+import type { AdminReportsLister } from "../reports.ts";
 import { normalizeUrl } from "../urls.ts";
 
 const VERDICTS = ["safe", "unsafe"] as const satisfies readonly Verdict[];
@@ -54,6 +55,7 @@ const EVENT_TYPES = [
   "alert",
   "admin",
   "account",
+  "report",
   "error",
 ] as const satisfies readonly LogEventType[];
 const DECISIONS = [
@@ -69,7 +71,13 @@ export type SandboxLister = (limit: number) => Promise<AdminSandboxesResponse>;
 /** Called when an account can no longer place support calls. */
 export type RevokeCalls = (userId: string) => void;
 
-export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, sandboxes: SandboxLister, revokeCalls: RevokeCalls) {
+export function adminRouter(
+  accounts: AccountStore,
+  models: ModelSettingsStore,
+  sandboxes: SandboxLister,
+  revokeCalls: RevokeCalls,
+  reports: AdminReportsLister,
+) {
   const router = express.Router();
 
   // Live activity: every logged event, plus the list of running analyses.
@@ -238,6 +246,12 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, 
         ...pageParams(req.query),
       }),
     );
+  });
+
+  // Hosts with community reports, beside the stored verdict (from Typesense).
+  router.get("/reports", async (req, res) => {
+    const limit = Math.min(200, Math.max(1, Math.floor(Number(req.query.limit) || 50)));
+    res.json(await reports(limit));
   });
 
   // Add (or overwrite) a record by hand.

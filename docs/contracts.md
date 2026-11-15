@@ -1,6 +1,6 @@
 # Contracts between components
 
-The source of truth is `packages/shared/src/scan.ts` (scan, event, report and HTTP API types) and `packages/shared/src/sandbox.ts` (the sandbox daemon API). This file covers what types can't: names, ports, labels and environment variables.
+The source of truth is `packages/shared/src/scan.ts` (scan, event, report and HTTP API types), `packages/shared/src/sandbox.ts` (the sandbox daemon API) and `packages/shared/src/reports.ts` (community reports; the on-chain side is in [`solana.md`](solana.md)). This file covers what types can't: names, ports, labels and environment variables.
 
 ## Code conventions
 
@@ -29,6 +29,9 @@ The source of truth is `packages/shared/src/scan.ts` (scan, event, report and HT
 | `GET /api/admin/users` | admin | `AdminAccountsResponse` |
 | `POST /api/admin/users/:id/approve`, `/reject`, `DELETE /api/admin/users/:id` | admin | `Account` / 204 |
 | `PUT /api/admin/users/:id/calls` `AdminCallsRequest` | admin | `Account` |
+| `GET /api/reports?url=…` | none; with an approved account's bearer token, also `mine` | `CommunityTally` (400 for URLs that aren't checked) |
+| `POST /api/reports {url, verdict}` | approved account (10 per minute) | `CommunityTally` with `mine` |
+| `GET /api/admin/reports?limit=50` | admin | `AdminReportsResponse` |
 | `GET /api/calls/state`, `POST /api/calls/prepare`, `/:id/dial`, `/:id/end` | approved account with calls on | see `packages/shared/src/calls.ts` |
 | `GET /api/calls/support/stream` | approved account with calls on | SSE, `support` events |
 
@@ -78,6 +81,16 @@ Postgres extensions: `timescaledb` (the `url_checks` hypertable and `url_checks_
 | `S3_BUCKET` | | `ladybug-artifacts` |
 | `S3_ACCESS_KEY_ID` | yes | |
 | `S3_SECRET_ACCESS_KEY` | yes | |
+
+Server only, community reports on Solana (all four of the first four, or it's off and reports stay in Postgres; see [`solana.md`](solana.md)):
+
+| Var | Secret | Meaning |
+|---|---|---|
+| `SOLANA_RPC_URL` | | e.g. `https://api.devnet.solana.com` |
+| `SOLANA_PROGRAM_ID` | | the deployed `computerbug_verdicts` program |
+| `SOLANA_AUTHORITY_KEY` | yes | the server's keypair, a JSON byte array or base58. Pays all fees |
+| `SOLANA_REPORTER_SECRET` | yes | per-account reporter keys are derived from it |
+| `SOLANA_CLUSTER` | | `devnet` (default), `testnet`, `mainnet-beta` or `localnet`, for Explorer links |
 
 Server only: `PORT` (3001), `API_KEYS` (comma-separated keys that may start scans without an account, for scripts; optional), `RATE_LIMIT_PER_MINUTE` (scans per minute per account or key, default 10), `TRUST_PROXY_HOPS` (reverse proxies in front; default 1, 2 on Kubernetes and in `compose.yaml`), `CLIENT_IP_HEADER` (trusted header with the client IP, e.g. `cf-connecting-ip` behind a Cloudflare Tunnel), `ADMIN_PASSWORD` (the admin sign-in page's password, where accounts are approved; `/api/admin` then wants the session cookie from `POST /api/admin/login`, or HTTP Basic with any username for scripts; unset = open).
 

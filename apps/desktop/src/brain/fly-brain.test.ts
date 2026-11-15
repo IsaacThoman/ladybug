@@ -62,3 +62,31 @@ test("each frame tells the brain what the bug feels and returns what it wants", 
   advance(600);
   assert.equal(brain.frame(frame({ now: 616 })), null);
 });
+
+test("while the pet sleeps the brain rests, and picks up again when it wakes", async () => {
+  const { client, brain, posted, frame, reply, advance } = setup();
+  client.start();
+  await flush();
+  reply({ type: "ready", neurons: 1, connections: 0 });
+  brain.frame(frame());
+  advance(16);
+  reply({ type: "state", state: stateWith({ walk: 1 }) });
+  assert.ok(brain.frame(frame({ now: 16 })));
+  advance(16);
+  reply({ type: "state", state: stateWith({ walk: 1 }) });
+
+  const sent = ticks(posted).length;
+  for (let now = 32; now < 5000; now += 16) {
+    advance(16);
+    assert.equal(brain.frame(frame({ now, asleep: true })), null);
+  }
+  assert.equal(ticks(posted).length, sent, "no ticks while asleep");
+  assert.equal(client.status, "running");
+
+  // Awake: the old command is stale, so nothing until the brain answers again.
+  assert.equal(brain.frame(frame({ now: 5000 })), null);
+  assert.equal(ticks(posted).length, sent + 1);
+  advance(16);
+  reply({ type: "state", state: stateWith({ walk: 1 }) });
+  assert.ok(brain.frame(frame({ now: 5016 })));
+});

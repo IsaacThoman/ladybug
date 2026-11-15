@@ -48,13 +48,33 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     await Promise.all([f.service.drain(), f.create().drain()]);
     assert.equal(f.sends.length, 1); assert.equal(f.sends[0].url, "https://bad.example./one");
     const cooldown = await redis.pttl((await redis.keys("support:host:*"))[0]);
-    assert.ok(cooldown > 3_590_000 && cooldown <= 3_600_000);
+    assert.ok(cooldown > 110_000 && cooldown <= 120_000);
     await f.create().notify("https://bad.example/four", visitor.userId); await f.create().drain(); assert.equal(f.sends.length, 1);
     await f.service.notify("https://sub.bad.example/", visitor.userId); await f.service.drain(); assert.equal(f.sends.length, 2);
-    // Expire the cooldown in Redis, simulating the hour boundary without sleeping.
+    // Expire the cooldown in Redis, simulating the two-minute boundary without sleeping.
     for (const key of await redis.keys("support:host:*")) await redis.del(key);
-    f.advance(3_600_001); await f.create().notify("https://bad.example/five", visitor.userId); await f.create().drain();
+    f.advance(120_001); await f.create().notify("https://bad.example/five", visitor.userId); await f.create().drain();
     assert.equal(f.sends.length, 3);
+  });
+  await t.test("a cooldown longer than the current one is trimmed rather than honoured in full", async () => {
+    const f = await fixture();
+    await f.service.notify("https://stale.example/", visitor.userId); await f.service.drain();
+    const key = (await redis.keys("support:host:*"))[0];
+    // An older build reserved hosts for the full job hour.
+    await redis.pexpire(key, 3_600_000);
+    await f.service.notify("https://stale.example/again", visitor.userId); await f.service.drain();
+    assert.equal(f.sends.length, 1);
+    const trimmed = await redis.pttl(key);
+    assert.ok(trimmed > 110_000 && trimmed <= 120_000);
+    // Keys with no expiry at all are bounded too.
+    await redis.persist(key);
+    await f.service.notify("https://stale.example/third", visitor.userId);
+    assert.ok(await redis.pttl(key) <= 120_000);
+    // A cooldown already inside the limit is left alone, not extended.
+    await redis.pexpire(key, 5_000);
+    await f.service.notify("https://stale.example/fourth", visitor.userId);
+    assert.ok(await redis.pttl(key) <= 5_000);
+    assert.equal(f.sends.length, 1);
   });
   await t.test("distinct SUPPORT/KILL replies retain fixed windows, deduplicate concurrently, and route the newest preceding account", async () => {
     const f = await fixture();

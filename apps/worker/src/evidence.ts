@@ -50,6 +50,8 @@ export type Evidence = {
   agent: AgentAssessment | null;
   /** Earlier flagged pages whose fingerprint is close to this one (pgvector). */
   similar: SimilarPage[];
+  /** Approved accounts that reported the host unsafe (community reports). */
+  communityUnsafeReports: number;
   flags: ReportFlag[];
 };
 
@@ -75,6 +77,7 @@ export function newEvidence(scanId: string, inputUrl: string): Evidence {
     findingCategories: [],
     agent: null,
     similar: [],
+    communityUnsafeReports: 0,
     flags: [],
   };
 }

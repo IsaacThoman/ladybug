@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { clothTopology } from "./blanketCloth.ts";
+import type { ClothShape } from "./blanketCloth.ts";
 
 /**
  * Procedural, chibi-proportioned ladybug.
@@ -18,12 +20,18 @@ const COLORS = {
   brass: "#d6a446",
   handle: "#6b3f2a",
   glass: "#dcf1ff",
+  blanket: "#8fb3ee",
+  blanketStitch: "#7397d8",
+  blanketStar: "#fff1c4",
+  cuff: "#fff7ea",
 };
 
 const SHELL = { rx: 0.31, ry: 0.25, rz: 0.35, center: new THREE.Vector3(0, 0.17, -0.05) };
 const HEAD = { r: 0.165, center: new THREE.Vector3(0, 0.21, 0.31) };
 /** Where the wing cases are hinged, at the front of the shell. */
 const HINGE = new THREE.Vector3(0, 0.31, 0.24);
+/** How far the body sinks when the bug lies down to sleep. */
+export const SLEEP_DROP = 0.035;
 
 type Side = 1 | -1;
 
@@ -36,6 +44,8 @@ export type LadybugRig = {
   /** The head's sphere, in the head's space. */
   skull: { center: THREE.Vector3; radius: number };
   eyes: THREE.Group[];
+  /** Closed, contented eyes (∪ ∪) for sleeping, one per eye, hidden at scale 0. */
+  lids: THREE.Group[];
   antennae: { pivot: THREE.Group; side: Side }[];
   elytra: { pivot: THREE.Group; side: Side }[];
   wings: { pivot: THREE.Group; side: Side }[];
@@ -56,8 +66,19 @@ export type LadybugRig = {
    * facing +z, handle hanging down and out to +x.
    */
   magnifier: THREE.Group;
+  /**
+   * A quilt that falls over the shell when the bug sleeps, leaving the head
+   * out. Its shape comes from a baked cloth simulation (see blanketCloth.ts)
+   * of falling onto `blanketShape`: write it into `blanketCloth`'s position
+   * attribute. Hidden until bedtime.
+   */
+  blanket: THREE.Group;
+  blanketCloth: THREE.BufferGeometry;
+  blanketShape: ClothShape;
   /** Glow the body a colour (alarm flash). amount 0 = off. */
   setTint: (color: THREE.ColorRepresentation, amount: number) => void;
+  /** Fade the blanket (1 = solid, drawn opaque so its folds sort cleanly). */
+  setBlanketOpacity: (opacity: number) => void;
   dispose: () => void;
 };
 
@@ -72,6 +93,58 @@ function shellSurface(u: THREE.Vector3) {
   const point = new THREE.Vector3(u.x * rx, u.y * ry, u.z * rz);
   const normal = new THREE.Vector3(u.x / rx, u.y / ry, u.z / rz).normalize();
   return { point, normal };
+}
+
+/** Soft blue quilt squares with running stitches, little stars and dots. */
+function createBlanketTexture() {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = COLORS.blanket;
+  ctx.fillRect(0, 0, size, size);
+
+  // Quilting: running stitches around each square.
+  ctx.strokeStyle = COLORS.blanketStitch;
+  ctx.lineWidth = 3;
+  ctx.setLineDash([9, 6]);
+  for (const at of [2, size / 2]) {
+    ctx.beginPath();
+    ctx.moveTo(at, 0);
+    ctx.lineTo(at, size);
+    ctx.moveTo(0, at);
+    ctx.lineTo(size, at);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  const star = (cx: number, cy: number, r: number) => {
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const radius = k % 2 === 0 ? r : r * 0.48;
+      const angle = -Math.PI / 2 + (k * Math.PI) / 5;
+      ctx.lineTo(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius);
+    }
+    ctx.closePath();
+    ctx.lineJoin = "round";
+    ctx.lineWidth = r * 0.35;
+    ctx.strokeStyle = COLORS.blanketStar;
+    ctx.stroke();
+    ctx.fill();
+  };
+  ctx.fillStyle = COLORS.blanketStar;
+  star(66, 64, 20);
+  star(194, 190, 20);
+  for (const [x, y, r] of [[190, 62, 6], [64, 192, 6], [160, 100, 4], [100, 160, 4], [30, 120, 3.5], [226, 136, 3.5]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
 }
 
 export function buildLadybug(): LadybugRig {
@@ -225,6 +298,26 @@ export function buildLadybug(): LadybugRig {
     eyes.push(eye);
   }
 
+  // Sleeping eyes: a cream ∪ where each eye was, sitting just proud of the head.
+  const lids: THREE.Group[] = [];
+  const lidGeo = geo(new THREE.TorusGeometry(0.045, 0.011, 8, 20, Math.PI));
+  for (const side of [1, -1] as const) {
+    const u = dir(side * 0.42, 0.18, 0.88);
+    const lid = new THREE.Group();
+    lid.position.copy(onHead(u, 0.004));
+    lid.quaternion.setFromUnitVectors(Z_AXIS, u);
+    const arc = new THREE.Mesh(lidGeo, creamMat);
+    // The torus arc spans the top half (∩); turned over it's a contented ∪.
+    arc.rotation.z = Math.PI;
+    arc.position.y = 0.012;
+    arc.scale.set(1, 0.8, 0.6);
+    lid.add(arc);
+    lid.scale.setScalar(0);
+    lid.visible = false;
+    head.add(lid);
+    lids.push(lid);
+  }
+
   // Antennae.
   const antennae: LadybugRig["antennae"] = [];
   for (const side of [1, -1] as const) {
@@ -338,17 +431,80 @@ export function buildLadybug(): LadybugRig {
     }
   });
 
+  // Bedtime: a starry quilt with a cream cuff.
+  const blanketTexture = createBlanketTexture();
+  blanketTexture.anisotropy = 4;
+  const blanketMat = mat(
+    new THREE.MeshPhysicalMaterial({
+      map: blanketTexture,
+      roughness: 0.85,
+      sheen: 1,
+      sheenColor: new THREE.Color("#ffffff"),
+      sheenRoughness: 0.5,
+      side: THREE.DoubleSide,
+    }),
+  );
+  const cuffMat = mat(
+    new THREE.MeshPhysicalMaterial({
+      color: COLORS.cuff,
+      side: THREE.DoubleSide,
+      roughness: 0.8,
+      sheen: 1,
+      sheenColor: new THREE.Color("#ffffff"),
+      sheenRoughness: 0.4,
+    }),
+  );
+  // The sheet's positions are filled in from the baked fall; the front rows
+  // are the cream cuff.
+  const cloth = clothTopology();
+  const blanketCloth = geo(new THREE.BufferGeometry());
+  blanketCloth.setAttribute(
+    "position",
+    new THREE.BufferAttribute(new Float32Array(cloth.count * 3), 3).setUsage(THREE.DynamicDrawUsage),
+  );
+  blanketCloth.setAttribute("uv", new THREE.BufferAttribute(cloth.uvs, 2));
+  blanketCloth.setIndex([...cloth.quilt, ...cloth.cuff]);
+  blanketCloth.addGroup(0, cloth.quilt.length, 0);
+  blanketCloth.addGroup(cloth.quilt.length, cloth.cuff.length, 1);
+  const blanket = new THREE.Group();
+  const sheet = new THREE.Mesh(blanketCloth, [blanketMat, cuffMat]);
+  // It moves every frame of its fall, so its bounds are never up to date.
+  sheet.frustumCulled = false;
+  blanket.add(sheet);
+  blanket.visible = false;
+  body.add(blanket);
+  // What it lands on, in body space with the bug lying down and its head drooped.
+  const blanketShape: ClothShape = {
+    groundY: SLEEP_DROP,
+    colliders: [
+      { cx: SHELL.center.x, cy: SHELL.center.y, cz: SHELL.center.z, rx: SHELL.rx, ry: SHELL.ry, rz: SHELL.rz },
+      { cx: 0, cy: 0.22, cz: 0.2, rx: 0.24, ry: 0.13, rz: 0.13 },
+      { cx: 0, cy: HEAD.center.y - 0.012, cz: HEAD.center.z, rx: HEAD.r, ry: HEAD.r, rz: HEAD.r },
+    ],
+  };
+
+
   return {
     root,
     body,
     head,
     skull: { center: headCenter.clone(), radius: HEAD.r },
     eyes,
+    lids,
     antennae,
     elytra,
     wings,
     legs,
     magnifier,
+    blanket,
+    blanketCloth,
+    blanketShape,
+    setBlanketOpacity: (opacity) => {
+      for (const m of [blanketMat, cuffMat]) {
+        m.opacity = opacity;
+        m.transparent = opacity < 1;
+      }
+    },
     setTint: (color, amount) => {
       for (const m of [shellMat, darkMat, creamMat]) {
         m.emissive.set(color);
@@ -358,6 +514,7 @@ export function buildLadybug(): LadybugRig {
     dispose: () => {
       geometries.forEach((g) => g.dispose());
       materials.forEach((m) => m.dispose());
+      blanketTexture.dispose();
     },
   };
 }

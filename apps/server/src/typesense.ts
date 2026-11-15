@@ -37,6 +37,7 @@ export type SearchParams = {
   filter_by?: string;
   sort_by?: string;
   facet_by?: string;
+  max_facet_values?: number;
   page?: number;
   per_page?: number;
 };

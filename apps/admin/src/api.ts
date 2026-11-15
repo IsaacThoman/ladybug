@@ -1,6 +1,7 @@
 import type {
   AdminAccountsResponse,
   AdminModelSettings,
+  AdminReportsResponse,
   AdminSandboxesResponse,
   AdminSession,
   AdminSummary,
@@ -87,6 +88,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ verdict }),
     }),
+
+  /** Hosts with community reports, newest report first. */
+  reports: (limit: number) => request<AdminReportsResponse>(`/api/admin/reports${query({ limit })}`),
 
   deleteUrl: (id: string) => request<void>(`/api/admin/urls/${id}`, { method: "DELETE" }),
 

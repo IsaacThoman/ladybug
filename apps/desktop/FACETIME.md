@@ -172,7 +172,7 @@ SHUTDOWN: Shut down all connected computers on this account. Unsaved work may be
 
 URLs have credentials and fragments removed. Admin checks and manual scans alone
 do not message anyone. Redis reserves one notification per normalized hostname
-per account per hour, including concurrent visits and server restarts. Subdomains
+per account every two minutes, including concurrent visits and server restarts. Subdomains
 have separate limits. The durable outbox retries transient POST failures up to five
 times with the same idempotency key. Accepted pending sends retain their returned message ID
 and are checked through GET without creating another send. Only `state: sent`

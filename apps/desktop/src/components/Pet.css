@@ -421,3 +421,71 @@
     transition: none;
   }
 }
+
+/* Snoring: a "z" floats up from the sleeping bug with each breath out. */
+.pet-snore {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease-out;
+}
+
+.pet:not([data-sleep="asleep"]) .pet-snore {
+  opacity: 0;
+}
+
+.pet-z {
+  position: absolute;
+  translate: -50% -100%;
+  color: #4f74d6;
+  font: 900 13px / 1 ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  text-shadow: 0 1px 3px rgba(30, 40, 90, 0.3);
+  user-select: none;
+  animation: pet-z-float 3s ease-out calc(var(--i) * 0.7s) both;
+}
+
+@keyframes pet-z-float {
+  0% {
+    opacity: 0;
+    transform: translate(0, 4px) scale(0.3) rotate(0deg);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc(var(--drift) * 0.15), -10px) scale(0.8) rotate(calc(var(--tilt) * 0.3));
+  }
+  50% {
+    transform: translate(calc(var(--drift) * 0.55), -34px) scale(1.25) rotate(calc(var(--tilt) * -0.5));
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift), -62px) scale(1.7) rotate(var(--tilt));
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .pet-z {
+    color: #b4c8ff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-z {
+    animation-name: pet-z-fade;
+  }
+
+  @keyframes pet-z-fade {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    30%,
+    70% {
+      opacity: 1;
+    }
+  }
+}

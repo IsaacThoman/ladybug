@@ -49,8 +49,22 @@ const BUBBLE_GAP = 14;
 const BUBBLE_MARGIN = 8;
 /** Re-enable the bubble's buttons if the browser hasn't acted on a choice by then. */
 const CHOICE_TIMEOUT_MS = 6000;
+/**
+ * After waking, or once nothing needs it any more, the bug stays up this
+ * long before heading to bed.
+ */
+const STAY_AWAKE_MS = 60_000;
+/** Its bed: this far in from the right edge of the work area. */
+const BED_INSET = 36;
+const DROWSY_SPEED = WALK_SPEED * 0.5;
+/** Sitting up a moment after waking, before wandering off. */
+const WAKE_PAUSE_MS = 1500;
+/** Flagged hosts remembered, so being on one keeps the bug awake. */
+const FLAGGED_HOSTS_LIMIT = 100;
 
 type Mode = "idle" | "walking" | "airborne" | "dragging";
+/** Drowsy: shuffling off to bed. Asleep: in bed under its blanket. */
+type Sleep = "awake" | "drowsy" | "asleep";
 
 type PhysicsState = {
   x: number;
@@ -95,10 +109,40 @@ type ScanState =
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 
-/** Adds to a bounded set of recently seen scan ids. */
-function remember(set: Set<string>, id: string) {
+/** Adds to a bounded set of recently seen ids. */
+function remember(set: Set<string>, id: string, limit = SEEN_SCANS_LIMIT) {
   set.add(id);
-  if (set.size > SEEN_SCANS_LIMIT) set.delete(set.values().next().value!);
+  if (set.size > limit) set.delete(set.values().next().value!);
+}
+
+/** A URL's host as the server reports it: lowercase, no brackets or trailing dot. */
+function hostOf(url: string | null | undefined) {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** How many letters float up with each snore. */
+const SNORE_LETTERS = 3;
+
+/** Floats a trail of "z"s up from a sleeping bug, from `at` in the layer's px. They grow as they rise. */
+function snoreZs(layer: HTMLElement, at: { x: number; y: number }, heading: 1 | -1) {
+  for (let i = 0; i < SNORE_LETTERS; i++) {
+    const z = document.createElement("span");
+    z.className = "pet-z";
+    z.textContent = "z";
+    z.style.left = `${at.x}px`;
+    z.style.top = `${at.y}px`;
+    // Each letter follows the last, drifting off the way the bug faces.
+    z.style.setProperty("--i", String(i));
+    z.style.setProperty("--drift", `${heading * (10 + i * 12)}px`);
+    z.style.setProperty("--tilt", `${heading * -(8 + i * 6)}deg`);
+    z.addEventListener("animationend", () => z.remove(), { once: true });
+    layer.append(z);
+  }
 }
 
 function moodFor(scan: ScanState, dropHover: boolean, blocking: boolean, inspecting: boolean): LadybugMood {
@@ -255,6 +299,15 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   /** Whether the page in the browser's active tab is being checked, from the server. */
   const [focus, setFocus] = useState<PetFocus | null>(null);
   const { brain, showActivity } = useFlyBrain({ walkSpeed: WALK_SPEED, hopVelocity: HOP_VELOCITY, jumpVelocity: ALARM_JUMP_VELOCITY });
+  /** Hosts the server flagged as unsafe on a visit, or blocked. Being on one keeps the bug up. */
+  const [flaggedHosts, setFlaggedHosts] = useState<ReadonlySet<string>>(() => new Set());
+  const [sleep, setSleep] = useState<Sleep>("awake");
+  const sleepRef = useRef<Sleep>("awake");
+  /** performance.now() until which the bug stays up, set when the loop starts. */
+  const awakeUntilRef = useRef(0);
+  /** Something needs the bug awake right now. */
+  const restlessRef = useRef(false);
+  const snoreLayerRef = useRef<HTMLDivElement>(null);
 
   const warning = warnings.at(-1) ?? null;
   // A support call has the bug's attention; blocked pages wait until it's over.
@@ -264,6 +317,19 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   const inspecting = Boolean(focus?.investigating) && !dropHover && warning === null && scan.phase !== "done";
   const inspectingRef = useRef(false);
   const mood = moodFor(scan, dropHover, warning !== null, inspecting);
+  const focusHost = hostOf(focus?.url);
+  // No sleeping on the job: while the user is on a flagged site, a page is
+  // being checked or blocked, there's a call, or the user is handling the bug.
+  const onFlaggedSite = warnings.length > 0 || (focusHost !== null && flaggedHosts.has(focusHost));
+  const restless =
+    onFlaggedSite ||
+    scan.phase !== "idle" ||
+    Boolean(focus?.investigating) ||
+    call.open ||
+    callBusy ||
+    dropHover ||
+    dragging ||
+    menu !== null;
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -279,6 +345,40 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   }, [showBubble, call.open]);
 
   useEffect(() => brain.setLinkOver(dropHover), [brain, dropHover]);
+  useEffect(() => {
+    restlessRef.current = restless;
+  }, [restless]);
+
+  const settle = (next: Sleep) => {
+    sleepRef.current = next;
+    setSleep(next);
+  };
+
+  /** Something disturbed the bug: wake it if it's dozing, and keep it up a while. */
+  const wake = () => {
+    const now = performance.now();
+    awakeUntilRef.current = now + STAY_AWAKE_MS;
+    if (sleepRef.current === "awake") return;
+    const wasAsleep = sleepRef.current === "asleep";
+    settle("awake");
+    // Blinks and stretches before wandering off.
+    const s = stateRef.current;
+    if (wasAsleep && s?.mode === "idle") s.idleUntil = Math.max(s.idleUntil, now + WAKE_PAUSE_MS);
+  };
+
+  // For the animation loop, which is set up once.
+  const wakeFromLoop = useEffectEvent(() => wake());
+  const settleFromLoop = useEffectEvent((next: Sleep) => settle(next));
+
+  const flagHosts = (hosts: string[]) => {
+    if (hosts.length === 0) return;
+    setFlaggedHosts((prev) => {
+      if (hosts.every((host) => prev.has(host))) return prev;
+      const next = new Set(prev);
+      for (const host of hosts) remember(next, host, FLAGGED_HOSTS_LIMIT);
+      return next;
+    });
+  };
 
   // Movement bounds are the display work area or the development window.
   const getBounds = (): Bounds => {
@@ -309,6 +409,8 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       };
     }
 
+    awakeUntilRef.current = performance.now() + STAY_AWAKE_MS;
+
     const ladybug = new LadybugRenderer(canvasRef.current!, {
       width: CANVAS_WIDTH,
       height: CANVAS_HEIGHT,
@@ -330,15 +432,39 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       const mood = moodRef.current;
       const { minX, maxX, minY, groundY } = getBounds();
       s.targetX = Math.min(Math.max(s.targetX, minX), maxX);
+
+      // Bedtime, once nothing has needed the bug for a while. Anything that
+      // needs it wakes it straight back up.
+      if (restlessRef.current) {
+        wakeFromLoop();
+      } else if (
+        sleepRef.current === "awake" &&
+        now >= awakeUntilRef.current &&
+        (s.mode === "idle" || s.mode === "walking") &&
+        !menuOpenRef.current
+      ) {
+        settleFromLoop("drowsy");
+        s.mode = "idle";
+        s.backing = false;
+        s.idleUntil = now;
+      }
+      const sleep = sleepRef.current;
+      const bedX = Math.max(minX, maxX - BED_INSET);
+
       // Nervous bugs potter about nearby instead of crossing the screen.
       const pottering = mood === "nervous";
-      const speed = s.backing ? WALK_SPEED * 0.6 : pottering ? WALK_SPEED * 0.35 : WALK_SPEED;
+      const speed =
+        sleep === "drowsy" ? DROWSY_SPEED
+        : s.backing ? WALK_SPEED * 0.6
+        : pottering ? WALK_SPEED * 0.35
+        : WALK_SPEED;
 
       // Searching with the magnifying glass, it stands still and faces forward.
       const holding = mood === "expectant" || mood === "sniffing" || holdRef.current || inspectingRef.current;
       // With the fly brain on, it decides where to go instead of wandering at
-      // random, but only when nothing else is keeping the bug busy.
-      const free = (s.mode === "idle" || s.mode === "walking") && !menuOpenRef.current && !holding && !pottering && !s.backing && now >= s.idleUntil;
+      // random, but only when nothing else is keeping the bug busy. Bedtime
+      // is the pet's own: the brain doesn't walk it to bed, and rests while it sleeps.
+      const free = sleep === "awake" && (s.mode === "idle" || s.mode === "walking") && !menuOpenRef.current && !holding && !pottering && !s.backing && now >= s.idleUntil;
       const act = brain.frame({
         now,
         dt,
@@ -346,16 +472,24 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
         bounds: { minX, maxX },
         held: dragRef.current !== null,
         free,
+        asleep: sleep === "asleep",
       });
-      if (act && free) followBrain(s, act, dt, { minX, maxX, minY, groundY }, ladybug);
+      if (act && free) {
+        // A fright keeps it up.
+        if (act.jump) wakeFromLoop();
+        followBrain(s, act, dt, { minX, maxX, minY, groundY }, ladybug);
+      }
       else if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
           // Hold still while a link is dragged over it, while it's warning
           // about a page, or while it searches with the magnifying glass.
-          if (holding) s.idleUntil = Math.max(s.idleUntil, now + 300);
+          if (holding || sleep === "asleep") s.idleUntil = Math.max(s.idleUntil, now + 300);
           if (now >= s.idleUntil) {
-            if (s.backing) {
+            if (sleep === "drowsy") {
+              s.targetX = bedX;
+              s.heading = bedX >= s.x ? 1 : -1;
+            } else if (s.backing) {
               s.targetX = s.x - s.heading * randomBetween(110, 180);
             } else if (pottering) {
               s.targetX = s.x + (Math.random() < 0.5 ? -1 : 1) * randomBetween(25, 140);
@@ -376,12 +510,18 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
             s.idleUntil = now + 300;
             break;
           }
+          if (sleep === "drowsy") s.targetX = bedX;
           const dx = s.targetX - s.x;
           s.x += Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
           if (Math.abs(dx) < 1) {
             s.mode = "idle";
             s.backing = false;
             s.idleUntil = now + (pottering ? randomBetween(500, 1600) : randomBetween(1500, 6000));
+            if (sleep === "drowsy") {
+              // Tucked up in bed, facing out across the screen.
+              s.heading = -1;
+              settleFromLoop("asleep");
+            }
           }
           break;
         }
@@ -441,7 +581,12 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
       // Grooming only while the brain has it standing still.
       const groom = act && free && s.mode === "idle" ? act.groom : undefined;
-      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current, wings: act?.wings, groom }, dt);
+      ladybug.render(
+        { mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current, sleep: sleep === "awake" ? undefined : sleep, wings: act?.wings, groom },
+        dt,
+      );
+      const snore = ladybug.takeSnore();
+      if (snore && snoreLayerRef.current) snoreZs(snoreLayerRef.current, snore, s.heading);
       frame = requestAnimationFrame(tick);
     };
 
@@ -614,6 +759,8 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
   const onAlert = useEffectEvent((alert: PetAlert) => {
     const { level, scanId } = alert;
     const ladybug = ladybugRef.current;
+    wake();
+    if (level === "danger") flagHosts([alert.host]);
 
     if (level === "info") {
       // "Checking it…" (or "couldn't finish"): follow the scan if it's new to us.
@@ -656,6 +803,8 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
     setAnswer((prev) => (prev && next.some((w) => w.id === prev.id) ? prev : null));
     const fresh = next.filter((w) => !seenWarningsRef.current.has(w.id));
     if (fresh.length === 0) return;
+    wake();
+    flagHosts(fresh.map((w) => w.host.toLowerCase()));
     for (const w of fresh) remember(seenWarningsRef.current, w.id);
     const ladybug = ladybugRef.current;
     ladybug?.startle(3);
@@ -698,6 +847,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    wake();
     const s = stateRef.current!;
     e.currentTarget.setPointerCapture(e.pointerId);
     window.ladybug.setPetHeld(true);
@@ -782,6 +932,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
 
   const onContextMenu = (e: ReactMouseEvent) => {
     e.preventDefault();
+    wake();
     closeMenu();
     window.ladybug.showMenu();
   };
@@ -880,7 +1031,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       ref={petRef}
       role="button"
       tabIndex={0}
-      aria-label="Computerbug menu"
+      aria-label={sleep === "asleep" ? "Computerbug menu (asleep)" : "Computerbug menu"}
       aria-haspopup="menu"
       aria-expanded={Boolean(menu)}
       onKeyDown={(e) => {
@@ -888,6 +1039,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
         if (e.key === "Escape") closeMenu();
       }}
       className={dragging ? "pet dragging" : "pet"}
+      data-sleep={sleep}
       style={{ width: PET_WIDTH, height: PET_HEIGHT }}
       data-overlay-interactive
       onPointerDown={onPointerDown}
@@ -911,6 +1063,13 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
           left: (PET_WIDTH - CANVAS_WIDTH) / 2,
           top: PET_HEIGHT + GROUND_PX - CANVAS_HEIGHT,
         }}
+      />
+      {/* Snores: each "z" floats up from the canvas point the renderer gives. */}
+      <div
+        ref={snoreLayerRef}
+        className="pet-snore"
+        aria-hidden
+        style={{ left: (PET_WIDTH - CANVAS_WIDTH) / 2, top: PET_HEIGHT + GROUND_PX - CANVAS_HEIGHT }}
       />
     </div>
     </>

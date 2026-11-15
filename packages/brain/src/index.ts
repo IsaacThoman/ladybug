@@ -5,7 +5,7 @@
 
 export { createBrain } from "./runtime.ts";
 export { RESTING_SENSES } from "./types.ts";
-export type { Brain, BrainCommand, BrainRequest, BrainResponse, BrainSenses, BrainState, BrainStats } from "./types.ts";
+export type { Brain, BrainCommand, BrainRequest, BrainResponse, BrainSenses, BrainState, BrainStats, Eye, EyeMap } from "./types.ts";
 export {
   CATEGORY_COLUMNS,
   CATEGORY_NAMES,

@@ -30,7 +30,9 @@ export type InputSpec = {
   balance?: string;
 };
 
-export type SenseSpec = InputSpec & { sense: keyof BrainSenses };
+/** The senses that are one intensity each; `light` is a picture, handled apart. */
+export type ScalarSense = Exclude<keyof BrainSenses, "light">;
+export type SenseSpec = InputSpec & { sense: ScalarSense };
 
 export type ReadoutSpec = {
   /** Name in `stats.rates`. */
@@ -165,7 +167,7 @@ export function decode(rates: Readonly<Record<string, number>>): BrainCommand {
 }
 
 /** Each sense's intensity, 0..1 (grounded as 0 or 1). */
-export function intensity(senses: BrainSenses, sense: keyof BrainSenses): number {
+export function intensity(senses: BrainSenses, sense: ScalarSense): number {
   const value = senses[sense];
   if (typeof value === "boolean") return value ? 1 : 0;
   return clamp(value, 0, 1);

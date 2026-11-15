@@ -19,6 +19,7 @@ import { PetObserver } from "../src/pet.ts";
 import { FlyBrain } from "../src/runtime.ts";
 import { RESTING_SENSES } from "../src/types.ts";
 import type { BrainCommand, BrainSenses } from "../src/types.ts";
+import type { ScalarSense } from "../src/io.ts";
 
 const { values } = parseArgs({
   options: {
@@ -40,7 +41,7 @@ const fixed = (n: number, digits = 2) => (n >= 0 ? " " : "") + n.toFixed(digits)
 const pad = (s: string, n: number) => s.padEnd(n);
 
 /** Every combination the matrix and the seizure check use. */
-const FULL: { [K in keyof BrainSenses]: BrainSenses[K] } = {
+const FULL: { [K in ScalarSense]: BrainSenses[K] } = {
   loomLeft: 1,
   loomRight: 1,
   touch: 1,
@@ -50,9 +51,9 @@ const FULL: { [K in keyof BrainSenses]: BrainSenses[K] } = {
   sweet: 1,
   grounded: false,
 };
-const label = (key: keyof BrainSenses) => (key === "grounded" ? "airborne" : key);
-const apply = (keys: readonly (keyof BrainSenses)[]): BrainSenses => {
-  const senses = { ...RESTING_SENSES } as Record<string, number | boolean>;
+const label = (key: ScalarSense) => (key === "grounded" ? "airborne" : key);
+const apply = (keys: readonly (ScalarSense)[]): BrainSenses => {
+  const senses: Record<ScalarSense, number | boolean> = { ...RESTING_SENSES };
   for (const key of keys) senses[key] = FULL[key];
   return senses as BrainSenses;
 };
@@ -63,7 +64,7 @@ console.log(`Fly brain report: ${connectome.neurons.toLocaleString("en-US")} neu
 console.log("\n(a) Response matrix. 2 s of rest, then 1 s of the sense at full strength (or nothing, for rest).");
 console.log("    Each cell: mean / peak over that second, and ms from onset to the peak (- when it never rises above 0.05).");
 console.log(`    ${pad("", 10)}${COMMANDS.map((c) => pad(c, 20)).join("")}`);
-const cases: [string, BrainSenses][] = [["rest", RESTING_SENSES], ...(Object.keys(FULL) as (keyof BrainSenses)[]).map((k) => [label(k), apply([k])] as [string, BrainSenses])];
+const cases: [string, BrainSenses][] = [["rest", RESTING_SENSES], ...(Object.keys(FULL) as (ScalarSense)[]).map((k) => [label(k), apply([k])] as [string, BrainSenses])];
 const rateLines: string[] = [];
 for (const [name, senses] of cases) {
   const b = brain();
@@ -130,7 +131,7 @@ const windowRate = (b: FlyBrain, senses: BrainSenses) => {
   console.log(`\n(b) Seizure recovery. The resting band: total spikes per second in ${WINDOW} ms windows over 2 minutes at rest`);
   console.log(`    ran ${band[0].toLocaleString("en-US")} to ${high.toLocaleString("en-US")} (median ${band[band.length >> 1].toLocaleString("en-US")}).`);
   console.log(`    Each case: 1 s of rest, 2 s at full strength, then rest; spikes per second in the ${WINDOW} ms windows after it.`);
-  const keys = Object.keys(FULL) as (keyof BrainSenses)[];
+  const keys = Object.keys(FULL) as (ScalarSense)[];
   const combos = [...keys.map((k) => [k]), ...keys.flatMap((a, i) => keys.slice(i + 1).map((k) => [a, k])), keys];
   let passed = 0;
   for (const combo of combos) {
@@ -193,7 +194,7 @@ const windowRate = (b: FlyBrain, senses: BrainSenses) => {
     ["the pointer resting on it (touch 0.4)", { ...RESTING_SENSES, touch: 0.4 }],
     ["a full looming pulse every second", RESTING_SENSES],
     ["held and dragged (touch 1, wind 0.5, airborne)", { ...RESTING_SENSES, touch: 1, wind: 0.5, grounded: false }],
-    ["everything at once at full strength", apply(Object.keys(FULL) as (keyof BrainSenses)[])],
+    ["everything at once at full strength", apply(Object.keys(FULL) as (ScalarSense)[])],
   ];
   for (const [name, senses] of rows) {
     const seconds = name.startsWith("a full looming") ? loomEverySecond() : cost(senses);

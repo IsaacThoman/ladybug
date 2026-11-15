@@ -23,7 +23,24 @@ export type BrainSenses = {
   sweet: number;
   /** Standing on its feet, rather than held or in the air. */
   grounded: boolean;
+  /**
+   * What the eyes see: how bright each facet's patch of the world is, from 0
+   * (black) to 1 (white), in the order of the brain's `eyes`. Leave it out and
+   * the eyes are shut: the visual system gets no input.
+   */
+  light?: { left: ArrayLike<number>; right: ArrayLike<number> };
 };
+
+/**
+ * One compound eye as the model has it: a facet for every column of that
+ * side's optic lobe. `directions` holds a unit vector per facet (x, y, z, one
+ * after another), the way the facet looks out in the fly's head frame: x
+ * toward the fly's right, y straight ahead, z up.
+ */
+export type Eye = { directions: Float32Array };
+
+/** Both eyes, and how wide a cone each facet takes in (its half-angle, radians). */
+export type EyeMap = { left: Eye; right: Eye; acceptance: number };
 
 /**
  * What the brain wants the body to do, read from the descending and motor
@@ -55,7 +72,11 @@ export type BrainStats = {
   spikes: number;
   /** Neurons with any activity at the end of the tick. */
   active: number;
-  /** Smoothed firing rate (Hz) of each group of neurons the brain reads from. */
+  /**
+   * Smoothed firing rate (Hz) of each group of neurons the brain reads from.
+   * Groups named `vision.<stage>` follow what the eyes see inward, stage by
+   * stage, for display; they don't feed any command.
+   */
   rates: Record<string, number>;
 };
 
@@ -65,6 +86,8 @@ export interface Brain {
   /** Neurons and connected pairs in the loaded connectome. */
   readonly neurons: number;
   readonly connections: number;
+  /** Where each facet of the eyes looks, or null when this brain has no eyes to drive. */
+  readonly eyes: EyeMap | null;
   /** Advances the simulation by `dtMs` of fly time under these senses. */
   tick(dtMs: number, senses: BrainSenses): BrainState;
 }
@@ -77,7 +100,7 @@ export type BrainRequest =
 
 /** Messages from the worker. Every "tick" gets exactly one "state". */
 export type BrainResponse =
-  | { type: "ready"; neurons: number; connections: number }
+  | { type: "ready"; neurons: number; connections: number; eyes: EyeMap | null }
   | { type: "state"; state: BrainState }
   | { type: "error"; message: string };
 

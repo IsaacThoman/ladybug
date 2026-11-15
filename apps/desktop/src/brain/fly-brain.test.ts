@@ -43,7 +43,7 @@ test("each frame tells the brain what the bug feels and returns what it wants", 
   const { client, brain, posted, frame, reply, advance } = setup();
   client.start();
   await flush();
-  reply({ type: "ready", neurons: 1, connections: 0 });
+  reply({ type: "ready", neurons: 1, connections: 0, eyes: null });
 
   brain.setHovered(true);
   brain.feed();
@@ -68,7 +68,7 @@ test("a berry in reach is tasted, and eaten once the brain wants to feed", async
   const { client, brain, posted, frame, reply, advance } = setup();
   client.start();
   await flush();
-  reply({ type: "ready", neurons: 1, connections: 0 });
+  reply({ type: "ready", neurons: 1, connections: 0, eyes: null });
 
   brain.frame(frame());
   assert.equal(ticks(posted)[0].senses.sweet, 0);
@@ -92,7 +92,7 @@ test("while the pet sleeps the brain rests, and picks up again when it wakes", a
   const { client, brain, posted, frame, reply, advance } = setup();
   client.start();
   await flush();
-  reply({ type: "ready", neurons: 1, connections: 0 });
+  reply({ type: "ready", neurons: 1, connections: 0, eyes: null });
   brain.frame(frame());
   advance(16);
   reply({ type: "state", state: stateWith({ walk: 1 }) });

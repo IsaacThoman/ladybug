@@ -43,7 +43,7 @@ async function running(options?: Parameters<typeof setup>[0]) {
   env.client.start();
   await flush();
   const worker = env.workers[0];
-  worker.reply({ type: "ready", neurons: 166_700, connections: 50 });
+  worker.reply({ type: "ready", neurons: 166_700, connections: 50, eyes: null });
   return { ...env, worker };
 }
 
@@ -64,7 +64,7 @@ test("starting loads the connectome and hands it to the worker without copying",
   assert.equal((init.request as { data: ArrayBuffer }).data, data);
   assert.deepEqual(init.transfer, [data]);
 
-  workers[0].reply({ type: "ready", neurons: 166_700, connections: 50 });
+  workers[0].reply({ type: "ready", neurons: 166_700, connections: 50, eyes: null });
   assert.equal(client.status, "running");
   assert.equal(client.neurons, 166_700);
   assert.equal(client.connections, 50);

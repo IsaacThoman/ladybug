@@ -10,7 +10,7 @@ import type { OperatingPoint } from "./params.ts";
 import { Simulation } from "./sim.ts";
 import { InternalState, INTERNAL_STATE } from "./state.ts";
 import type { InternalStateParameters } from "./state.ts";
-import type { Brain, BrainSenses, BrainState } from "./types.ts";
+import type { Brain, BrainSenses, BrainState, EyeMap } from "./types.ts";
 
 export type BrainOptions = {
   /** Seeds the Poisson inputs and the internal state. Default 1. */
@@ -31,6 +31,8 @@ export const MAX_TICK_MS = 1000;
 export class FlyBrain implements Brain {
   readonly neurons: number;
   readonly connections: number;
+  /** Not wired up yet: `light` is ignored. */
+  readonly eyes: EyeMap | null = null;
   readonly sim: Simulation;
   readonly wiring: Wiring;
   readonly state: InternalState;

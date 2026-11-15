@@ -33,7 +33,10 @@ function seeing(seed = 1) {
   return { brain, show };
 }
 
-test("with the eyes shut the brain is exactly what it was before it had eyes", { skip }, () => {
+test("with the eyes shut the brain is what it was before it had eyes, wherever no columnar cell fires", { skip }, () => {
+  // The graded columnar synapses are there with the eyes shut too. These senses
+  // never make a columnar cell fire; looming on both sides at once, or
+  // everything at full strength, can, and then the runs part (see the README).
   // Spikes per tick under a fixed sequence of senses, seed 1, hashed: measured
   // on the commit before the eyes were added (b373345).
   const b = new FlyBrain(connectome!, { seed: 1 });

@@ -154,7 +154,7 @@ No per-column table of measured optical axes is published for these optic lobes 
 
 ### Seeing
 
-`src/vision.ts`. With `light` given, each eye's luminances drive its lamina, and everything after that is the connectome. With it left out the eyes are shut: no input, and the brain is spike for spike what it was before it had eyes (a test checks a fingerprint of 5 s of spikes under several senses against the commit before).
+`src/vision.ts`. With `light` given, each eye's luminances drive its lamina, and everything after that is the connectome. With it left out the eyes are shut: no input, and the brain is almost always spike for spike what it was before it had eyes. Not always: the graded columnar synapses apply whether or not there is light, and a columnar cell can be made to fire without it by the hand-wired looming input, which reaches a few of them from behind. At rest and under each sense alone at full strength (2 s each, seeds 1 to 3) every tick has the same spikes as with `graded` at 1. With every sense at full strength at once the runs part within the first second (0.01% more spikes over 2 s, and the mean commands differ by up to 0.05, the size of the difference between two seeds), and certain sequences do it too: after rest, flight and a loom on the left, a TmY17 of the right eye fires once under a loom on the right. A test checks a fingerprint of 5 s of spikes under several senses against the commit before; it covers the common cases, not that one.
 
 **The input stage** stands in for the photoreceptors and their synapses onto the lamina (`RETINA`), per facet:
 

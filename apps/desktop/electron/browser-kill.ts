@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 
-/** Fixed process names only; scoped to the OS user running Ladybug. */
+/** Fixed process names only; scoped to the OS user running Computerbug. */
 export async function killChrome(options: {
   platform?: NodeJS.Platform;
   uid?: () => number;

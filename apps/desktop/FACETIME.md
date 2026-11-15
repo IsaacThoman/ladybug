@@ -165,16 +165,16 @@ Browser visits to known unsafe sites and analyses finding unsafe sites queue:
 URLs have credentials and fragments removed. Admin checks and manual scans alone
 do not message anyone. Redis reserves one notification per normalized hostname
 per account per hour, including concurrent visits and server restarts. Subdomains
-have separate limits. The durable outbox retries transient POST failures up to five times with
-the same idempotency key. Accepted pending sends retain their returned message ID
+have separate limits. The durable outbox retries transient POST failures up to five
+times with the same idempotency key. Accepted pending sends retain their returned message ID
 and are checked through GET without creating another send. Only `state: sent`
 opens a support window; pending/unknown states do not establish delivery.
 Messaging failures do not interrupt site checks or pet alerts.
 
 A confirmed send opens a 30-minute support window scoped to the project, line,
 and emergency contact, retaining the originating account. Only inbound `received`
-text equal to SUPPORT or KILL (ignoring case and surrounding whitespace) is eligible. Both the message's `created_at`
-and the polling receipt must fall inside the window. IDs are deduplicated in
+text equal to SUPPORT or KILL (ignoring case and surrounding whitespace) is eligible.
+Both the message's `created_at` and the polling receipt must fall inside the window. IDs are deduplicated in
 Redis atomically; distinct replies keep the original window open without extending
 its expiry. SUPPORT can restart an ended call; replies during an active or ending
 call are ignored without queuing. Messages predating server startup are ignored.
@@ -197,13 +197,14 @@ Expired events are discarded by desktops. Older desktops ignore `browser-kill`.
 KILL runs `/usr/bin/pkill` without a shell, using `-KILL`, the current OS UID,
 and an exact process-name match: `chrome` on Linux, `Google Chrome` on macOS.
 Only stable Google Chrome is targeted; all its windows for that OS user close,
-possibly losing unsaved work. Ladybug and its call continue running. Missing Chrome
+possibly losing unsaved work. Computerbug and its call continue running. Missing Chrome
 is a successful no-op, and other platforms do nothing. No confirmation or reply
 message is sent.
 
-A desktop must already have been connected when the reply was recorded. Offline requests are discarded and
-reconnects have no backlog. Busy calls ignore additional SUPPORT requests. Keep one server
-process per call line, as required by the existing call lifecycle.
+A desktop must already have been connected when the reply was recorded. Offline
+requests are discarded and reconnects have no backlog. Busy calls ignore additional
+SUPPORT requests. Keep one server process per call line, as required by the existing
+call lifecycle.
 
 Clicking the ladybug opens a menu above it with **Request help**, **Scan clipboard
 URL**, and **View report** when available. Arrow keys and Tab move through items;
@@ -228,7 +229,7 @@ visit a known unsafe URL, verify the message, reply SUPPORT, and confirm exactly
 one desktop starts one call after polling. End the call, reply SUPPORT again
 within the same window, and confirm a new call starts. On Linux and macOS, send
 KILL during a support call and after navigating away; confirm Chrome closes on
-all connected computers for that account while Ladybug and the call continue.
+all connected computers for that account while Computerbug and the call continue.
 Check duplicate/expired replies,
 wrong line or last-four digits, outbound texts, busy calls and offline/reconnected
 desktops. Automated capture tests cover selection, call/frame authorization, cancellation,

@@ -12,31 +12,28 @@ Provider credentials belong only in `apps/server/.env`:
 - `CHERT_API_KEY` with `facetime:read` and `facetime:write` access.
 - `CHERT_PROJECT_ID` and its assigned `CHERT_LINE_ID`.
 - `EMERGENCY_NUMBER` in international format, including `+` and country code.
-- `CALL_CLIENT_KEYS`: comma-separated, randomly generated access tokens, one per desktop installation.
 
-The desktop's `apps/desktop/.env` contains only its server connection settings:
+The desktop needs no call settings of its own. It calls as the Ladybugg account
+it is signed in to, on the same server. The account must be approved, and an
+admin has to turn on calls for it under **Users** in the admin UI. Calls are off
+by default because they ring a real phone and incur provider charges. Turning
+calls off, turning the account down or deleting it hangs up that account's
+call and drops its support stream.
 
-```dotenv
-CALL_SERVER_URL=http://localhost:3001
-CALL_SERVER_TOKEN=<this installation's token from CALL_CLIENT_KEYS>
-```
+The renderer passes its session token and server URL to the Electron main
+process, which makes every call request. Remote servers must use HTTPS; HTTP is
+allowed only on loopback for local development. Signing out, or in as someone
+else, hangs up the previous account's call.
 
-The desktop token is a revocable credential for Ladybugg's call API, not a Chert
-or LiveKit key. Supply it privately per installation in Electron's user-data
-`.env` for packaged apps. Do not embed a shared token into a distributed app or
-prefix it with `VITE_`. Remote call servers must use HTTPS; HTTP is allowed only
-on loopback for local development. Real `.env` files are ignored by Git and
-excluded from packaged assets. Environment variables override file settings.
-
-For Compose hosting, set the provider variables and `CALL_CLIENT_KEYS` in the
-root deployment environment (or the host's secret settings); `compose.yaml`
-passes them only to the server. The local values in `apps/server/.env` are not
+For Compose hosting, set the provider variables in the root deployment
+environment (or the host's secret settings); `compose.yaml` passes them only to
+the server. The local values in `apps/server/.env` are not
 uploaded or deployed automatically. Deployments require approval.
 
 ## Call flow
 
-The desktop requests a call from `/api/calls/prepare` using its private access
-token. The server authenticates it, creates the LiveKit room, and returns a
+The desktop requests a call from `/api/calls/prepare` using its account's
+session token. The server authenticates it, creates the LiveKit room, and returns a
 five-minute, room-scoped participant token. The desktop joins the room and
 publishes its camera and microphone, then asks the server to dial. The server
 waits up to five seconds for LiveKit to confirm both tracks and places the
@@ -47,8 +44,9 @@ Provider API calls, token signing, status polling, retries, and room cleanup
 all run on the server. Only the assigned room token and safe call status reach
 the renderer. Microphone samples stay silent until Chert reports `bridge_ready`.
 
-Every call endpoint requires a dedicated desktop token, even during local
-use. Call state and operations are isolated between installation tokens. The
+Every call endpoint requires an approved, signed-in account with calls turned
+on, even during local use. Call state and operations are isolated between
+accounts. The
 server accepts one call at a time for its configured line, rate limits new
 attempts, and deduplicates repeated prepare requests. The desktop checks status
 every second; if it disconnects, it stops capture and retries hang-up. The server
@@ -75,7 +73,8 @@ npm run lint
 npm run build -w @ladybug/desktop
 ```
 
-With the server running and a recipient configured:
+With the server running and a recipient configured, sign the pet in to an
+approved account and turn on its calls in the admin UI. Then:
 
 1. Click the ladybug and select **Request help**, grant device access, and answer on the recipient's phone.
 2. Confirm the phone sees the computer's camera and hears its microphone after

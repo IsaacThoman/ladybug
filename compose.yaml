@@ -62,8 +62,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # Comma-separated keys allowed to start scans. Empty = anyone can.
       API_KEYS: ${API_KEYS:-}
-      # Outbound FaceTime provider secrets stay on the server. Disabled without client keys.
-      CALL_CLIENT_KEYS: ${CALL_CLIENT_KEYS:-}
+      # Outbound FaceTime provider secrets stay on the server. Pets call as their signed-in
+      # account, once an admin turns calls on for it.
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}

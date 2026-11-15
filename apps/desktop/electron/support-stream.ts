@@ -1,4 +1,8 @@
-import { readDesktopCallConfig } from "./call-config.ts";
+import type { CallAuth } from "./call-config.ts";
+
+const RETRY_MS = 3000;
+/** Signed out, or calls are off for the account: an admin has to act first. */
+const REFUSED_RETRY_MS = 30_000;
 
 /** Authenticated SSE stays in the main process; reconnects never replay requests. */
 export class SupportSubscription {
@@ -6,14 +10,17 @@ export class SupportSubscription {
   private retry?: ReturnType<typeof setTimeout>;
   private active = false;
   private receive: (id: string) => void;
-  private options: { fetch?: typeof fetch; config?: typeof readDesktopCallConfig };
-  constructor(receive: (id: string) => void, options: SupportSubscription["options"] = {}) { this.receive = receive; this.options = options; }
+  private options: { fetch?: typeof fetch; auth: () => CallAuth | null };
+  constructor(receive: (id: string) => void, options: SupportSubscription["options"]) { this.receive = receive; this.options = options; }
   start() { if (this.active) return; this.active = true; void this.connect(); }
   stop() { this.active = false; this.abort?.abort(); clearTimeout(this.retry); }
   private async connect() {
     const abort = new AbortController(); this.abort = abort;
+    let wait = RETRY_MS;
     try {
-      const config = (this.options.config ?? readDesktopCallConfig)();
+      const config = this.options.auth();
+      // Signed out: the main process restarts the subscription on sign-in.
+      if (!config) { this.active = false; return; }
       const handshake = setTimeout(() => abort.abort(), 20_000);
       let response: Response;
       try {
@@ -21,6 +28,7 @@ export class SupportSubscription {
           headers: { Authorization: `Bearer ${config.token}`, Accept: "text/event-stream" }, redirect: "error", signal: abort.signal,
         });
       } finally { clearTimeout(handshake); }
+      if (response.status === 401 || response.status === 403) wait = REFUSED_RETRY_MS;
       if (!response.ok || !response.body) return;
       const reader = response.body.getReader(), decoder = new TextDecoder();
       let buffer = "";
@@ -46,7 +54,7 @@ export class SupportSubscription {
       } finally { await reader.cancel().catch(() => {}); }
     } catch { /* Reconnect without exposing server configuration or credentials. */ }
     finally {
-      if (this.active && this.abort === abort) this.retry = setTimeout(() => { void this.connect(); }, 3000);
+      if (this.active && this.abort === abort) this.retry = setTimeout(() => { void this.connect(); }, wait);
     }
   }
 }

@@ -1,23 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { readDesktopCallConfig, loadCallEnv } from "./call-config.ts";
+import { parseCallAuth } from "./call-config.ts";
 
-test("desktop needs only its own server credential; remote plaintext is rejected", () => {
-  assert.deepEqual(readDesktopCallConfig({ CALL_SERVER_URL: "http://localhost:3001", CALL_SERVER_TOKEN: "device-token" }), { url: "http://localhost:3001", token: "device-token" });
-  assert.throws(() => readDesktopCallConfig({ CALL_SERVER_URL: "http://remote.example", CALL_SERVER_TOKEN: "token" }), /HTTPS/);
-  assert.throws(() => readDesktopCallConfig({}), /CALL_SERVER_TOKEN/);
-});
-
-test("desktop runtime env never overrides explicitly supplied settings", () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "ladybug-call-env-"));
-  try {
-    const file = path.join(dir, ".env"); writeFileSync(file, 'CALL_SERVER_TOKEN=file-token\nCALL_SERVER_URL=http://localhost:3001\n');
-    const env: Record<string, string | undefined> = { CALL_SERVER_TOKEN: "shell-token" };
-    loadCallEnv(file, env);
-    assert.equal(env.CALL_SERVER_TOKEN, "shell-token");
-    assert.equal(env.CALL_SERVER_URL, "http://localhost:3001");
-  } finally { rmSync(dir, { recursive: true }); }
+test("calls use the signed-in session; remote plaintext and malformed sessions are rejected", () => {
+  assert.deepEqual(parseCallAuth({ url: "http://localhost:3001/", token: " session " }), { url: "http://localhost:3001", token: "session" });
+  assert.deepEqual(parseCallAuth({ url: "https://ladybugg.garden", token: "session" }), { url: "https://ladybugg.garden", token: "session" });
+  assert.equal(parseCallAuth(null), null);
+  assert.throws(() => parseCallAuth({ url: "http://remote.example", token: "session" }), /HTTPS/);
+  assert.throws(() => parseCallAuth({ url: "https://user:pass@ladybugg.garden", token: "session" }), /HTTPS/);
+  assert.throws(() => parseCallAuth({ url: "https://ladybugg.garden", token: " " }), /session/);
+  assert.throws(() => parseCallAuth({ url: "https://ladybugg.garden", token: "x".repeat(513) }), /session/);
+  assert.throws(() => parseCallAuth({ url: "not a url", token: "session" }), /URL/);
+  assert.throws(() => parseCallAuth(undefined), /session/);
 });

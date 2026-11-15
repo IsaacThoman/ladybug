@@ -1,0 +1,242 @@
+/*
+ * The warning over an unsafe page. The overlay around this frame dims and
+ * blurs the page (overlay.ts); this page stays see-through apart from the card.
+ * Colours and type come from the garden look (@ladybug/mascot/garden.css),
+ * the buttons and chip from the web report page.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  /* Keep wheel and touch scrolling from reaching the page underneath. */
+  overscroll-behavior: none;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  margin: 0;
+  padding: 24px 16px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The whole tab, when the page kept removing the overlay. */
+html[data-mode="page"] body {
+  background-color: var(--sky-low);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(460px, 100%);
+  padding: 8px 32px 28px;
+  border-radius: 24px;
+  background: var(--paper);
+  box-shadow:
+    0 0 0 1px var(--line),
+    inset 0 4px 0 var(--red),
+    0 30px 80px rgba(20, 6, 4, 0.35);
+  text-align: center;
+  animation: card-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.card[hidden] {
+  display: none;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+/* The ladybug on its leaf, with a red glow instead of sunlight. */
+.mascot-stage {
+  margin-bottom: 4px;
+}
+
+.mascot-stage::before {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--red) 26%, transparent), transparent);
+}
+
+.verdict-chip {
+  display: inline-flex;
+  padding: 0.22em 0.75em;
+  border-radius: 99px;
+  color: var(--red-ink);
+  background: var(--red-wash);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin-top: 12px;
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 620;
+  font-variation-settings: "SOFT" 100;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.summary {
+  margin-top: 10px;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.summary strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.details {
+  width: 100%;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--paper-2);
+  text-align: left;
+}
+
+.reason {
+  color: var(--ink-2);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.reason:empty {
+  display: none;
+}
+
+.url {
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reason:empty + .url {
+  margin-top: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 22px;
+}
+
+.actions .button {
+  flex: 1 1 160px;
+}
+
+.footnote {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* ---------- buttons, as on the web report page ---------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0.7em 1.2em;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.1s;
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+.button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--red) 45%, transparent);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.button.primary {
+  background: var(--red);
+  color: #fff;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 4px 12px color-mix(in srgb, var(--red) 30%, transparent);
+}
+
+.button.primary:hover:not(:disabled) {
+  background: var(--red-deep);
+}
+
+.button.ghost {
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.button.ghost:hover:not(:disabled) {
+  background: var(--paper);
+  border-color: var(--muted);
+}
+
+@media (max-width: 420px) {
+  .card {
+    padding: 4px 20px 22px;
+  }
+
+  h1 {
+    font-size: 1.45rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+}

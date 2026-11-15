@@ -6,7 +6,7 @@ import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
 import { createModelSettings } from "@ladybug/backend";
 import type { ModelSettingsStore } from "@ladybug/backend";
 import { requireAccount, userOf } from "./accounts.ts";
-import { checkVisit } from "./checker.ts";
+import { checkVisit, lookupVisit } from "./checker.ts";
 import { config } from "./config.ts";
 import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
 import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
@@ -20,7 +20,7 @@ import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
 import { isStoreReady } from "./store.ts";
 import { SupportService, configureSupport } from "./support/service.ts";
-import { callsRouter } from "./calls/router.ts";
+import { createCallRouter } from "./calls/router.ts";
 
 const GREETINGS = [
   "Hi there!",
@@ -39,11 +39,13 @@ export function createApp(
   // How many reverse proxies sit in front, so req.ip (used for rate limits) is the client.
   app.set("trust proxy", config.trustProxyHops);
   app.use(cors());
-  const support = new SupportService(deps.redis, callsRouter.deliverSupport).start();
+  const calls = createCallRouter({ accounts: deps.accounts });
+  app.locals.calls = calls;
+  const support = new SupportService(deps.redis, calls.deliverSupport).start();
   app.locals.support = support;
   configureSupport(support);
   app.use(express.json({ limit: "16kb" }));
-  app.use("/api/calls", callsRouter);
+  app.use("/api/calls", calls);
 
   app.get("/health", (_req, res) => {
     const body: HealthResponse = {
@@ -82,6 +84,12 @@ export function createApp(
     );
   });
 
+  // Polled by the extension while a page it reported is analysed, so it can
+  // warn over the page once the verdict is in. Not counted as a visit.
+  app.post("/api/check/status", signedIn, requireStore, async (req, res) => {
+    res.json(await lookupVisit(requireString(req.body?.url, "url", 8192)));
+  });
+
   // Desktop pets subscribe here for their user's alerts.
   app.get("/api/pet/stream", signedIn, (req, res) => {
     petChannel.attach(req, res, userOf(res).id);
@@ -91,7 +99,7 @@ export function createApp(
   app.use("/api/admin", adminAuthRouter());
   const modelSettings = deps.modelSettings ?? createModelSettings(deps.db, deps.redis);
   const sandboxes = deps.sandboxes ?? ((limit: number) => listSandboxes(deps.db, deps.redis, limit));
-  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts, modelSettings, sandboxes));
+  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts, modelSettings, sandboxes, calls.revoke));
 
   // Built admin UI (see apps/admin). It's public: it holds no data, and shows
   // its sign-in page until the API accepts the session.

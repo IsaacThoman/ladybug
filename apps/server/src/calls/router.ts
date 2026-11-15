@@ -1,39 +1,45 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { Router } from "express";
 import type { Request, Response } from "express";
-import type { PreparedCall } from "@ladybug/shared";
+import type { AccountStore } from "@ladybug/backend";
+import type { ApiError, PreparedCall } from "@ladybug/shared";
+import { accessProblem, currentUser, sendAuthError } from "../accounts.ts";
 import { SupportStream } from "../support/stream.ts";
 import { CallService } from "./call-service.ts";
 
 const idle = { phase: "idle", message: "Ready to call", bridgeReady: false } as const;
 const finished = (phase: string) => ["idle", "ended", "error"].includes(phase);
-const digest = (value: string) => createHash("sha256").update(value).digest();
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function createCallRouter(options: { service?: CallService; keys?: string[]; leaseMs?: number; now?: () => number } = {}) {
+/**
+ * Support calls for signed-in pets. The caller's account session authenticates
+ * every request, and an admin has to turn calls on for the account first.
+ */
+export function createCallRouter(options: { accounts: AccountStore; service?: CallService; leaseMs?: number; now?: () => number }) {
   const router = Router();
   const support = new SupportStream(options.now ?? Date.now);
   const calls = options.service ?? new CallService();
-  const keys = (options.keys ?? (process.env.CALL_CLIENT_KEYS ?? "").split(",")).map((key) => key.trim()).filter(Boolean).map(digest);
   const now = options.now ?? Date.now;
   let owner: string | undefined, requestId: string | undefined;
   let prepared: Promise<PreparedCall> | undefined;
   let lastSeen = 0;
   const attempts = new Map<string, { at: number; count: number }>();
-  router.use((req, res, next) => {
+  router.use(async (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
-    if (!keys.length) { res.status(503).json({ error: "Calls are not configured" }); return; }
-    const header = req.header("authorization") ?? "";
-    const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-    const hash = digest(token);
-    if (!token || !keys.some((key) => timingSafeEqual(hash, key))) { res.status(401).json({ error: "Call access required" }); return; }
-    res.locals.callOwner = hash.toString("hex");
+    const user = await currentUser(options.accounts, req);
+    const problem = accessProblem(user);
+    if (problem) return sendAuthError(res, problem);
+    if (!user!.callsEnabled) {
+      const body: ApiError = { error: "An admin hasn't turned on calls for this account" };
+      res.status(403).json(body);
+      return;
+    }
+    res.locals.callOwner = user!.id;
     next();
   });
   const route = (handler: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response) => {
     void handler(req, res).catch(() => { if (!res.headersSent) res.status(502).json({ error: "Call service unavailable" }); });
   };
-  router.get("/support/stream", (req, res) => support.attach(req, res));
+  router.get("/support/stream", (req, res) => support.attach(req, res, res.locals.callOwner as string));
   router.get("/state", (_req, res) => {
     if (res.locals.callOwner !== owner) { res.json(idle); return; }
     lastSeen = now();
@@ -79,7 +85,19 @@ export function createCallRouter(options: { service?: CallService; keys?: string
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   };
-  return Object.assign(router, { shutdown, checkLease, deliverSupport: (id: string, sentAt?: number) => finished(calls.getState().phase) && support.deliver(id, sentAt) });
+  /** The account lost access to calls: drop its support stream and hang up its call. */
+  const revoke = (userId: string) => {
+    support.close(userId);
+    if (owner === userId && !finished(calls.getState().phase)) {
+      void calls.endCurrent().catch(() => console.error("[calls] could not end a revoked account's call"));
+    }
+  };
+  return Object.assign(router, {
+    shutdown,
+    checkLease,
+    revoke,
+    deliverSupport: (id: string, sentAt?: number) => finished(calls.getState().phase) && support.deliver(id, sentAt),
+  });
 }
 
-export const callsRouter = createCallRouter();
+export type CallRouter = ReturnType<typeof createCallRouter>;

@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import express from "express";
 import type { ParticipantInfo, Room } from "livekit-server-sdk";
-import type { CallState, PreparedCall } from "@ladybug/shared";
+import type { AccountStatus, CallState, PreparedCall } from "@ladybug/shared";
+import type { AccountStore, UserRecord } from "@ladybug/backend";
+import { hashToken } from "../accounts.ts";
 import { CallService } from "./call-service.ts";
 import { createCallRouter } from "./router.ts";
 import { CallService as DesktopCalls } from "../../../desktop/electron/call-service.ts";
@@ -13,7 +15,20 @@ const provider = {
   url: "wss://example.livekit.cloud", key: "provider-key", secret: "provider-secret-at-least-thirty-two-characters",
   chertKey: "private-chert", project: "private-project", line: "private-line", destination: "+15551234567",
 };
-async function fixture(keys = ["desktop-one", "desktop-two"]) {
+type TestUser = { status?: AccountStatus; callsEnabled?: boolean };
+const defaultUsers: Record<string, TestUser> = { "desktop-one": {}, "desktop-two": {} };
+
+/** Each session token signs in a different user; approved with calls on unless the test says otherwise. */
+function accountsFor(users: Record<string, TestUser>) {
+  const byHash = new Map(Object.entries(users).map(([token, user]): [string, UserRecord] => [hashToken(token), {
+    id: randomUUID(), username: token, passwordHash: "", createdAt: new Date(0).toISOString(),
+    status: user.status ?? "approved", callsEnabled: user.callsEnabled ?? true,
+  }]));
+  const idOf = (token: string) => byHash.get(hashToken(token))!.id;
+  return { idOf, accounts: { byToken: async (hash: string) => byHash.get(hash) ?? null } as unknown as AccountStore };
+}
+
+async function fixture(users = defaultUsers) {
   let roomCount = 0, status = "active", now = 0;
   const requests: { url: string; body?: string }[] = [];
   const calls = new CallService({
@@ -28,7 +43,8 @@ async function fixture(keys = ["desktop-one", "desktop-two"]) {
       return new Response(JSON.stringify({ data }));
     },
   });
-  const router = createCallRouter({ service: calls, keys, now: () => now, leaseMs: 30_000 });
+  const { accounts, idOf } = accountsFor(users);
+  const router = createCallRouter({ service: calls, accounts, now: () => now, leaseMs: 30_000 });
   const app = express(); app.use(express.json()); app.use("/api/calls", router);
   const server = app.listen(0, "127.0.0.1"); await once(server, "listening");
   const address = server.address(); assert.ok(address && typeof address !== "string");
@@ -38,7 +54,7 @@ async function fixture(keys = ["desktop-one", "desktop-two"]) {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { url, api, calls, router, requests, roomCount: () => roomCount, advance: () => { now += 31_000; }, finish: () => { status = "ended"; },
+  return { url, api, calls, router, idOf, requests, roomCount: () => roomCount, advance: () => { now += 31_000; }, finish: () => { status = "ended"; },
     close: async () => {
       status = "ended";
       await calls.endCurrent(); await calls.poll(); await router.shutdown();
@@ -47,10 +63,35 @@ async function fixture(keys = ["desktop-one", "desktop-two"]) {
   };
 }
 
-test("call routes fail closed without a dedicated client key", async () => {
-  const f = await fixture([]);
-  try { assert.equal((await f.api("/state")).status, 503); assert.equal(f.roomCount(), 0); }
-  finally { await f.close(); }
+test("call routes need an approved account that an admin turned calls on for", async () => {
+  const f = await fixture({ off: { callsEnabled: false }, waiting: { status: "pending" }, refused: { status: "rejected" } });
+  try {
+    for (const [token, status] of [["off", 403], ["waiting", 403], ["refused", 403], ["unknown", 401]] as const) {
+      assert.equal((await f.api("/state", undefined, token)).status, status, token);
+      assert.equal((await f.api("/prepare", { requestId: randomUUID() }, token)).status, status, token);
+      assert.equal((await f.api("/support/stream", undefined, token)).status, status, token);
+    }
+    assert.equal((await fetch(`${f.url}/api/calls/state`)).status, 401);
+    assert.equal(f.roomCount(), 0);
+  } finally { await f.close(); }
+});
+
+test("revoking an account hangs up its call and drops its support stream", async () => {
+  const f = await fixture();
+  const abort = new AbortController();
+  try {
+    const stream = await fetch(`${f.url}/api/calls/support/stream`, { headers: { Authorization: "Bearer desktop-one" }, signal: abort.signal });
+    const reader = stream.body!.getReader(); await reader.read();
+    const prepared = await (await f.api("/prepare", { requestId: randomUUID() })).json() as PreparedCall;
+    await f.api(`/${prepared.id}/dial`, {}); await f.calls.poll();
+    f.router.revoke(f.idOf("desktop-two"));
+    assert.equal(f.calls.getState().phase, "active", "another account's revocation leaves the call alone");
+    f.router.revoke(f.idOf("desktop-one"));
+    assert.equal((await reader.read()).done, true);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(f.calls.getState().phase, "ending");
+    assert.equal(f.router.deliverSupport(randomUUID()), false);
+  } finally { abort.abort(); await f.close(); }
 });
 
 test("authenticated prepare is idempotent, isolated per client, and returns only a short-lived room token", async () => {
@@ -81,7 +122,7 @@ test("desktop proxy controls a server call without provider credentials and stop
   const f = await fixture();
   let offline = false;
   const desktop = new DesktopCalls({
-    config: () => ({ url: f.url, token: "desktop-one" }),
+    auth: () => ({ url: f.url, token: "desktop-one" }),
     fetch: async (...args) => { if (offline) throw new Error("network down"); return fetch(...args); },
   });
   try {

@@ -39,11 +39,6 @@ export type LadybugRig = {
   wings: { pivot: THREE.Group; side: Side }[];
   legs: { pivot: THREE.Group; side: Side; tripod: 0 | 1 }[];
   /**
-   * A small frown under the eyes. The calm face has no mouth, so it starts
-   * hidden at scale 0 and only shows when worried.
-   */
-  frown: THREE.Mesh;
-  /**
    * Magnifying glass, hidden at scale 0. Origin at the lens centre, lens
    * facing +z, handle hanging down and out to +x.
    */
@@ -217,15 +212,6 @@ export function buildLadybug(): LadybugRig {
     eyes.push(eye);
   }
 
-  // Frown for worried moods: the top half of a thin torus reads as a frown.
-  const frownDir = dir(0, -0.2, 1);
-  const frown = new THREE.Mesh(geo(new THREE.TorusGeometry(0.022, 0.006, 8, 20, Math.PI)), creamMat);
-  frown.position.copy(onHead(frownDir, -0.001));
-  frown.quaternion.setFromUnitVectors(Z_AXIS, frownDir);
-  frown.scale.setScalar(0);
-  frown.visible = false;
-  head.add(frown);
-
   // Antennae.
   const antennae: LadybugRig["antennae"] = [];
   for (const side of [1, -1] as const) {
@@ -337,7 +323,6 @@ export function buildLadybug(): LadybugRig {
     elytra,
     wings,
     legs,
-    frown,
     magnifier,
     setTint: (color, amount) => {
       for (const m of [shellMat, darkMat, creamMat]) {

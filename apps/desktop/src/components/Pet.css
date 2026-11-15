@@ -37,11 +37,10 @@
 .pet:focus-visible { outline: 2px solid #487fc9; border-radius: 50%; }
 
 /*
- * The speech bubble while the browser is blocking an unsafe page: what the
- * page is, why it was flagged, and what to do. Positioned from the animation
- * loop, which also sets data-side and --tail-x.
+ * Speech bubbles from the bug. Positioned from the animation loop, which also
+ * sets data-side and --tail-x.
  */
-.pet-warning {
+.pet-bubble {
   --bubble-bg: #fff;
   --red: #e5483e;
   box-sizing: border-box;
@@ -49,25 +48,23 @@
   top: 0;
   left: 0;
   z-index: 9;
-  width: 300px;
   padding: 14px 16px 12px;
   border-radius: 14px;
   background: var(--bubble-bg);
   color: #1d1d1f;
   font-size: 13px;
   line-height: 1.4;
-  text-align: center;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
   will-change: transform;
   user-select: text;
 }
 
 /* Hidden until the animation loop has placed it. */
-.pet-warning:not([data-side]) {
+.pet-bubble:not([data-side]) {
   visibility: hidden;
 }
 
-.pet-warning::after {
+.pet-bubble::after {
   content: "";
   position: absolute;
   left: var(--tail-x, 50%);
@@ -75,26 +72,32 @@
   border: 9px solid transparent;
 }
 
-.pet-warning[data-side="above"]::after {
+.pet-bubble[data-side="above"]::after {
   top: calc(100% - 1px);
   border-top-color: var(--bubble-bg);
 }
 
-.pet-warning[data-side="below"]::after {
+.pet-bubble[data-side="below"]::after {
   bottom: calc(100% - 1px);
   border-bottom-color: var(--bubble-bg);
 }
 
-.pet-warning > * {
+.pet-bubble > * {
   margin: 0;
-  animation: pet-warning-in 0.2s ease-out both;
+  animation: pet-bubble-in 0.2s ease-out both;
 }
 
-@keyframes pet-warning-in {
+@keyframes pet-bubble-in {
   from {
     opacity: 0;
     transform: translateY(4px);
   }
+}
+
+/* While the browser is blocking an unsafe page: what the page is, why it was flagged, and what to do. */
+.pet-warning {
+  width: 300px;
+  text-align: center;
 }
 
 .pet-warning-chip {
@@ -153,14 +156,17 @@
   white-space: nowrap;
 }
 
-.pet-warning-actions {
+.pet-bubble-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.pet-warning .pet-bubble-actions {
   margin-top: 12px;
 }
 
-.pet-warning-actions button {
+.pet-bubble-actions button {
   flex: 1 1 120px;
   padding: 8px 12px;
   border: 1px solid transparent;
@@ -171,33 +177,33 @@
   white-space: nowrap;
 }
 
-.pet-warning-actions button:focus-visible {
+.pet-bubble-actions button:focus-visible {
   outline: 2px solid #487fc9;
   outline-offset: 2px;
 }
 
-.pet-warning-actions button:disabled {
+.pet-bubble-actions button:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.pet-warning-actions .primary {
+.pet-bubble-actions .primary {
   background: var(--red);
   color: #fff;
   box-shadow: 0 3px 10px rgba(229, 72, 62, 0.3);
 }
 
-.pet-warning-actions .primary:hover:not(:disabled) {
+.pet-bubble-actions .primary:hover:not(:disabled) {
   background: #c63a31;
 }
 
-.pet-warning-actions .ghost {
+.pet-bubble-actions .ghost {
   background: #fff;
   border-color: #d2d2d7;
   color: #1d1d1f;
 }
 
-.pet-warning-actions .ghost:hover:not(:disabled) {
+.pet-bubble-actions .ghost:hover:not(:disabled) {
   background: #f4f4f6;
 }
 
@@ -211,8 +217,84 @@
   color: #b3322a;
 }
 
+/* A support call: its status and controls over the caller's video, as large as fits. */
+.pet-call {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: max-content;
+  min-width: min(300px, 100%);
+  padding: 12px;
+  border-radius: 18px;
+}
+
+.pet-call[hidden] {
+  display: none;
+}
+
+.pet-call-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pet-call-status {
+  flex: 1;
+  margin: 0 0 0 4px;
+  font-size: 14px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.pet-call-status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #f0a530;
+  vertical-align: 1px;
+}
+
+.pet-call-status[data-phase="active"]::before {
+  background: #34c759;
+}
+
+.pet-call-status:is([data-phase="ended"], [data-phase="ending"])::before {
+  background: #a1a1a6;
+}
+
+.pet-call-status[data-phase="error"]::before {
+  background: var(--red);
+}
+
+.pet-call-header .pet-bubble-actions button {
+  flex: none;
+}
+
+.pet-call-note {
+  margin: 0 4px;
+  color: #75757d;
+  font-size: 12px;
+}
+
+.pet-call-video {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #111;
+}
+
+.pet-call-video video {
+  position: absolute;
+  display: block;
+  max-width: none;
+  object-fit: fill;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pet-warning > * {
+  .pet-bubble > * {
     animation: none;
   }
 }

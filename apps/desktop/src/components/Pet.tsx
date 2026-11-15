@@ -23,6 +23,8 @@ const UNIT_PX = 100; // CSS px per model unit (≈ the bug's length)
 const CANVAS_WIDTH = 180;
 const CANVAS_HEIGHT = 150;
 const GROUND_PX = 14;
+/** How far above the bottom of the work area the bug walks. */
+const GROUND_LIFT = 24;
 const GRAVITY = 2400; // px/s²
 const WALK_SPEED = 70; // px/s
 const BOUNCE = 0.35;
@@ -256,7 +258,7 @@ export default function Pet({ layout, callBusy, call, requestHelp, onAccountNeed
       minX: workArea.x,
       maxX: workArea.x + workArea.width - PET_WIDTH,
       minY: workArea.y,
-      groundY: workArea.y + workArea.height - PET_HEIGHT,
+      groundY: workArea.y + workArea.height - PET_HEIGHT - GROUND_LIFT,
     };
   };
 

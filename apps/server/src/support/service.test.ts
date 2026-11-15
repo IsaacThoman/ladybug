@@ -47,12 +47,12 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     await Promise.all([f.service.drain(), f.create().drain()]);
     assert.equal(f.sends.length, 1); assert.equal(f.sends[0].url, "https://bad.example./one");
     const cooldown = await redis.pttl((await redis.keys("support:host:*"))[0]);
-    assert.ok(cooldown > 3_590_000 && cooldown <= 3_600_000);
+    assert.ok(cooldown > 50_000 && cooldown <= 60_000);
     await f.create().notify("https://bad.example/four"); await f.create().drain(); assert.equal(f.sends.length, 1);
     await f.service.notify("https://sub.bad.example/"); await f.service.drain(); assert.equal(f.sends.length, 2);
-    // Expire the cooldown in Redis, simulating the hour boundary without sleeping.
+    // Expire the cooldown in Redis, simulating the minute boundary without sleeping.
     for (const key of await redis.keys("support:host:*")) await redis.del(key);
-    f.advance(3_600_001); await f.create().notify("https://bad.example/five"); await f.create().drain();
+    f.advance(60_001); await f.create().notify("https://bad.example/five"); await f.create().drain();
     assert.equal(f.sends.length, 3);
   });
   await t.test("durable retries reuse the original idempotency key and open no window before success", async () => {

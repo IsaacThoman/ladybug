@@ -33,11 +33,24 @@ export type LadybugRig = {
   /** Bob, waddle and breathing. */
   body: THREE.Group;
   head: THREE.Group;
+  /** The head's sphere, in the head's space. */
+  skull: { center: THREE.Vector3; radius: number };
   eyes: THREE.Group[];
   antennae: { pivot: THREE.Group; side: Side }[];
   elytra: { pivot: THREE.Group; side: Side }[];
   wings: { pivot: THREE.Group; side: Side }[];
-  legs: { pivot: THREE.Group; side: Side; tripod: 0 | 1 }[];
+  /**
+   * Each leg swings from its hip `pivot` and bends at the `knee` (a child of
+   * the pivot). `foot` is the foot's rest position in the knee's space.
+   */
+  legs: {
+    pivot: THREE.Group;
+    knee: THREE.Group;
+    foot: THREE.Vector3;
+    side: Side;
+    tripod: 0 | 1;
+    front: boolean;
+  }[];
   /**
    * Magnifying glass, hidden at scale 0. Origin at the lens centre, lens
    * facing +z, handle hanging down and out to +x.
@@ -305,12 +318,23 @@ export function buildLadybug(): LadybugRig {
       const knee = new THREE.Vector3(side * 0.11, 0.0, splay);
       const foot = new THREE.Vector3(side * 0.16, -0.075, splay * 1.5);
       pivot.add(segment(new THREE.Vector3(0, 0, 0), knee));
-      pivot.add(segment(knee, foot));
+      const kneeJoint = new THREE.Group();
+      kneeJoint.position.copy(knee);
+      const footFromKnee = foot.clone().sub(knee);
+      kneeJoint.add(segment(new THREE.Vector3(0, 0, 0), footFromKnee));
       const toe = ellipsoid(darkMat, 0.03, 0.025, 0.034, footGeo);
-      toe.position.copy(foot);
-      pivot.add(toe);
+      toe.position.copy(footFromKnee);
+      kneeJoint.add(toe);
+      pivot.add(kneeJoint);
       body.add(pivot);
-      legs.push({ pivot, side, tripod: ((row + (side === 1 ? 0 : 1)) % 2) as 0 | 1 });
+      legs.push({
+        pivot,
+        knee: kneeJoint,
+        foot: footFromKnee,
+        side,
+        tripod: ((row + (side === 1 ? 0 : 1)) % 2) as 0 | 1,
+        front: row === 0,
+      });
     }
   });
 
@@ -318,6 +342,7 @@ export function buildLadybug(): LadybugRig {
     root,
     body,
     head,
+    skull: { center: headCenter.clone(), radius: HEAD.r },
     eyes,
     antennae,
     elytra,

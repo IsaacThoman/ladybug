@@ -72,6 +72,15 @@ const LENS_X = 0.2;
 const PEEK_GAP = 0.1;
 /** How much the eye behind the lens swells while peeking. */
 const PEEK_ZOOM = 0.45;
+/** Grooming strokes per second for each front leg, at the lowest and highest intensity. */
+const GROOM_RATE = [1.6, 3.4] as const;
+/** Grooming intensity at which the front legs are fully raised; below it they ease down. */
+const GROOM_RAISED = 0.2;
+/** How far (radians) the head dips while grooming. */
+const GROOM_DIP = 0.12;
+/** How far the front hips shift out, up and forward to reach the face, and the legs stretch. */
+const GROOM_HIP = new THREE.Vector3(0.02, 0.05, 0.12);
+const GROOM_STRETCH = 0.3;
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 /** Frame-rate independent smoothing factor. */
@@ -109,6 +118,7 @@ export class LadybugRenderer {
   private gait = 0;
   private phase = 0;
   private open = 0;
+  private buzz = 0;
   private vx = 0;
   private tilt = 0;
   private headTilt = 0;
@@ -140,6 +150,16 @@ export class LadybugRenderer {
   private peek = 0;
   private peekLeft = 0;
   private peekIn = randomBetween(1.2, 2.5);
+  /** Smoothed 0–1 grooming intensity, and its stroke phase in cycles. */
+  private groom = 0;
+  private groomPhase = 0;
+  private readonly hips: THREE.Vector3[];
+  private readonly reach = new THREE.Vector3();
+  private readonly bend = new THREE.Vector3();
+  private readonly femur = new THREE.Vector3();
+  private readonly shin = new THREE.Vector3();
+  private readonly hipTurn = new THREE.Quaternion();
+  private readonly kneeTurn = new THREE.Quaternion();
   private readonly eyePoint = new THREE.Vector3();
   private readonly otherEyePoint = new THREE.Vector3();
   private readonly toCamera = new THREE.Vector3();
@@ -167,6 +187,7 @@ export class LadybugRenderer {
     this.scene.add(rim);
 
     this.rig = buildLadybug();
+    this.hips = this.rig.legs.map((leg) => leg.pivot.position.clone());
     this.sway.position.y = 0.22;
     this.rig.root.position.y = -0.22;
     this.sway.add(this.rig.root);
@@ -289,6 +310,21 @@ export class LadybugRenderer {
     const peeking = THREE.MathUtils.smootherstep(this.peek, 0, 1);
     // Reactions are loudest right after the verdict and settle down after.
     const fresh = 0.3 + 0.7 * Math.exp(-this.moodTime / 2.5);
+    // Grooming: only standing still, and not while searching with the glass.
+    // Each front leg loops over its side of the face, half a stroke apart.
+    const groomGoal =
+      mode === "idle" ? THREE.MathUtils.clamp(pose.groom ?? 0, 0, 1) * (1 - this.lens) : 0;
+    this.groom = approach(this.groom, groomGoal, groomGoal > this.groom ? 4 : 12, dt);
+    if (groomGoal === 0 && this.groom < 0.001) this.groom = 0;
+    const grooming = THREE.MathUtils.smootherstep(this.groom, 0, GROOM_RAISED);
+    this.groomPhase =
+      this.groom > 0
+        ? this.groomPhase + THREE.MathUtils.lerp(GROOM_RATE[0], GROOM_RATE[1], this.groom) * dt
+        : 0;
+    /** 0 = foot at the top of the face, then down across the eye and back up clear of it. */
+    const stroke = (side: 1 | -1) => (this.groomPhase + (side === 1 ? 0 : 0.5)) * Math.PI * 2;
+    /** 0–1: this side's foot is rubbing down over the eye. */
+    const rubbing = (side: 1 | -1) => grooming * Math.max(0, Math.sin(stroke(side))) ** 2;
 
     // Facing: three-quarter view while moving, straight ahead while idle
     // (unless asked to look somewhere). Looking up at a dragged link, or
@@ -336,7 +372,12 @@ export class LadybugRenderer {
     // whichever feet stay down, so the others don't sink into the ground.
     const stepBob = Math.abs(Math.sin(this.phase)) * this.gait;
     const wiggle = this.happy * fresh * (airborne || held ? 0.3 : 1);
-    const pitch = this.sniff * 0.07 - this.nervous * 0.13 - this.alarmed * 0.1 - this.expect * 0.05;
+    const pitch =
+      this.sniff * 0.07 -
+      this.nervous * 0.13 -
+      this.alarmed * 0.1 -
+      this.expect * 0.05 -
+      grooming * 0.05;
     rig.body.position.y =
       (walking ? stepBob * 0.012 : 0) +
       Math.abs(Math.sin(t * 7.5)) * 0.025 * wiggle +
@@ -359,12 +400,17 @@ export class LadybugRenderer {
       Math.sin(this.phase * 2) * 0.05 * this.gait +
       this.sniff * (0.3 * (1 - peeking * 0.85) + sniffNod) -
       this.expect * 0.45 -
-      this.alarmed * 0.12;
+      this.alarmed * 0.12 +
+      grooming * (GROOM_DIP + Math.sin(this.groomPhase * Math.PI * 4) * 0.04);
+    // Grooming: leans into whichever leg is rubbing.
+    rig.head.rotation.z += (rubbing(-1) - rubbing(1)) * 0.07;
 
     // Antennae: lazy sway, springy when moving, frantic when held or startled. Sniffing
     // makes them twitch; nervous sweeps them back; alarmed stands them up
-    // stiff and quivering; expectant perks them forward.
+    // stiff and quivering; expectant perks them forward. Grooming bends them
+    // down in front of the face, and each stroke combs one down further.
     for (const { pivot, side } of rig.antennae) {
+      const comb = grooming * 0.35 + rubbing(side) * 0.5;
       const frantic = held || startled ? Math.sin(t * 22 + side) * 0.25 : 0;
       const twitch =
         this.sniff * Math.max(0, Math.sin(t * 2.6 + side * 1.3)) ** 3 * Math.sin(t * 34 + side);
@@ -380,8 +426,71 @@ export class LadybugRenderer {
         (airborne ? 0.3 : 0) +
         twitch * 0.2 -
         this.nervous * 0.4 +
-        this.expect * 0.25;
+        this.expect * 0.25 +
+        comb;
+      pivot.rotation.z -= side * comb * 0.5;
     }
+
+    // Grooming: the front legs reach up to the face (two-bone IK from hip to
+    // foot) and blend in over whatever the legs were doing.
+    rig.head.updateMatrix();
+    rig.legs.forEach((leg, i) => {
+      if (!leg.front) return;
+      const { pivot, knee, side } = leg;
+      pivot.position.copy(this.hips[i]);
+      if (grooming === 0) {
+        pivot.scale.setScalar(1);
+        knee.rotation.set(0, 0, 0);
+        return;
+      }
+      pivot.position.x += side * GROOM_HIP.x * grooming;
+      pivot.position.y += GROOM_HIP.y * grooming;
+      pivot.position.z += GROOM_HIP.z * grooming;
+      const stretch = 1 + GROOM_STRETCH * grooming;
+      pivot.scale.setScalar(stretch);
+      // Foot target on a loop around the eye: pressed close on the way down,
+      // lifted clear on the way back up. Reach grows with intensity.
+      const angle = stroke(side);
+      const span = 0.55 + 0.45 * this.groom;
+      const { center, radius } = rig.skull;
+      const target = this.reach
+        .set(
+          side * (0.5 - 0.22 * Math.sin(angle) * span),
+          0.18 + 0.55 * Math.cos(angle) * span,
+          0.85,
+        )
+        .normalize()
+        .multiplyScalar(radius + 0.03 + 0.05 * Math.max(0, -Math.sin(angle)))
+        .add(center)
+        .applyMatrix4(rig.head.matrix)
+        .sub(pivot.position);
+      const upper = knee.position.length() * stretch;
+      const lower = leg.foot.length() * stretch;
+      const d = THREE.MathUtils.clamp(
+        target.length(),
+        Math.abs(upper - lower) + 1e-4,
+        (upper + lower) * 0.999,
+      );
+      target.normalize();
+      // The knee points out to the side, so the leg shows beside the head.
+      const bend = this.bend.set(side, -0.3, 0.2);
+      bend.addScaledVector(target, -bend.dot(target)).normalize();
+      const cos = (upper * upper + d * d - lower * lower) / (2 * upper * d);
+      const femur = this.femur
+        .copy(target)
+        .multiplyScalar(cos)
+        .addScaledVector(bend, Math.sqrt(Math.max(0, 1 - cos * cos)));
+      const shin = this.shin
+        .copy(target)
+        .multiplyScalar(d)
+        .addScaledVector(femur, -upper)
+        .normalize();
+      this.hipTurn.setFromUnitVectors(bend.copy(knee.position).normalize(), femur);
+      shin.applyQuaternion(this.kneeTurn.copy(this.hipTurn).invert());
+      this.kneeTurn.setFromUnitVectors(bend.copy(leg.foot).normalize(), shin);
+      pivot.quaternion.slerp(this.hipTurn, grooming);
+      knee.quaternion.identity().slerp(this.kneeTurn, grooming);
+    });
 
     // Blinking.
     this.blinkIn -= dt;
@@ -398,28 +507,36 @@ export class LadybugRenderer {
     const lensOnLeft = THREE.MathUtils.clamp((1 - this.lensX / LENS_X) / 2, 0, 1);
     rig.eyes.forEach((eye, i) => {
       const zoom = 1 + PEEK_ZOOM * peeking * (i === 1 ? lensOnLeft : 1 - lensOnLeft);
-      eye.scale.y += (eyeOpen * zoom - eye.scale.y) * ease(40, dt);
+      // Squints as a foot rubs over it.
+      const rubbed = 1 - 0.6 * rubbing(i === 0 ? 1 : -1);
+      eye.scale.y += (eyeOpen * zoom * rubbed - eye.scale.y) * ease(40, dt);
       eye.scale.x = wide * zoom;
       eye.scale.z = zoom;
     });
 
-    // Wing cases pop open and the wings buzz while in the air, or flare in alarm.
+    // Wing cases pop open and the wings buzz while in the air, or flare in
+    // alarm. `pose.wings` holds them at least that far open.
     this.flare = Math.max(0, this.flare - dt);
     const flaring = this.flare > 0;
-    const openTarget = airborne || flaring ? 1 : 0;
-    this.open += (openTarget - this.open) * ease(airborne || flaring ? 12 : 7, dt);
+    const wings = THREE.MathUtils.clamp(pose.wings ?? 0, 0, 1);
+    const openTarget = Math.max(airborne || flaring ? 1 : 0, wings);
+    const opening = airborne || flaring || wings > this.open;
+    this.open += (openTarget - this.open) * ease(opening ? 12 : 7, dt);
     for (const { pivot, side } of rig.elytra) {
       pivot.rotation.set(this.open * 0.5, -side * this.open * 0.25, side * this.open * 0.4);
     }
+    // Held partly open, the wings still spread out far enough to be seen buzzing.
+    this.buzz = approach(this.buzz, Math.min(1, wings * 1.6), 12, dt);
+    const spread = Math.max(this.open, this.buzz);
     for (const { pivot, side } of rig.wings) {
-      pivot.visible = this.open > 0.05;
+      pivot.visible = spread > 0.05;
       const flap = Math.sin(t * Math.PI * 2 * 13 + (side === 1 ? 0 : 0.4));
       pivot.rotation.set(
-        this.open * 0.25,
-        -side * this.open * 0.9,
-        side * this.open * (0.75 + flap * 0.4),
+        spread * 0.25,
+        -side * spread * 0.9,
+        side * spread * (0.75 + flap * 0.4),
       );
-      pivot.scale.setScalar(Math.max(this.open, 0.001));
+      pivot.scale.setScalar(Math.max(spread, 0.001));
     }
 
     // Alarm: a hard red flash that settles into a slow warning pulse.

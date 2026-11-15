@@ -11,6 +11,7 @@ const format = (event: string, data: unknown) =>
  */
 export class SseChannel {
   private readonly clients = new Map<Response, string | undefined>();
+  private readonly listeners = new Set<(key: string | undefined) => void>();
 
   get size() {
     return this.clients.size;
@@ -23,6 +24,16 @@ export class SseChannel {
     return count;
   }
 
+  /** Calls `listener` with the key whenever a stream opens or closes under it. */
+  onChange(listener: (key: string | undefined) => void) {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  }
+
+  private changed(key: string | undefined) {
+    for (const listener of this.listeners) listener(key);
+  }
+
   /** Opens the stream. Returns a function that sends to just this client. */
   attach(req: Request, res: Response, key?: string) {
     res.writeHead(200, {
@@ -33,11 +44,12 @@ export class SseChannel {
     });
     res.write("retry: 3000\n\n");
     this.clients.set(res, key);
+    this.changed(key);
 
     const heartbeat = setInterval(() => res.write(": ping\n\n"), HEARTBEAT_MS);
     const detach = () => {
       clearInterval(heartbeat);
-      this.clients.delete(res);
+      if (this.clients.delete(res)) this.changed(key);
     };
     req.on("close", detach);
     res.on("close", detach);
@@ -56,16 +68,22 @@ export class SseChannel {
 
   /** Ends every stream under this key, e.g. when its user loses access. */
   close(key: string) {
+    let closed = false;
     for (const [client, owner] of this.clients) {
       if (owner !== key) continue;
       this.clients.delete(client);
       client.end();
+      closed = true;
     }
+    if (closed) this.changed(key);
   }
 }
 
 /** Desktop pets listening for alerts, keyed by their user's id. */
 export const petChannel = new SseChannel();
+
+/** Blocked pages in users' browsers, keyed by their user's id (see warnings.ts). */
+export const warningChannel = new SseChannel();
 
 /** Admin UIs listening for live activity. */
 export const adminChannel = new SseChannel();

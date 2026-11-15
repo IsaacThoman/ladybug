@@ -3,7 +3,7 @@
 // anything else from this module: keep them self-contained.
 //
 // The overlay is a closed shadow root in the page's top layer holding an
-// iframe of warning.html. The page can't reach into the iframe (it's the
+// iframe of warning.html, which blocks the page. The page can't reach into the iframe (it's the
 // extension's origin), and if it removes the overlay, it's put straight back.
 // A page that keeps removing it is reported, and the background worker
 // replaces the whole page with the warning instead.
@@ -35,9 +35,12 @@ export function mountOverlay(frameUrl: string, token: string) {
       visibility: visible !important;
       opacity: 1 !important;
       pointer-events: auto !important;
-      background: rgba(30, 12, 10, 0.5) !important;
-      backdrop-filter: blur(10px) saturate(0.6) !important;
+      /* The blocked page's brown, so none of the page shows while it loads. */
+      background: #4a2d1e !important;
       animation: ladybugg-in 0.18s ease-out;
+    }
+    @media (prefers-color-scheme: dark) {
+      :host { background: #21150e !important; }
     }
     iframe {
       all: initial;
@@ -45,7 +48,7 @@ export function mountOverlay(frameUrl: string, token: string) {
       width: 100%;
       height: 100%;
       border: 0;
-      /* Matches the warning page, so Chrome keeps the frame see-through. */
+      /* Matches the warning page, so Chrome doesn't paint the frame white while it loads. */
       color-scheme: light dark;
     }
     @keyframes ladybugg-in {

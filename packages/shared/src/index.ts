@@ -4,6 +4,7 @@
 export * from "./scan.ts";
 export * from "./sandbox.ts";
 export * from "./accounts.ts";
+export * from "./sse.ts";
 
 import type { ScanStatus, ScanVerdict, Screenshot } from "./scan.ts";
 
@@ -86,6 +87,47 @@ export type PetAlert = {
   at: number;
   /** The sandbox scan behind this alert, if any. The pet opens its report on click. */
   scanId?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Blocked pages. While the extension blocks an unsafe page, the page holds a
+// stream open to the server (POST /api/pet/warnings). The user's desktop pets
+// hear about it on their own stream (event "warnings", the full list each
+// time), stay scared until it closes, and can pick what happens next.
+
+/** An unsafe page the extension is blocking in the user's browser right now. */
+export type PetWarning = {
+  id: string;
+  url: string;
+  host: string;
+  /** Why the server flagged it. */
+  reason: string;
+  /** Whether the verdict arrived while the user was already on the page. */
+  late: boolean;
+  /** Epoch ms. */
+  at: number;
+};
+
+/** `POST /api/pet/warnings` body. The response is the warning's event stream. */
+export type OpenWarningRequest = Pick<PetWarning, "url" | "host" | "reason" | "late">;
+
+/** What the user can do about a blocked page: leave it, or continue to it anyway. */
+export const WARNING_CHOICES = ["exit", "continue"] as const;
+export type WarningChoice = (typeof WARNING_CHOICES)[number];
+
+/** `POST /api/pet/warnings/:id/choice`, from a pet. */
+export type WarningChoiceRequest = { choice: WarningChoice };
+
+/**
+ * Events on a warning's stream, by event name:
+ * - "ready": the warning is open, and how many of the user's pets are listening,
+ * - "pets": that count changed,
+ * - "choice": the user picked something on their pet.
+ */
+export type WarningStreamEvents = {
+  ready: { id: string; pets: number };
+  pets: { pets: number };
+  choice: { choice: WarningChoice };
 };
 
 // ---------------------------------------------------------------------------

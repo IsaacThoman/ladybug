@@ -1,4 +1,11 @@
-import type { ApiError, CheckRequest, CheckResponse, CheckStatusResponse, UrlRecord } from "@ladybug/shared";
+import type {
+  ApiError,
+  CheckRequest,
+  CheckResponse,
+  CheckStatusResponse,
+  FocusRequest,
+  UrlRecord,
+} from "@ladybug/shared";
 import { mountOverlay, unmountOverlay } from "./overlay";
 import { addRecent, getAuth, getSettings, setAuth, updateRecent } from "./settings";
 import type { Auth, RecentCheck, Settings } from "./settings";
@@ -332,18 +339,80 @@ async function report(tabId: number, url: string, newDocument: boolean) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The active tab. The server tells the user's pet when the page in front of
+// them is the one being checked, so it can stop and look it over.
+
+/** The last report the server accepted, so each change is sent once. */
+let reportedFocus: string | null = null;
+let focusReports: Promise<void> = Promise.resolve();
+
+/** The page in the active tab of the browser window used last, if there is one. */
+async function activeTabUrl(): Promise<string | null> {
+  try {
+    const window = await chrome.windows.getLastFocused({ populate: true, windowTypes: ["normal"] });
+    return window.tabs?.find((tab) => tab.active)?.url ?? null;
+  } catch {
+    return null; // No browser windows left.
+  }
+}
+
+async function reportFocus() {
+  const [settings, auth] = await Promise.all([getSettings(), getAuth()]);
+  if (!auth) {
+    reportedFocus = null;
+    return;
+  }
+  let url = settings.enabled ? await activeTabUrl() : null;
+  if (url && (!/^https?:/i.test(url) || url.startsWith(`${settings.serverUrl}/`))) url = null;
+  const key = JSON.stringify([settings.serverUrl, auth.token, url]);
+  if (key === reportedFocus) return;
+  try {
+    const body: FocusRequest = { url };
+    const res = await fetch(`${settings.serverUrl}/api/pet/focus`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    reportedFocus = res.ok ? key : null;
+  } catch {
+    reportedFocus = null; // Offline: the next change tries again.
+  }
+}
+
+/** Tells the server what's in the active tab now, one report at a time. */
+function syncFocus() {
+  focusReports = focusReports.then(reportFocus, reportFocus);
+}
+
+chrome.tabs.onActivated.addListener(syncFocus);
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  // Leaving the browser for another app doesn't change which page is open.
+  if (windowId !== chrome.windows.WINDOW_ID_NONE) syncFocus();
+});
+// Signing in or out, or turning checks on or off.
+chrome.storage.onChanged.addListener((_changes, area) => {
+  if (area === "local" || area === "sync") syncFocus();
+});
+// The worker may have restarted and forgotten what it last said.
+syncFocus();
+
 chrome.webNavigation.onCommitted.addListener((details) => {
   if (details.frameId !== 0 || details.documentLifecycle === "prerender") return;
   void report(details.tabId, details.url, true);
+  syncFocus();
 });
 
 // Single-page apps change the URL without a new navigation.
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
   if (details.frameId !== 0) return;
   void report(details.tabId, details.url, false);
+  syncFocus();
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   lastReported.delete(tabId);
   void setTabWarning(tabId, null);
+  syncFocus();
 });

@@ -4,7 +4,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import type { AlertLevel, PetAlert, PetWarning, ScanStatus, ScanVerdict, WarningChoice } from "@ladybug/shared";
+import type { AlertLevel, PetAlert, PetFocus, PetWarning, ScanStatus, ScanVerdict, WarningChoice } from "@ladybug/shared";
 import { chooseForWarning, createScan, getScan, reportUrl, subscribeToPetStream, watchScan } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
 import { getSession } from "../session";
@@ -95,15 +95,16 @@ function remember(set: Set<string>, id: string) {
   if (set.size > SEEN_SCANS_LIMIT) set.delete(set.values().next().value!);
 }
 
-function moodFor(scan: ScanState, dropHover: boolean, blocking: boolean): LadybugMood {
+function moodFor(scan: ScanState, dropHover: boolean, blocking: boolean, inspecting: boolean): LadybugMood {
   if (dropHover) return "expectant";
   // Scared for as long as the browser is blocking an unsafe page.
   if (blocking) return "alarmed";
-  if (scan.phase === "scanning") return "sniffing";
-  if (scan.phase !== "done") return "calm";
-  if (scan.verdict === "benign") return "happy";
-  if (scan.verdict === "suspicious") return "nervous";
-  if (scan.verdict === "malicious") return "alarmed";
+  if (scan.phase === "done") {
+    if (scan.verdict === "benign") return "happy";
+    if (scan.verdict === "suspicious") return "nervous";
+    if (scan.verdict === "malicious") return "alarmed";
+  }
+  if (scan.phase === "scanning" || inspecting) return "sniffing";
   return "calm";
 }
 
@@ -183,10 +184,16 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
   const holdRef = useRef(false);
   const seenWarningsRef = useRef(new Set<string>());
   const lastFretRef = useRef(0);
+  /** Whether the page in the browser's active tab is being checked, from the server. */
+  const [focus, setFocus] = useState<PetFocus | null>(null);
 
   const warning = warnings.at(-1) ?? null;
   const showBubble = warning !== null && !menu;
-  const mood = moodFor(scan, dropHover, warning !== null);
+  // The page the user is looking at is being checked: stand still and look it
+  // over through the magnifying glass. Blocked pages, reactions and drops come first.
+  const inspecting = Boolean(focus?.investigating) && !dropHover && warning === null && scan.phase !== "done";
+  const inspectingRef = useRef(false);
+  const mood = moodFor(scan, dropHover, warning !== null, inspecting);
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -194,7 +201,8 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
 
   useEffect(() => {
     moodRef.current = mood;
-  }, [mood]);
+    inspectingRef.current = inspecting;
+  }, [mood, inspecting]);
 
   useEffect(() => {
     holdRef.current = showBubble;
@@ -260,11 +268,12 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
             ? WALK_SPEED * 0.35
             : WALK_SPEED;
 
-      const holding = mood === "expectant" || holdRef.current;
+      const holding = mood === "expectant" || holdRef.current || inspectingRef.current;
       if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
-          // Hold still while a link is dragged over it, or while it's warning about a page.
+          // Hold still while a link is dragged over it, while it's warning
+          // about a page, or while it inspects the active tab.
           if (holding) s.idleUntil = Math.max(s.idleUntil, now + 300);
           if (now >= s.idleUntil) {
             if (s.backing) {
@@ -367,7 +376,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
       prevX = s.x;
       if (s.mode === "dragging" && Math.abs(vx) > 120) s.heading = vx > 0 ? 1 : -1;
-      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood }, dt);
+      ladybug.render({ mode: s.mode, vx, heading: s.heading, mood, inspect: inspectingRef.current }, dt);
       frame = requestAnimationFrame(tick);
     };
 
@@ -590,7 +599,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     else react("malicious");
   });
 
-  useEffect(() => subscribeToPetStream({ onAlert: (alert) => onAlert(alert), onWarnings: (next) => onWarnings(next) }), []);
+  useEffect(() => subscribeToPetStream({ onAlert: (alert) => onAlert(alert), onWarnings: (next) => onWarnings(next), onFocus: setFocus }), []);
 
   // A choice the browser hasn't acted on in a while can be tried again.
   useEffect(() => {

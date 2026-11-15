@@ -26,6 +26,12 @@ export type LadybugPose = {
    * right of the screen) instead of glancing around at random.
    */
   look?: number;
+  /**
+   * While sniffing and standing still: a close inspection, holding the
+   * magnifying glass up to one eye with only short breaks, instead of an
+   * occasional peek.
+   */
+  inspect?: boolean;
 };
 
 export type LadybugViewport = {
@@ -254,13 +260,16 @@ export class LadybugRenderer {
     this.nervous = approach(this.nervous, mood === "nervous" ? 1 : 0, 5, dt);
     this.alarmed = approach(this.alarmed, mood === "alarmed" ? 1 : 0, 8, dt);
     // Now and then while sniffing, hold the magnifying glass up to one eye.
+    // Inspecting, it's up most of the time.
+    const inspecting = mood === "sniffing" && mode === "idle" && pose.inspect === true;
+    if (inspecting) this.peekIn = Math.min(this.peekIn, 0.9);
     if (mood === "sniffing" && (mode === "idle" || walking) && this.lens > 0.9) {
       if (this.peekLeft > 0) {
         this.peekLeft -= dt;
-        if (this.peekLeft <= 0) this.peekIn = randomBetween(2.5, 5.5);
+        if (this.peekLeft <= 0) this.peekIn = inspecting ? randomBetween(0.5, 0.9) : randomBetween(2.5, 5.5);
       } else {
         this.peekIn -= dt;
-        if (this.peekIn <= 0) this.peekLeft = randomBetween(1.4, 2.2);
+        if (this.peekIn <= 0) this.peekLeft = inspecting ? randomBetween(2.4, 4) : randomBetween(1.4, 2.2);
       }
     } else {
       this.peekLeft = 0;

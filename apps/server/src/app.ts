@@ -9,6 +9,7 @@ import type { ModelSettingsStore } from "@ladybug/backend";
 import { requireAccount, userOf } from "./accounts.ts";
 import { checkVisit, lookupVisit } from "./checker.ts";
 import { config } from "./config.ts";
+import { focus } from "./focus.ts";
 import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
 import { HttpError, errorHandler, optionalString, requireEnum, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
@@ -92,11 +93,22 @@ export function createApp(
     res.json(await lookupVisit(requireString(req.body?.url, "url", 8192)));
   });
 
-  // Desktop pets subscribe here for their user's alerts, and the pages their
-  // browser is blocking.
+  // The extension reports the page in the browser's active tab whenever it
+  // changes, so the pet can stop to look over a page while it's checked.
+  app.post("/api/pet/focus", signedIn, (req, res) => {
+    const url = req.body?.url === null ? null : requireString(req.body?.url, "url", 8192);
+    focus.set(userOf(res).id, url);
+    res.status(204).end();
+  });
+
+  // Desktop pets subscribe here for their user's alerts, the pages their
+  // browser is blocking, and whether the page in their active tab is being
+  // checked ("focus").
   app.get("/api/pet/stream", signedIn, (req, res) => {
     const user = userOf(res);
-    petChannel.attach(req, res, user.id)("warnings", warningsFor(user.id));
+    const send = petChannel.attach(req, res, user.id);
+    send("warnings", warningsFor(user.id));
+    send("focus", focus.of(user.id));
   });
 
   // Opened by the extension's blocked page, which keeps the response (an

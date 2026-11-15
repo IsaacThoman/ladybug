@@ -13,6 +13,7 @@
     "test": "node --test electron/*.test.ts src/calls/*.test.ts"
   },
   "dependencies": {
+    "@ladybug/brain": "^0.0.0",
     "@ladybug/mascot": "^0.0.0",
     "@ladybug/shared": "^0.0.0",
     "livekit-client": "^2.24.1",

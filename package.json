@@ -20,6 +20,8 @@
     "dev:desktop:overlay": "npm run dev:overlay -w @ladybug/desktop",
     "dev:admin": "npm run dev -w @ladybug/admin",
     "dev:extension": "npm run dev -w @ladybug/extension",
+    "brain:pack": "npm run data:pack -w @ladybug/brain --",
+    "brain:fetch": "npm run data:fetch -w @ladybug/brain --",
     "typesense": "docker compose -f compose.yaml -f compose.local.yaml up -d typesense",
     "services:up": "docker compose -f compose.yaml -f compose.local.yaml up -d --wait typesense postgres valkey",
     "services:down": "docker compose -f compose.yaml -f compose.local.yaml down",

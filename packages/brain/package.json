@@ -1,0 +1,16 @@
+{
+  "name": "@ladybug/brain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A spiking simulation of the fruit fly's nervous system, wired from the male CNS connectome, that drives the desktop pet.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test 'src/**/*.test.ts'",
+    "data:pack": "node scripts/pack.ts",
+    "data:fetch": "node scripts/fetch.ts"
+  }
+}

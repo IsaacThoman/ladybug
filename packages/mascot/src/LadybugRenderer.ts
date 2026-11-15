@@ -32,6 +32,16 @@ export type LadybugPose = {
    * occasional peek.
    */
   inspect?: boolean;
+  /**
+   * 0 to 1: grooming. Standing still, it rubs its head and antennae with its
+   * front legs, faster and more thoroughly as this rises.
+   */
+  groom?: number;
+  /**
+   * 0 to 1: how far the wing cases are held open, with the wings buzzing
+   * underneath. Adds to whatever the mood and reactions already do.
+   */
+  wings?: number;
 };
 
 export type LadybugViewport = {

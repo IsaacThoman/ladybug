@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { LadybugApi, OverlayLayout } from "../src/ladybug-api";
 
 const api: LadybugApi = {
+  getCallCaptureSource: (id) => ipcRenderer.invoke("ladybug:call-capture-source", id),
   setInteractiveRects: (rects) => ipcRenderer.send("ladybug:set-interactive-rects", rects),
   setCallSession: (session) => ipcRenderer.send("ladybug:set-call-session", session),
   faceTime: {

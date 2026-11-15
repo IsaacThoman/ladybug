@@ -154,3 +154,24 @@ test("permission failure stops capture and requests cleanup", async () => {
   assert.match(f.controller.getSnapshot().message, /permission denied/);
   f.emit("ended"); f.dispose();
 });
+
+test("sign-out during call preparation never authorizes capture and ends the prepared call", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const prepared = deferred<Response>();
+  const requests: string[] = [];
+  const service = new CallService({ auth: () => ({ url: "https://example.test", token: "test" }), fetch: async (input) => {
+    const path = new URL(String(input)).pathname;
+    requests.push(path);
+    if (path.endsWith("/prepare")) return prepared.promise;
+    return Response.json({});
+  } });
+  const phases: string[] = [];
+  service.subscribe((state) => phases.push(state.phase));
+  const starting = service.prepare();
+  await service.endCurrent();
+  prepared.resolve(Response.json({ id: "late" }));
+  await starting;
+  assert.equal(phases.includes("ready"), false);
+  assert.equal(service.getState().phase, "ending");
+  assert.ok(requests.includes("/api/calls/late/end"));
+});

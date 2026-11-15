@@ -1,16 +1,26 @@
 import { LocalAudioTrack, LocalVideoTrack, Room, RoomEvent, Track } from "livekit-client";
 import type { RemoteParticipant, RemoteTrack, RemoteTrackPublication } from "livekit-client";
-import type { PreparedCall } from "./types";
-import type { CallMedia } from "./controller";
+import type { PreparedCall } from "./types.ts";
+import type { CallMedia } from "./controller.ts";
+
+import { createCapture } from "./capture.ts";
+import type { CaptureStatus } from "./capture.ts";
 
 /** One audio publication stays unmuted; its PCM samples are silent until bridge_ready. */
 export function createCallMedia(prepared: PreparedCall, disconnected: () => void,
   video: HTMLVideoElement, audio: HTMLAudioElement, showVideo: (available: boolean) => void,
-  playbackBlocked: () => void): CallMedia {
-  const room = new Room({ adaptiveStream: false, dynacast: false });
+  playbackBlocked: () => void, captureStatus: (status: CaptureStatus) => void,
+  dependencies = {
+    room: () => new Room({ adaptiveStream: false, dynacast: false }),
+    audioContext: () => new AudioContext(),
+    audioTrack: (track: MediaStreamTrack) => new LocalAudioTrack(track, undefined, true),
+    videoTrack: (track: MediaStreamTrack) => new LocalVideoTrack(track, undefined, true),
+  }): CallMedia {
+  const room = dependencies.room();
   let stopped = false;
   let active = false;
-  let stream: MediaStream | undefined;
+  const capture = createCapture(disconnected, captureStatus);
+  let outputStream: MediaStream | undefined;
   let context: AudioContext | undefined;
   let gain: GainNode | undefined;
   let localAudio: LocalAudioTrack | undefined;
@@ -55,7 +65,8 @@ export function createCallMedia(prepared: PreparedCall, disconnected: () => void
     if (stopped) return;
     stopped = true;
     if (gain) gain.gain.value = 0;
-    stream?.getTracks().forEach((track) => track.stop());
+    capture.stop();
+    outputStream?.getTracks().forEach((track) => track.stop());
     localAudio?.stop(); localVideo?.stop();
     if (context) void context.close();
     clearVideo(); clearAudio();
@@ -74,32 +85,26 @@ export function createCallMedia(prepared: PreparedCall, disconnected: () => void
     },
     async publish() {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: true });
-        if (stopped) { stream.getTracks().forEach((t) => t.stop()); return; }
-        context = new AudioContext();
+        const { microphone, composite } = await capture.start(prepared.id);
+        if (stopped) return;
+        context = dependencies.audioContext();
         gain = context.createGain(); gain.gain.value = 0;
-        const source = context.createMediaStreamSource(stream);
+        const source = context.createMediaStreamSource(microphone);
         const output = context.createMediaStreamDestination();
+        outputStream = output.stream;
         source.connect(gain); gain.connect(output);
         await context.resume();
         if (stopped) return;
         if (context.state !== "running") throw new Error("Audio could not start. Try calling again.");
-        localAudio = new LocalAudioTrack(output.stream.getAudioTracks()[0], undefined, true);
-        localVideo = new LocalVideoTrack(stream.getVideoTracks()[0], undefined, true);
-        for (const track of stream.getTracks()) track.addEventListener("ended", () => { if (!stopped) disconnected(); });
+        localAudio = dependencies.audioTrack(output.stream.getAudioTracks()[0]);
+        localVideo = dependencies.videoTrack(composite.getVideoTracks()[0]);
         await room.localParticipant.publishTrack(localAudio, { source: Track.Source.Microphone, dtx: false });
         if (stopped) return;
         await room.localParticipant.publishTrack(localVideo, { source: Track.Source.Camera });
         if (stopped) return;
       } catch (error) {
         stop();
-        if (error instanceof DOMException && ["NotAllowedError", "PermissionDeniedError"].includes(error.name)) {
-          throw new Error("Camera or microphone permission denied. Allow both in system privacy settings, then try again.", { cause: error });
-        }
-        if (error instanceof DOMException && ["NotFoundError", "NotReadableError"].includes(error.name)) {
-          throw new Error("Camera or microphone unavailable. Connect both devices and close apps using them, then try again.", { cause: error });
-        }
-        throw new Error("Could not connect camera and microphone. Check your devices and LiveKit connection.", { cause: error });
+        throw error instanceof Error ? error : new Error("Could not publish screen video and microphone. Check your LiveKit connection.", { cause: error });
       }
     },
     activate() { if (!stopped && !active && gain) { active = true; gain.gain.value = 1; } },

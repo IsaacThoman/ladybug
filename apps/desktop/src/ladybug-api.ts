@@ -14,6 +14,7 @@ export type OverlayLayout = {
 
 export type LadybugApi = {
   faceTime: FaceTimeApi;
+  getCallCaptureSource: (id: string) => Promise<{ id: string; platform: string }>;
   /**
    * The signed-in session (or null after signing out). The main process
    * places support calls as this account, on the server that issued it.

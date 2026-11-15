@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import CallVideo from "./CallVideo";
 import Pet from "./Pet";
 import { FaceTimeController } from "../calls/controller";
+import type { CaptureStatus } from "../calls/capture";
+import { CAMERA_UNAVAILABLE } from "../calls/capture";
 import { createCallMedia } from "../calls/media";
 import type { OverlayLayout } from "../ladybug-api";
 import { getSession } from "../session";
@@ -24,6 +26,7 @@ export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayL
   const audio = useRef<HTMLAudioElement>(null);
   const [hasVideo, setHasVideo] = useState(false);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const [capture, setCapture] = useState<CaptureStatus>({ sharing: false, cameraUnavailable: false });
   const [blocked, setBlocked] = useState(false);
   const [controller] = useState(() => new FaceTimeController(window.ladybug.faceTime, (prepared, disconnected) => {
     const videoElement = document.getElementById(VIDEO_ID);
@@ -32,7 +35,7 @@ export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayL
       throw new Error("FaceTime media is not ready.");
     }
     setBlocked(false);
-    return createCallMedia(prepared, disconnected, videoElement, audioElement, setHasVideo, () => setBlocked(true));
+    return createCallMedia(prepared, disconnected, videoElement, audioElement, setHasVideo, () => setBlocked(true), setCapture);
   }));
   useEffect(() => controller.observe(), [controller]);
   useEffect(() => window.ladybug.faceTime.onSupportRequest(() => { void controller.start(); }), [controller]);
@@ -58,6 +61,8 @@ export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayL
           : <button type="button" className="ghost" onClick={() => setDismissed(noticeKey)}>Dismiss</button>}
       </div>
     </div>
+    {busy && capture.sharing && <p role="status" className="pet-call-note">Sharing your screen</p>}
+    {busy && capture.sharing && capture.cameraUnavailable && <p className="pet-call-note">{CAMERA_UNAVAILABLE}</p>}
     {busy && state.phase === "active" && !hasVideo && <p className="pet-call-note">Caller video unavailable</p>}
     {blocked && busy && <div className="pet-bubble-actions">
       <button type="button" className="ghost" onClick={() => {

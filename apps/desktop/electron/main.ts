@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   clipboard,
+  desktopCapturer,
   ipcMain,
   Menu,
   nativeImage,
@@ -16,6 +17,7 @@ import type { OverlayLayout, Rect } from "../src/ladybug-api";
 import { parseHttpUrl, urlFromClipboardText } from "../src/urls";
 import { SupportSubscription } from "./support-stream";
 import { CallService } from "./call-service";
+import { CapturePolicy, selectScreen } from "./capture-policy";
 import { parseCallAuth } from "./call-config";
 import type { CallAuth } from "./call-config";
 
@@ -59,13 +61,14 @@ let ignoringMouse = true;
 let callAuth: CallAuth | null = null;
 let supportReady = false;
 const calls = new CallService({ auth: () => callAuth });
+const capturePolicy = new CapturePolicy(calls.getState);
 const support = new SupportSubscription(() => {
   if (overlayWin && !overlayWin.isDestroyed() && ["idle", "ended", "error"].includes(calls.getState().phase)) {
     showOverlay();
     overlayWin.webContents.send("ladybug:support-request");
   }
 }, { auth: () => callAuth });
-const fromOverlay = (event: Electron.IpcMainEvent) =>
+const fromOverlay = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
   event.sender === overlayWin?.webContents && event.senderFrame === event.sender.mainFrame;
 ipcMain.on("ladybug:support-ready", (event, ready: boolean) => {
   if (!fromOverlay(event)) return;
@@ -106,6 +109,14 @@ ipcMain.handle("ladybug:call-prepare", (event) => {
 ipcMain.handle("ladybug:call-dial", (event, id: string) => { trustedCall(event); return calls.dial(id); });
 ipcMain.handle("ladybug:call-end", (event, id: string) => { trustedCall(event); return calls.end(id); });
 ipcMain.handle("ladybug:call-state", (event) => { trustedCall(event); return calls.getState(); });
+
+ipcMain.handle("ladybug:call-capture-source", async (event, id: string) => {
+  trustedCall(event);
+  const source = await capturePolicy.source(() => fromOverlay(event), id, async () =>
+    selectScreen(await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }),
+      String(screen.getPrimaryDisplay().id)).id);
+  return { id: source, platform: process.platform };
+});
 
 /** Movement bounds in renderer coordinates. */
 function getOverlayLayout(): OverlayLayout {
@@ -164,6 +175,7 @@ function createOverlayWindow() {
     icon: ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
+      backgroundThrottling: false,
     },
   });
 
@@ -200,20 +212,26 @@ function createOverlayWindow() {
   };
   overlayWin.webContents.on("render-process-gone", endMedia);
   overlayWin.webContents.on("did-start-loading", endMedia);
-  const mediaAllowed = () => calls.getState().phase === "ready";
-  overlayWin.webContents.session.setPermissionCheckHandler((contents, permission) =>
-    contents === overlayWin?.webContents && permission === "media" && mediaAllowed());
+  const trustedMediaFrame = (contents: Electron.WebContents | null, details: { isMainFrame: boolean; requestingUrl?: string }) =>
+    contents === overlayWin?.webContents && details.isMainFrame && details.requestingUrl === contents?.mainFrame.url;
+  overlayWin.webContents.session.setPermissionCheckHandler((contents, permission, _origin, details) =>
+    capturePolicy.allows(trustedMediaFrame(contents, details), permission));
   overlayWin.webContents.session.setPermissionRequestHandler(async (contents, permission, callback, details) => {
-    if (contents !== overlayWin?.webContents || permission !== "media" || !details.isMainFrame || !mediaAllowed()) {
-      callback(false); return;
-    }
-    if (process.platform === "darwin") {
+    const allowed = () => capturePolicy.allows(trustedMediaFrame(contents, details), permission);
+    if (!allowed()) { callback(false); return; }
+    const id = calls.getState().id;
+    if (process.platform === "darwin" && permission === "media") {
       try {
-        const microphone = await systemPreferences.askForMediaAccess("microphone");
-        const camera = microphone && await systemPreferences.askForMediaAccess("camera");
-        callback(camera && mediaAllowed());
+        const types = "mediaTypes" in details ? details.mediaTypes : undefined;
+        if (!types?.length) { callback(false); return; }
+        for (const type of types) {
+          if (!await systemPreferences.askForMediaAccess(type === "audio" ? "microphone" : "camera") || !allowed() || !capturePolicy.current(id)) {
+            callback(false); return;
+          }
+        }
+        callback(allowed() && capturePolicy.current(id));
       } catch { callback(false); }
-    } else callback(true);
+    } else callback(allowed() && capturePolicy.current(id));
   });
 
   overlayWin.on("closed", () => {

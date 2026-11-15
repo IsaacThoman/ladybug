@@ -15,7 +15,6 @@
       tabindex="-1"
       hidden
     >
-      <p class="verdict-chip">Unsafe page</p>
       <h1 id="title">Blocked</h1>
       <p id="summary" class="summary">
         Ladybugg blocked <strong id="host"></strong> because it looks dangerous.
@@ -27,43 +26,10 @@
         <button id="show-here" type="button" class="link-button">Show them here instead</button>
       </section>
 
-      <!-- Otherwise this ladybug says it, in a speech bubble. -->
-      <section id="here" class="here" hidden>
-        <div class="speech">
-          <h2 id="speech-title">This page looks dangerous</h2>
-          <p id="speech-summary" class="speech-summary">
-            It could try to steal your passwords or payment details, or install something harmful.
-          </p>
-          <div class="details" aria-label="Why it was flagged">
-            <p id="reason" class="reason"></p>
-            <p id="url" class="url"></p>
-          </div>
-          <div class="actions">
-            <button id="exit" type="button" class="button primary">Get me out of here</button>
-            <button id="continue" type="button" class="button ghost">Continue anyway</button>
-          </div>
-          <p class="footnote">Continuing hides this warning for the rest of this browser session.</p>
-        </div>
-
-        <div class="mascot-stage" style="--u: 104px">
-          <svg class="mascot-leaf" viewBox="0 0 340 96" aria-hidden="true">
-            <defs>
-              <linearGradient id="leaf-fill" x1="0" y1="0" x2="0.35" y2="1">
-                <stop offset="0" class="stop-a" />
-                <stop offset="1" class="stop-b" />
-              </linearGradient>
-            </defs>
-            <path class="leaf-stem" d="M34 53Q16 57 7 72" />
-            <path class="leaf-edge" d="M30 57C100 101 250 92 330 45C250 90 100 98 30 57Z" />
-            <path fill="url(#leaf-fill)" d="M30 53C92 5 252 0 332 40C252 88 98 98 30 53Z" />
-            <path
-              class="leaf-vein"
-              d="M38 53Q180 51 324 41M92 52Q112 32 138 23M92 52Q114 70 142 80M160 50Q182 30 208 21M160 50Q184 70 212 78M232 47Q252 32 272 27M232 47Q254 62 276 65"
-            />
-          </svg>
-          <canvas id="ladybug" class="mascot-canvas" aria-hidden="true"></canvas>
-          <img id="ladybug-fallback" class="mascot-fallback" src="icons/ladybug-128.png" alt="" hidden />
-        </div>
+      <!-- Otherwise the options are here. -->
+      <section id="here" class="actions" hidden>
+        <button id="exit" type="button" class="button primary">Get me out of here</button>
+        <button id="continue" type="button" class="button ghost">Continue anyway</button>
       </section>
     </main>
 

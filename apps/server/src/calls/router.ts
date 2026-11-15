@@ -16,7 +16,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export function createCallRouter(options: { accounts: AccountStore; service?: CallService; leaseMs?: number; now?: () => number }) {
   const router = Router();
-  const support = new SupportStream();
+  const support = new SupportStream(options.now ?? Date.now);
   const calls = options.service ?? new CallService();
   const now = options.now ?? Date.now;
   let owner: string | undefined, requestId: string | undefined;
@@ -96,7 +96,7 @@ export function createCallRouter(options: { accounts: AccountStore; service?: Ca
     shutdown,
     checkLease,
     revoke,
-    deliverSupport: (id: string) => finished(calls.getState().phase) && support.deliver(id),
+    deliverSupport: (id: string, sentAt?: number) => finished(calls.getState().phase) && support.deliver(id, sentAt),
   });
 }
 

@@ -1,14 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Redis } from "ioredis";
 import { normalizeUrl } from "../urls.ts";
-import { readMessagingConfig, sendMessage, SendError } from "./chert.ts";
-import type { MessagingConfig } from "./chert.ts";
+import { readMessagingConfig, sendMessage, readMessages, SendError } from "./chert.ts";
+import type { MessagingConfig, SharedMessage } from "./chert.ts";
 
 const HOUR = 3_600_000, WINDOW = 1_800_000;
-const jobs = "support:jobs";
+const POLL_INTERVAL_MS = 15_000;
+const jobs = "support:shared:jobs";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
-const windows = (chat: string) => `support:chat:${hash(chat)}`;
-type Job = { id: string; url: string; config: Pick<MessagingConfig, "destination" | "line" | "tenant">; created: number; attempts: number };
+const windows = (config: MessagingConfig) => `support:shared:windows:${hash(`${config.project}:${config.line}:${config.destination}`)}`;
+type Job = { id: string; url: string; config: Pick<MessagingConfig, "destination" | "line" | "project">; created: number; attempts: number; messageId?: string };
 
 /** Atomic reservation and outbox insertion; pending sends survive process restarts. */
 const reserve = `
@@ -32,23 +33,28 @@ return false`;
 export class SupportService {
   private timer?: ReturnType<typeof setInterval>;
   private running = false;
+  private polling = false;
+  private pollTimer?: ReturnType<typeof setInterval>;
+  private startedAt: number;
   private redis: Redis;
-  private deliver: (id: string) => boolean;
-  private options: { config?: () => MessagingConfig | null; send?: typeof sendMessage; now?: () => number };
-  constructor(redis: Redis, deliver: (id: string) => boolean,
-    options: SupportService["options"] = {}) { this.redis = redis; this.deliver = deliver; this.options = options; }
+  private deliver: (id: string, sentAt: number) => boolean;
+  private options: { config?: () => MessagingConfig | null; send?: typeof sendMessage; read?: typeof readMessages; now?: () => number };
+  constructor(redis: Redis, deliver: (id: string, sentAt: number) => boolean,
+    options: SupportService["options"] = {}) { this.redis = redis; this.deliver = deliver; this.options = options; this.startedAt = this.now(); }
   private now() { return (this.options.now ?? Date.now)(); }
   private config() { return (this.options.config ?? readMessagingConfig)(); }
   start() {
     this.timer = setInterval(() => { void this.drain().catch(() => console.error("[support] outbox unavailable")); }, 2000);
     this.timer.unref();
+    this.pollTimer = setInterval(() => { void this.poll().catch(() => console.error("[support] shared-message polling unavailable")); }, POLL_INTERVAL_MS);
+    this.pollTimer.unref();
     return this;
   }
-  stop() { clearInterval(this.timer); }
+  stop() { clearInterval(this.timer); clearInterval(this.pollTimer); }
   async notify(rawUrl: string) {
     const target = normalizeUrl(rawUrl), config = this.config();
     if (!target.ok || !config) return;
-    const job: Job = { id: randomUUID(), url: target.url, config: { destination: config.destination, line: config.line, tenant: config.tenant }, created: this.now(), attempts: 0 };
+    const job: Job = { id: randomUUID(), url: target.url, config: { destination: config.destination, line: config.line, project: config.project }, created: this.now(), attempts: 0 };
     await this.redis.eval(reserve, 3, `support:host:${hash(target.host)}`, `support:job:${job.id}`, jobs,
       job.id, JSON.stringify(job), HOUR, this.now());
   }
@@ -58,6 +64,7 @@ export class SupportService {
     try {
       const config = this.config();
       if (!config) return;
+      let messages: Promise<SharedMessage[]> | undefined;
       for (const key of await this.redis.zrangebyscore(jobs, "-inf", this.now(), "LIMIT", 0, 20)) {
         const lock = `${key}:lock`, token = randomUUID();
         if (!await this.redis.set(lock, token, "PX", 60_000, "NX")) continue;
@@ -65,17 +72,32 @@ export class SupportService {
           const raw = await this.redis.get(key);
           if (!raw) { await this.redis.zrem(jobs, key); continue; }
           const job = JSON.parse(raw) as Job;
-          if (job.config.destination !== config.destination || job.config.line !== config.line || job.config.tenant !== config.tenant) {
+          if (job.config.destination !== config.destination || job.config.line !== config.line || job.config.project !== config.project) {
             await this.redis.zrem(jobs, key); continue;
           }
           try {
-            const chat = await (this.options.send ?? sendMessage)(config, job.id, job.url);
+            let state: string;
+            if (job.messageId) {
+              messages ??= (this.options.read ?? readMessages)(config);
+              state = (await messages).find((row) => row.id === job.messageId && row.line_id === config.line && row.direction === "outbound")?.state ?? "unknown";
+            } else {
+              const receipt = await (this.options.send ?? sendMessage)(config, job.id, job.url);
+              job.messageId = receipt.id;
+              state = receipt.state;
+            }
+            if (state === "cancelled" || state === "failed") throw new SendError(false);
+            if (state !== "sent") {
+              if (this.now() - job.created >= HOUR - 60_000) throw new SendError(false);
+              await this.redis.set(key, JSON.stringify(job), "PX", Math.max(1, HOUR - (this.now() - job.created)));
+              await this.redis.zadd(jobs, this.now() + POLL_INTERVAL_MS, key);
+              continue;
+            }
             const start = this.now();
             // Commit the successful send and its support window together.
             const tx = this.redis.multi();
-            tx.lpush(windows(chat), JSON.stringify({ id: job.id, contact: config.destination, start, finish: start + WINDOW }));
-            tx.ltrim(windows(chat), 0, 999);
-            tx.pexpire(windows(chat), HOUR);
+            tx.lpush(windows(config), JSON.stringify({ id: job.id, contact: config.destination, start, finish: start + WINDOW }));
+            tx.ltrim(windows(config), 0, 999);
+            tx.pexpire(windows(config), HOUR);
             tx.del(key); tx.zrem(jobs, key);
             const result = await tx.exec();
             if (!result || result.some(([error]) => error)) throw new Error("Support state could not be saved");
@@ -94,27 +116,39 @@ export class SupportService {
       }
     } finally { this.running = false; }
   }
-  async reply(input: unknown, received = this.now()) {
-    const config = this.config();
-    if (!config || !input || typeof input !== "object") return;
-    const event = input as { event_type?: unknown; event_id?: unknown; partner_id?: unknown; data?: {
-      chat?: { id?: unknown; is_group?: unknown; handles?: { handle?: unknown; is_me?: unknown }[] };
-      message?: { direction?: unknown; sender_handle?: { handle?: unknown; is_me?: unknown }; parts?: { type?: unknown; value?: unknown }[]; sent_at?: unknown };
-    } };
-    const chat = event.data?.chat, message = event.data?.message;
-    if (event.event_type !== "message.received" || typeof event.event_id !== "string" || !event.event_id || event.event_id.length > 256 ||
-      (config.tenant && event.partner_id !== config.tenant) || chat?.is_group !== false || typeof chat.id !== "string" ||
-      !Array.isArray(chat.handles) || chat.handles.filter((h) => h?.is_me !== true).length !== 1 ||
-      !chat.handles.some((h) => h?.is_me === false && h.handle === config.destination) ||
-      message?.direction !== "inbound" || message.sender_handle?.handle !== config.destination || message.sender_handle.is_me !== false ||
-      !Array.isArray(message.parts) || message.parts.some((p) => !p || p.type !== "text" || typeof p.value !== "string") ||
-      message.parts.map((p) => p.value).join("").trim().toLowerCase() !== "support" || typeof message.sent_at !== "string") return;
-    const sent = Date.parse(message.sent_at);
-    if (!Number.isFinite(sent) || sent > received) return;
-    const id = await this.redis.eval(consume, 2, windows(chat.id), `support:event:${hash(event.event_id)}`, config.destination, sent, received, 7 * 24 * HOUR);
-    // Consume even when offline: support requests are never replayed on reconnect.
-    if (typeof id === "string") this.deliver(id);
+  async poll() {
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      const config = this.config();
+      if (!config) return;
+      const messages = await (this.options.read ?? readMessages)(config);
+      const received = this.now();
+      // Oldest first makes multiple replies deterministic when one poll sees both.
+      for (const message of [...messages].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))) {
+        await this.reply(message, received);
+      }
+    } finally { this.polling = false; }
   }
+  async reply(message: SharedMessage, received = this.now()) {
+    const config = this.config();
+    if (!config || message.line_id !== config.line || message.direction !== "inbound" ||
+      message.state !== "received" || message.text.trim().toLowerCase() !== "support") return;
+    const sent = Date.parse(message.created_at);
+    // A server restart must not turn the provider's history into fresh requests.
+    if (!Number.isFinite(sent) || sent <= this.startedAt || sent > received) return;
+    const eventKey = `support:shared:event:${hash(`${config.project}:${config.line}:${message.id}`)}`;
+    // Shared-line participants register with Chert first. The project owner
+    // accepts the provider's masked last-four identity for this deployment.
+    const sender = message.masked_recipient;
+    const matches = sender === config.destination ||
+      (/^•••\d{4}$/.test(sender) && sender.slice(-4) === config.destination.slice(-4));
+    if (!matches) return;
+    const id = await this.redis.eval(consume, 2, windows(config), eventKey, config.destination, sent, received, 7 * 24 * HOUR);
+    // Consume even when offline: support requests are never replayed on reconnect.
+    if (typeof id === "string") this.deliver(id, sent);
+  }
+
 }
 
 let service: SupportService | undefined;

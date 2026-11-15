@@ -1,53 +1,49 @@
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
 import { test } from "node:test";
-import { readMessagingConfig, sendMessage, SendError, verifySignature } from "./chert.ts";
+import { readMessagingConfig, sendMessage, readMessages, SendError } from "./chert.ts";
 
-const config = { key: "messaging-secret", line: "line", secret: "webhook-secret", destination: "+15551234567", tenant: "tenant" };
+const config = { key: "ftk_shared", line: "line", project: "project", destination: "+15551234567" };
 
-test("messaging shares the FaceTime key and line and requires its own webhook secret and a fixed destination", () => {
+test("shared messaging uses the FaceTime key, project and line, without tenant or webhook secrets", () => {
   assert.equal(readMessagingConfig({}), null);
-  assert.equal(readMessagingConfig({ CHERT_API_KEY: "facetime-key" }), null);
-  const env = { CHERT_API_KEY: "shared-key", CHERT_LINE_ID: "shared-line", CHERT_WEBHOOK_SECRET: "secret", EMERGENCY_NUMBER: "+15551234567" };
-  assert.equal(readMessagingConfig(env)?.key, "shared-key");
-  assert.equal(readMessagingConfig(env)?.line, "shared-line");
-  assert.equal(readMessagingConfig({ ...env, CHERT_WEBHOOK_SECRET: "" }), null);
+  const env = { CHERT_API_KEY: "ftk_shared", CHERT_PROJECT_ID: "project", CHERT_LINE_ID: "line", EMERGENCY_NUMBER: "+15551234567" };
+  assert.deepEqual(readMessagingConfig(env), config);
+  assert.equal(readMessagingConfig({ ...env, CHERT_PROJECT_ID: "" }), null);
   assert.throws(() => readMessagingConfig({ ...env, EMERGENCY_NUMBER: "5551234567" }));
 });
 
-test("modern and legacy signatures cover raw bytes and expire after five minutes", () => {
-  const raw = Buffer.from('{ "text": "SUPPORT" }'), now = Date.now(), ts = Math.floor(now / 1000);
-  const signature = createHmac("sha256", config.secret).update(`${ts}.`).update(raw).digest("hex");
-  for (const header of [`t=${ts},v1=${signature}`, `v1,${ts},${signature}`]) {
-    assert.equal(verifySignature(raw, header, config.secret, now), true);
-    assert.equal(verifySignature(Buffer.from('{"text":"SUPPORT"}'), header, config.secret, now), false);
-    assert.equal(verifySignature(raw, header, "wrong", now), false);
-    assert.equal(verifySignature(raw, header, config.secret, now + 301_000), false);
-    assert.equal(verifySignature(raw, header, config.secret, now - 301_000), false);
-  }
-  assert.equal(verifySignature(raw, `t=${ts},v1=aa`, config.secret, now), false);
-});
-
-test("send uses documented messaging fields, fixed contact and server-side bearer credentials", async () => {
-  const chat = await sendMessage(config, "stable-key", "https://bad.example/", async (url, init) => {
-    assert.equal(String(url), "https://console.trychert.com/api/v1/send");
-    assert.deepEqual(init?.headers, { Authorization: "Bearer messaging-secret", "Content-Type": "application/json", "x-chert-tenant": "tenant" });
+test("shared-line send uses the app endpoint, project header, line_id and Idempotency-Key", async () => {
+  const receipt = await sendMessage(config, "stable-key", "https://bad.example/", async (url, init) => {
+    assert.equal(String(url), "https://app.trychert.com/api/v1/shared-messages");
+    assert.deepEqual(init?.headers, { Authorization: "Bearer ftk_shared", "X-Chert-Project-Id": "project", "Content-Type": "application/json", "Idempotency-Key": "stable-key" });
     assert.deepEqual(JSON.parse(String(init?.body)), {
-      phone: config.destination, phone_line_id: "line", idempotency_key: "stable-key",
-      body: "The user is accessing a website that might not be trustworthy: https://bad.example/. If you would like to initiate a FaceTime call for support, reply SUPPORT.",
+      line_id: "line", recipient: config.destination,
+      text: "The user is accessing a website that might not be trustworthy: https://bad.example/. If you would like to initiate a FaceTime call for support, reply SUPPORT.",
     });
-    return Response.json({ status: "sent", chat_id: "chat" });
+    return Response.json({ data: { id: "message", state: "pending" } }, { status: 202 });
   });
-  assert.equal(chat, "chat");
+  assert.deepEqual(receipt, { id: "message", state: "pending" });
 });
 
-test("only confirmed sends open windows; transient and permanent failures are distinguished", async () => {
-  for (const [status, body, transient] of [
-    [429, {}, true], [503, {}, true], [400, { status: "failed", retryable: true }, true],
-    [400, { status: "failed" }, false], [202, { status: "queued", chat_id: "chat" }, false],
-    [200, { status: "duplicate", chat_id: "chat" }, false], [200, { status: "sent" }, false],
-  ] as const) {
-    await assert.rejects(sendMessage(config, "key", "https://bad.example", async () => Response.json(body, { status })), (error) => error instanceof SendError && error.transient === transient);
+test("transport and transient errors retain retry eligibility; access and recipient failures do not", async () => {
+  for (const [status, transient] of [[408, true], [429, true], [503, true], [400, false], [401, false], [403, false], [404, false]] as const) {
+    await assert.rejects(sendMessage(config, "key", "https://bad.example", async () => new Response(null, { status })), (error) => error instanceof SendError && error.transient === transient);
   }
   await assert.rejects(sendMessage(config, "key", "https://bad.example", async () => { throw new Error("lost response"); }), (error) => error instanceof SendError && error.transient);
+  await assert.rejects(sendMessage(config, "key", "https://bad.example", async () => Response.json({})), SendError);
+});
+
+test("polling parses the observed shared-line response without inferring an unmasked sender", async () => {
+  const row = { id: "message", line_id: "line", direction: "inbound", state: "received", masked_recipient: "•••4567", created_at: "2026-11-14T23:00:00.000Z", text: "SUPPORT" };
+  const messages = await readMessages(config, async (url, init) => {
+    assert.equal(String(url), "https://app.trychert.com/api/v1/shared-messages");
+    assert.deepEqual(init?.headers, { Authorization: "Bearer ftk_shared", "X-Chert-Project-Id": "project" });
+    assert.equal(init?.method, undefined);
+    return Response.json({ data: { items: [row], total: 1, limit: 50, offset: 0 } });
+  });
+  assert.deepEqual(messages, [row]);
+  for (const body of [{}, { data: { items: [{}] } }, { data: { items: [{ ...row, created_at: "invalid" }] } }]) {
+    await assert.rejects(readMessages(config, async () => Response.json(body)));
+  }
+  await assert.rejects(readMessages(config, async () => new Response(null, { status: 503 })));
 });

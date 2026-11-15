@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { randomUUID, createHmac } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { test } from "node:test";
 import express from "express";
 import { Redis } from "ioredis";
 import { SupportService, configureSupport } from "./service.ts";
-import type { MessagingConfig } from "./chert.ts";
+import type { MessagingConfig, SharedMessage } from "./chert.ts";
 import { SendError } from "./chert.ts";
-import { supportWebhook } from "./webhook.ts";
 import { publishEvent } from "@ladybug/backend";
 import { scansRouter } from "../scans.ts";
 import { checkVisit } from "../checker.ts";
@@ -20,11 +19,11 @@ const visitor = { userId: "browser-user", username: "alice" };
 const visit = (request: Parameters<typeof checkVisit>[0], origin: Parameters<typeof checkVisit>[1]) =>
   checkVisit(request, origin, origin === "admin" ? "everyone" : visitor);
 
-const config: MessagingConfig = { key: "message-key", secret: "webhook-secret", line: "line", destination: "+15551234567", tenant: undefined };
-const event = (at: number, id = randomUUID()) => ({ event_id: id, event_type: "message.received", data: {
-  chat: { id: "chat", is_group: false, handles: [{ handle: config.destination, is_me: false }, { handle: "+15557654321", is_me: true }] },
-  message: { direction: "inbound", sender_handle: { handle: config.destination, is_me: false }, parts: [{ type: "text", value: " SuPpOrT \n" }], sent_at: new Date(at).toISOString() },
-} });
+const config: MessagingConfig = { key: "message-key", line: "line", destination: "+15551234567", project: "project" };
+const event = (at: number, id = randomUUID()): SharedMessage => ({
+  id, line_id: "line", direction: "inbound", state: "received", masked_recipient: config.destination,
+  text: " SuPpOrT \n", created_at: new Date(at).toISOString(),
+});
 
 test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)", { skip: !process.env.TEST_REDIS_URL }, async (t) => {
   const redis = new Redis(process.env.TEST_REDIS_URL!, { maxRetriesPerRequest: 1 });
@@ -35,10 +34,11 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     const sends: { id: string; url: string }[] = [], delivered: string[] = [];
     let online = true, fail = false;
     const options = { config: () => config, now: () => now, send: async (_config: typeof config, id: string, url: string) => {
-      sends.push({ id, url }); if (fail) throw new SendError(true); return "chat";
+      sends.push({ id, url }); if (fail) throw new SendError(true); return { id: `message-${id}`, state: "sent" };
     } };
     const create = () => new SupportService(redis, (id) => { if (online) delivered.push(id); return online; }, options);
     const service = create();
+    now += 1;
     return { service, create, sends, delivered, now: () => now, advance: (ms: number) => { now += ms; }, fail: (value: boolean) => { fail = value; }, offline: () => { online = false; } };
   };
   await t.test("concurrent pages reserve once per normalized host and cooldown survives a new service", async () => {
@@ -63,21 +63,19 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     assert.equal(f.sends.length, 2); assert.equal(f.sends[0].id, f.sends[1].id);
     await f.service.reply(event(f.now())); assert.equal(f.delivered.length, 1);
   });
-  await t.test("wrong sender/chat, groups, outbound, extra content, old/future/expired timestamps cannot start calls", async () => {
+  await t.test("wrong sender/line, outbound, extra content, old/future/expired timestamps cannot start calls", async () => {
     const f = await fixture(); await f.service.notify("https://bad.example"); await f.service.drain();
     const invalid = [
-      (e: ReturnType<typeof event>) => { e.data.chat.id = "wrong"; },
-      (e: ReturnType<typeof event>) => { e.data.chat.is_group = true; },
-      (e: ReturnType<typeof event>) => { e.data.message.sender_handle.handle = "+15550000000"; },
-      (e: ReturnType<typeof event>) => { e.data.chat.handles.push({ handle: "+15550000000", is_me: false }); },
-      (e: ReturnType<typeof event>) => { e.data.message.direction = "outbound"; },
-      (e: ReturnType<typeof event>) => { e.data.message.parts[0].value = "please support"; },
-      (e: ReturnType<typeof event>) => { e.data.message.sent_at = new Date(f.now() - 1).toISOString(); },
-      (e: ReturnType<typeof event>) => { e.data.message.sent_at = new Date(f.now() + 1).toISOString(); },
+      (e: ReturnType<typeof event>) => { e.line_id = "wrong"; },
+      (e: ReturnType<typeof event>) => { e.masked_recipient = "+15550000000"; },
+      (e: ReturnType<typeof event>) => { e.direction = "outbound"; },
+      (e: ReturnType<typeof event>) => { e.text = "please support"; },
+      (e: ReturnType<typeof event>) => { e.created_at = new Date(f.now() - 1).toISOString(); },
+      (e: ReturnType<typeof event>) => { e.created_at = new Date(f.now() + 1).toISOString(); },
     ];
     for (const mutate of invalid) { const e = event(f.now()); mutate(e); await f.service.reply(e); }
     assert.equal(f.delivered.length, 0);
-    const valid = event(f.now()); await Promise.all([f.service.reply(valid), f.create().reply(valid), f.service.reply(event(f.now()))]);
+    const valid = event(f.now()); await Promise.all([f.service.reply(valid), f.service.reply(valid), f.service.reply(event(f.now()))]);
     assert.equal(f.delivered.length, 1);
     await f.service.notify("https://other.example"); await f.service.drain();
     f.advance(1_800_001); await f.service.reply(event(f.now())); await f.service.reply(event(f.now() - 1_800_001));
@@ -90,22 +88,41 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     const online = new SupportService(redis, (id) => { delivered.push(id); return true; }, { config: () => config, now: f.now });
     await online.reply(event(f.now())); assert.equal(delivered.length, 0);
   });
-  await t.test("raw webhook authentication precedes JSON parsing and enforces body limits", async () => {
+  await t.test("registered masked SUPPORT replies match the emergency contact by last four digits", async () => {
     const f = await fixture(); await f.service.notify("https://bad.example"); await f.service.drain();
-    const app = express(); app.use("/webhook", supportWebhook(f.service, () => config)); app.use(express.json());
-    const server = app.listen(0, "127.0.0.1"); await once(server, "listening");
-    const address = server.address(); assert.ok(address && typeof address !== "string");
-    const url = `http://127.0.0.1:${address.port}/webhook`;
-    const send = (body: string, signed = true, ts = Math.floor(Date.now() / 1000)) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-Webhook-Signature": signed ? `t=${ts},v1=${createHmac("sha256", config.secret).update(`${ts}.${body}`).digest("hex")}` : "invalid" }, body });
-    try {
-      assert.equal((await send("{", false)).status, 401);
-      assert.equal((await send("{")).status, 400);
-      assert.equal((await send(JSON.stringify(event(f.now())), true, Math.floor(Date.now() / 1000) - 301)).status, 401);
-      assert.equal((await send("x".repeat(70_000))).status, 413);
-      const body = JSON.stringify(event(f.now()));
-      assert.equal((await send(body)).status, 204); assert.equal((await send(body)).status, 204);
-      assert.equal(f.delivered.length, 1);
-    } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); }
+    await f.service.reply({ ...event(f.now()), masked_recipient: "•••0000" });
+    await f.service.reply({ ...event(f.now()), masked_recipient: "arbitrary4567" });
+    await f.service.reply({ ...event(f.now()), masked_recipient: "+15550004567" });
+    assert.equal(f.delivered.length, 0);
+    const masked = { ...event(f.now()), masked_recipient: "•••4567" };
+    await f.service.reply(masked); await f.service.reply(masked);
+    await f.service.reply(event(f.now())); assert.equal(f.delivered.length, 1);
+  });
+  await t.test("polling deduplicates the newest-50 window and discards pre-start history", async () => {
+    const f = await fixture(); await f.service.notify("https://bad.example"); await f.service.drain();
+    const rows = [event(f.now()), event(f.now() - 1000)];
+    const polled = new SupportService(redis, (id) => { f.delivered.push(id); return true; }, { config: () => config, now: f.now, read: async () => rows });
+    f.advance(1); rows[0].created_at = new Date(f.now()).toISOString();
+    await polled.poll(); await polled.poll(); assert.equal(f.delivered.length, 1);
+    await f.service.notify("https://other.example"); await f.service.drain();
+    const restarted = new SupportService(redis, (id) => { f.delivered.push(id); return true; }, { config: () => config, now: f.now, read: async () => rows });
+    await restarted.poll(); assert.equal(f.delivered.length, 1);
+  });
+  await t.test("pending sends are observed by id across restarts without another POST", async () => {
+    const f = await fixture();
+    let posts = 0, state = "pending";
+    const options = { config: () => config, now: f.now,
+      send: async () => { posts++; return { id: "pending-message", state: "pending" }; },
+      read: async () => [{ ...event(f.now()), id: "pending-message", direction: "outbound" as const, state }],
+    };
+    const service = new SupportService(redis, (id) => { f.delivered.push(id); return true; }, options);
+    await service.notify("https://pending.example"); await service.drain();
+    f.advance(1); await service.reply(event(f.now())); assert.equal(f.delivered.length, 0);
+    f.advance(10_000); await service.drain(); assert.equal(posts, 1);
+    state = "sent"; f.advance(10_000);
+    const restarted = new SupportService(redis, (id) => { f.delivered.push(id); return true; }, options);
+    await restarted.drain(); f.advance(1); await restarted.reply(event(f.now()));
+    assert.equal(posts, 1); assert.equal(f.delivered.length, 1);
   });
   await t.test("browser provenance survives joining admin analysis; safe, failed and admin work do not notify", async (st) => {
     const f = await fixture(); configureSupport(f.service);

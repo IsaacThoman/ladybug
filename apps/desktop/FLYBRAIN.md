@@ -39,9 +39,9 @@ screen**. Everything below follows from that.
 
 | Sense | From |
 | --- | --- |
-| `loomLeft`, `loomRight` | The cursor rushing at the bug: nothing below ~300 px/s closing speed or beyond 600 px, full at 2500 px/s up close. Held briefly, then fades over 200 ms. A cursor on the right of the screen looms in the left eye; one nearly straight above or below looms in both. Nothing while the bug is held. |
+| `loomLeft`, `loomRight` | The cursor swatting at the bug: nothing below 2500 px/s closing speed or beyond 350 px, full at 5000 px/s up close. A reach to click the bug or hand it a link has slowed down by the time it's that close, so it doesn't loom. Held briefly, then fades over 200 ms. A cursor on the right of the screen looms in the left eye; one nearly straight above or below looms in both. Nothing while the bug is held. |
 | `touch` | 0.4 while the pointer rests on the bug, 1 while it's pressed or dragged, easing out over ~300 ms. |
-| `bumpLeft`, `bumpRight` | 1 while the bug is against the right or left edge of its bounds (the left screen edge presses its right antenna), easing out. |
+| `bumpLeft`, `bumpRight` | 1 while the bug is pressed against the right or left edge of its bounds, facing it or thrown against it (the left screen edge presses its right antenna), easing out. |
 | `wind` | Its own speed while airborne or dragged, full at 1500 px/s. |
 | `sweet` | 0.5 while a link is dragged over it; 1 when one is dropped on it, fading over 2 s. |
 | `grounded` | Standing or walking. |
@@ -62,12 +62,16 @@ the pet wanders exactly as it does without it.
 | Command | Action |
 | --- | --- |
 | `walk` | Walks the way it faces above 0.3, stops below 0.15, at 0.5× to 1.6× its usual speed. |
-| `turn` | Integrated over time (leaking, so noise doesn't add up); past the threshold it turns around. Toward the fly's left heads right on screen. Heading into an edge, it stands pressed against it. |
+| `turn` | Integrated over time (leaking, so noise doesn't add up); past the threshold it turns around. Toward the fly's left heads right on screen. |
 | `back` | When it beats `walk`, walks backwards at 0.6× speed, as when it backs away from a dangerous page. |
 | `escape` | Rising past 0.5 while on its feet: a startled take-off, from a hop to the alarm jump, away from the side that loomed. Then 1.5 s before it can again. |
 | `wings` | How far the wing cases open, passed to the renderer. |
 | `groom` | Grooming with the front legs, while it stands still. |
 | `feed` | Not acted on; shown in the activity panel. |
+
+One thing the body does by itself: pressed against an edge it faces for 2 s, it
+turns around. The brain feels the edge on its antenna, but nothing in the model
+turns the fly away from it.
 
 Commands are smoothed a little, since they arrive at uneven intervals; `escape`
 is read raw because the giant fiber fires in short bursts.

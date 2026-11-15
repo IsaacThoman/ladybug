@@ -4,6 +4,7 @@ import type { BrainCommand } from "@ladybug/brain";
 import {
   BACK_SPEED,
   COMMAND_STALE_MS,
+  EDGE_PATIENCE,
   ESCAPE_REFRACTORY,
   ESCAPE_SIDE_SPEED,
   FlyBehavior,
@@ -22,7 +23,7 @@ const JUMP = -1000;
 const behavior = () => new FlyBehavior({ walkSpeed: WALK_SPEED, hopVelocity: HOP, jumpVelocity: JUMP });
 
 function input(values: Partial<BrainCommand> | null, overrides: Partial<BehaviorInput> = {}): BehaviorInput {
-  return { command: values ? command(values) : null, ageMs: 0, dt: DT, heading: 1, free: true, loomLeft: 0, loomRight: 0, ...overrides };
+  return { command: values ? command(values) : null, ageMs: 0, dt: DT, heading: 1, free: true, blocked: false, loomLeft: 0, loomRight: 0, ...overrides };
 }
 
 /** One update that must give an act. */
@@ -166,4 +167,23 @@ test("out-of-range commands are clamped", () => {
   assert.ok(Math.abs(act.vx - WALK_SPEED * WALK_FASTEST) < 0.5);
   assert.equal(act.wings, 0);
   assert.equal(act.groom, 0);
+});
+
+test("pressed against an edge it faces, it turns around by itself after a while", () => {
+  const fly = behavior();
+  let act = hold(fly, { walk: 0.8 }, EDGE_PATIENCE - 0.1, { blocked: true });
+  assert.equal(act.heading, 1);
+  act = hold(fly, { walk: 0.8 }, 0.2, { blocked: true });
+  assert.equal(act.heading, -1);
+  assert.ok(act.vx < 0);
+
+  // Stepping back from the edge, or being held by something else, starts the wait over.
+  const patient = behavior();
+  hold(patient, { walk: 0.8 }, EDGE_PATIENCE - 0.1, { blocked: true });
+  hold(patient, { walk: 0.8 }, 0.1);
+  assert.equal(hold(patient, { walk: 0.8 }, EDGE_PATIENCE - 0.1, { blocked: true }).heading, 1);
+  const busy = behavior();
+  hold(busy, { walk: 0.8 }, EDGE_PATIENCE - 0.1, { blocked: true });
+  hold(busy, { walk: 0.8 }, 0.1, { blocked: true, free: false });
+  assert.equal(hold(busy, { walk: 0.8 }, EDGE_PATIENCE - 0.1, { blocked: true }).heading, 1);
 });

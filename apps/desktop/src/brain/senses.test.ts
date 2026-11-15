@@ -6,7 +6,9 @@ import type { PetMode, SenseInput } from "./senses.ts";
 
 const DT = 1 / 60;
 // A 100×60 bug whose centre is at (550, 530), in bounds 0..1000.
-const PET = { x: 500, y: 500, width: 100, height: 60, mode: "idle" as PetMode };
+const PET = { x: 500, y: 500, width: 100, height: 60, mode: "idle" as PetMode, heading: 1 as 1 | -1 };
+// A swat: fast enough to loom fully, and still that fast when it arrives.
+const SWAT = { speed: 6000, seconds: 0.07 };
 const CENTRE = { x: 550, y: 530 };
 
 function frame(overrides: Partial<SenseInput> = {}): SenseInput {
@@ -44,42 +46,56 @@ test("at rest, the senses are quiet and it's on its feet", () => {
 });
 
 test("a cursor rushing in from the right of the screen looms in the fly's left eye", () => {
-  const senses = swipe(new SenseTracker(), { from: { x: 1050, y: 530 }, speed: 3000, seconds: 0.12 });
+  const senses = swipe(new SenseTracker(), { from: { x: 1050, y: 530 }, ...SWAT });
   assert.ok(senses.loomLeft > 0.5, `loomLeft ${senses.loomLeft}`);
   assert.equal(senses.loomRight, 0);
   inRange(senses);
 
-  const fromLeft = swipe(new SenseTracker(), { from: { x: 50, y: 530 }, speed: 3000, seconds: 0.12 });
+  const fromLeft = swipe(new SenseTracker(), { from: { x: 50, y: 530 }, ...SWAT });
   assert.ok(fromLeft.loomRight > 0.5);
   assert.equal(fromLeft.loomLeft, 0);
 });
 
 test("straight from above, it looms in both eyes", () => {
-  const senses = swipe(new SenseTracker(), { from: { x: 560, y: 0 }, speed: 3000, seconds: 0.12 });
+  const senses = swipe(new SenseTracker(), { from: { x: 560, y: 30 }, ...SWAT });
   assert.ok(senses.loomLeft > 0.5 && senses.loomRight > 0.5);
   assert.equal(senses.loomLeft, senses.loomRight);
 });
 
 test("slow, receding or distant cursors don't loom", () => {
   assert.equal(swipe(new SenseTracker(), { from: { x: 900, y: 530 }, speed: 200, seconds: 0.5 }).loomLeft, 0);
-  assert.equal(swipe(new SenseTracker(), { from: { x: 600, y: 530 }, speed: -2500, seconds: 0.1 }).loomLeft, 0);
+  assert.equal(swipe(new SenseTracker(), { from: { x: 600, y: 530 }, speed: -6000, seconds: 0.07 }).loomLeft, 0);
   const far = { x: CENTRE.x + LOOM_RANGE + 600, y: CENTRE.y };
-  assert.equal(swipe(new SenseTracker(), { from: far, speed: 3000, seconds: 0.15 }).loomLeft, 0);
+  assert.equal(swipe(new SenseTracker(), { from: far, ...SWAT }).loomLeft, 0);
+});
+
+test("a reach to click it slows down as it arrives, and doesn't loom", () => {
+  // A minimum-jerk reach of 900 px in 0.45 s, ending on the bug.
+  const tracker = new SenseTracker();
+  const from = { x: CENTRE.x + 800, y: CENTRE.y - 400 };
+  let peak = 0;
+  for (let t = 0; t <= 0.6; t += DT) {
+    const u = Math.min(1, t / 0.45);
+    const s = 10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5;
+    const senses = tracker.update(frame({ cursor: { x: from.x + (CENTRE.x - from.x) * s, y: from.y + (CENTRE.y - from.y) * s } }));
+    peak = Math.max(peak, senses.loomLeft, senses.loomRight);
+  }
+  assert.ok(peak < 0.1, `loom ${peak}`);
 });
 
 test("faster and nearer looms harder", () => {
-  const fast = swipe(new SenseTracker(), { from: { x: 1000, y: 530 }, speed: 2500, seconds: 0.1 }).loomLeft;
-  const slow = swipe(new SenseTracker(), { from: { x: 1000, y: 530 }, speed: 1000, seconds: 0.1 }).loomLeft;
+  const fast = swipe(new SenseTracker(), { from: { x: 1000, y: 530 }, speed: 6000, seconds: 0.065 }).loomLeft;
+  const slow = swipe(new SenseTracker(), { from: { x: 1000, y: 530 }, speed: 3500, seconds: 0.11 }).loomLeft;
   assert.ok(fast > slow && slow > 0, `${fast} > ${slow}`);
-  const near = swipe(new SenseTracker(), { from: { x: 900, y: 530 }, speed: 1500, seconds: 0.15 }).loomLeft;
-  const farther = swipe(new SenseTracker(), { from: { x: 1300, y: 530 }, speed: 1500, seconds: 0.15 }).loomLeft;
-  assert.ok(near > farther, `${near} > ${farther}`);
+  const near = swipe(new SenseTracker(), { from: { x: 850, y: 530 }, speed: 4500, seconds: 0.05 }).loomLeft;
+  const farther = swipe(new SenseTracker(), { from: { x: 1000, y: 530 }, speed: 4500, seconds: 0.05 }).loomLeft;
+  assert.ok(near > farther && farther > 0, `${near} > ${farther}`);
 });
 
 test("a loom is held briefly, then fades out", () => {
   const tracker = new SenseTracker();
-  const peak = swipe(tracker, { from: { x: 1050, y: 530 }, speed: 3000, seconds: 0.12 }).loomLeft;
-  const stopped = { x: 1050 - 3000 * 0.12, y: 530 };
+  const peak = swipe(tracker, { from: { x: 1050, y: 530 }, ...SWAT }).loomLeft;
+  const stopped = { x: 1050 - SWAT.speed * SWAT.seconds, y: 530 };
   // The cursor stops; the measured closing speed takes a few frames to fall.
   let senses = tracker.update(frame({ cursor: stopped }));
   assert.ok(senses.loomLeft >= peak * 0.9);
@@ -90,10 +106,10 @@ test("a loom is held briefly, then fades out", () => {
 });
 
 test("nothing looms while it's held: the cursor is on it", () => {
-  const senses = swipe(new SenseTracker(), { from: { x: 1050, y: 530 }, speed: 3000, seconds: 0.12, input: { held: true } });
+  const senses = swipe(new SenseTracker(), { from: { x: 1050, y: 530 }, ...SWAT, input: { held: true } });
   assert.equal(senses.loomLeft, 0);
   const tracker = new SenseTracker();
-  swipe(tracker, { from: { x: 1050, y: 530 }, speed: 3000, seconds: 0.12 });
+  swipe(tracker, { from: { x: 1050, y: 530 }, ...SWAT });
   assert.equal(tracker.update(frame({ cursor: CENTRE, pet: { ...PET, mode: "dragging" } })).loomLeft, 0);
 });
 
@@ -111,7 +127,7 @@ test("touch: a light touch under the pointer, full while held, easing out after"
 });
 
 test("bumps are mirrored: the left edge of the screen is the fly's right antenna", () => {
-  const atLeft = new SenseTracker().update(frame({ pet: { ...PET, x: 0 } }));
+  const atLeft = new SenseTracker().update(frame({ pet: { ...PET, x: 0, heading: -1 } }));
   assert.equal(atLeft.bumpRight, 1);
   assert.equal(atLeft.bumpLeft, 0);
   const tracker = new SenseTracker();
@@ -121,6 +137,19 @@ test("bumps are mirrored: the left edge of the screen is the fly's right antenna
   // Easing out once it walks away.
   const away = tracker.update(frame({ pet: { ...PET, x: 990 } }));
   assert.ok(away.bumpLeft > 0 && away.bumpLeft < 1);
+});
+
+test("it only feels an edge it faces or is thrown against", () => {
+  const turnedAway = new SenseTracker().update(frame({ pet: { ...PET, x: 0, heading: 1 } }));
+  assert.equal(turnedAway.bumpRight, 0);
+  const tracker = new SenseTracker();
+  tracker.update(frame({ pet: { ...PET, x: 1000 } }));
+  // Turning its back on the edge lets go of it.
+  let bump = 1;
+  for (let t = 0; t < RELEASE * 2; t += DT) bump = tracker.update(frame({ pet: { ...PET, x: 1000, heading: -1 } })).bumpLeft;
+  assert.equal(bump, 0);
+  const thrown = new SenseTracker().update(frame({ pet: { ...PET, x: 0, heading: 1, mode: "airborne" } }));
+  assert.equal(thrown.bumpRight, 1);
 });
 
 test("wind is its own speed through the air, nothing on the ground", () => {

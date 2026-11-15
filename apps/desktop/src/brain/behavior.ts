@@ -18,6 +18,8 @@ export type BehaviorInput = {
    * product does (a bubble, a reaction, a menu, a drag) is holding it.
    */
   free: boolean;
+  /** Pressed against an edge of its world that it's facing. */
+  blocked: boolean;
   /** What the eyes see looming now, to jump away from it. */
   loomLeft: number;
   loomRight: number;
@@ -59,6 +61,12 @@ export const ESCAPE_ON = 0.5;
 export const ESCAPE_REARM = 0.3;
 /** Seconds after a take-off before another. */
 export const ESCAPE_REFRACTORY = 1.5;
+/**
+ * Pressed against an edge it faces for this long (s), the bug turns around by
+ * itself. The brain feels the edge on its antenna, but nothing in the model
+ * turns it away, so the body does.
+ */
+export const EDGE_PATIENCE = 2;
 /** Sideways speed (px/s) of a take-off, from the weakest to the strongest. */
 export const ESCAPE_SIDE_SPEED = [220, 480] as const;
 
@@ -78,6 +86,7 @@ export class FlyBehavior {
   private walking = false;
   private backing = false;
   private turned = 0;
+  private pressed = 0;
   private armed = false;
   private refractory = 0;
 
@@ -94,7 +103,7 @@ export class FlyBehavior {
   }
 
   /** What to do this frame, or null when there's no fresh command and the pet should behave as it does without a brain. */
-  update({ command, ageMs, dt: rawDt, heading, free, loomLeft, loomRight }: BehaviorInput): BrainAct | null {
+  update({ command, ageMs, dt: rawDt, heading, free, blocked, loomLeft, loomRight }: BehaviorInput): BrainAct | null {
     const dt = Number.isFinite(rawDt) ? Math.max(0, rawDt) : 0;
     this.refractory = Math.max(0, this.refractory - dt);
     if (!command || !(ageMs <= COMMAND_STALE_MS)) {
@@ -102,6 +111,7 @@ export class FlyBehavior {
       this.walking = false;
       this.backing = false;
       this.turned = 0;
+      this.pressed = 0;
       this.armed = false;
       return null;
     }
@@ -126,6 +136,7 @@ export class FlyBehavior {
 
     if (!free) {
       this.turned = 0;
+      this.pressed = 0;
       return { vx: 0, heading, jump: null, wings, groom };
     }
 
@@ -133,6 +144,7 @@ export class FlyBehavior {
       this.armed = false;
       this.refractory = ESCAPE_REFRACTORY;
       this.turned = 0;
+      this.pressed = 0;
       const strength = clamp((escape - ESCAPE_ON) / (1 - ESCAPE_ON), 0, 1);
       // Away from the eye that saw it coming: the left eye looks at the right of the screen.
       const away = loomLeft > loomRight ? -1 : loomRight > loomLeft ? 1 : heading;
@@ -151,6 +163,12 @@ export class FlyBehavior {
     if (Math.abs(this.turned) >= TURN_THRESHOLD) {
       // Toward the fly's right (positive) is toward the left of the screen.
       next = this.turned > 0 ? -1 : 1;
+      this.turned = 0;
+    }
+    this.pressed = blocked && next === heading ? this.pressed + dt : 0;
+    if (this.pressed >= EDGE_PATIENCE) {
+      next = heading === 1 ? -1 : 1;
+      this.pressed = 0;
       this.turned = 0;
     }
 

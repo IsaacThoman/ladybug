@@ -12,7 +12,7 @@ export type SenseInput = {
   /** Seconds since the last update. */
   dt: number;
   /** The pet's hit box (top-left corner and size) and what it's doing. */
-  pet: { x: number; y: number; width: number; height: number; mode: PetMode };
+  pet: { x: number; y: number; width: number; height: number; mode: PetMode; heading: 1 | -1 };
   /** The range the hit box's x moves in. */
   bounds: { minX: number; maxX: number };
   /** The cursor, in the same coordinates, or null when unknown. */
@@ -27,11 +27,16 @@ export type SenseInput = {
   fed: boolean;
 };
 
-/** Closing speed (px/s) below which the cursor doesn't loom at all, and at which it looms fully. */
-export const LOOM_MIN_SPEED = 300;
-export const LOOM_FULL_SPEED = 2500;
+/**
+ * Closing speed (px/s) below which the cursor doesn't loom at all, and at
+ * which it looms fully. The fly's giant fiber fires for almost any looming, so
+ * these decide what the bug flees: a reach to click it or hand it a link has
+ * slowed down by the time it's close, and a swat hasn't.
+ */
+export const LOOM_MIN_SPEED = 2500;
+export const LOOM_FULL_SPEED = 5000;
 /** The cursor looms only within this distance (px) of the bug's centre, fully within LOOM_NEAR. */
-export const LOOM_RANGE = 600;
+export const LOOM_RANGE = 350;
 export const LOOM_NEAR = 60;
 /** How quickly (1/s) the measured closing speed follows the cursor; it arrives in uneven steps. */
 const LOOM_SMOOTHING = 25;
@@ -96,7 +101,8 @@ export class SenseTracker {
       this.lastDistance = distance;
       const speed = clamp01((this.closing - LOOM_MIN_SPEED) / (LOOM_FULL_SPEED - LOOM_MIN_SPEED));
       const proximity = clamp01((LOOM_RANGE - distance) / (LOOM_RANGE - LOOM_NEAR));
-      loom = speed * proximity;
+      // Squared: a near miss on either count barely looms.
+      loom = (speed * proximity) ** 2;
       if (Math.abs(dx) > LOOM_OVERHEAD_SLOPE * Math.abs(dy)) side = dx > 0 ? "left" : "right";
     } else {
       this.lastDistance = null;
@@ -120,9 +126,12 @@ export class SenseTracker {
 
     this.touch = release(this.touch, dragged ? TOUCH_HELD : hovered ? TOUCH_HOVER : 0, RELEASE, dt);
 
-    // Mirrored: the left edge of the screen is on the fly's right.
-    this.bumpRight = release(this.bumpRight, pet.x <= bounds.minX + BUMP_SLOP ? 1 : 0, RELEASE, dt);
-    this.bumpLeft = release(this.bumpLeft, pet.x >= bounds.maxX - BUMP_SLOP ? 1 : 0, RELEASE, dt);
+    // Mirrored: the left edge of the screen is on the fly's right. Its antennae
+    // lead the way, so it feels an edge it walks into or is thrown against, not
+    // one it has turned its back on.
+    const into = (edge: 1 | -1) => pet.mode === "airborne" || pet.heading === edge;
+    this.bumpRight = release(this.bumpRight, pet.x <= bounds.minX + BUMP_SLOP && into(-1) ? 1 : 0, RELEASE, dt);
+    this.bumpLeft = release(this.bumpLeft, pet.x >= bounds.maxX - BUMP_SLOP && into(1) ? 1 : 0, RELEASE, dt);
 
     // Wind: its own speed through the air, measured from where it actually went.
     let speed = 0;

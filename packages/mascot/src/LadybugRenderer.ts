@@ -147,6 +147,8 @@ export class LadybugRenderer {
   private framedAnchorZ = Number.NaN;
   private time = 0;
   private yaw = 0;
+  /** The yaw last drawn, spins included. */
+  private drawnYaw = 0;
   private gait = 0;
   private phase = 0;
   private open = 0;
@@ -299,6 +301,14 @@ export class LadybugRenderer {
   }
 
   /** Startled: antennae go frantic and the body shivers for a moment. */
+  /**
+   * Which way the bug faced in the last frame drawn, in radians: 0 is facing
+   * the viewer, positive turns its face toward the right of the screen.
+   */
+  get facing() {
+    return this.drawnYaw;
+  }
+
   startle(seconds = 2.5) {
     this.startleLeft = Math.max(this.startleLeft, seconds);
   }
@@ -471,6 +481,7 @@ export class LadybugRenderer {
       if (this.spin >= 1) this.spin = -1;
     }
     const yaw = this.yaw + spinYaw;
+    this.drawnYaw = yaw;
     rig.root.rotation.y = yaw;
     this.frameCamera(FRONT_FEET_Z * Math.cos(yaw));
 

@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import type { BrainCommand } from "@ladybug/brain";
 import type { FlyBrain } from "../brain/fly-brain";
 import type { BrainStatus } from "../brain/client";
-import type { OverlayLayout } from "../ladybug-api";
+import type { OverlayLayout, ScreenAccess } from "../ladybug-api";
+import FlyEyes from "./FlyEyes";
+import type { EyesView } from "./FlyEyes";
 
 /** How often the panel reads the brain. */
 const REFRESH_MS = 100;
@@ -40,11 +42,25 @@ type Snapshot = {
   speed: number;
   active: number;
   command: BrainCommand | null;
+  /** While Fly Eyes is on. */
+  eyes: EyesView | null;
 };
 
-function read(brain: FlyBrain): Snapshot {
+const VISION = "vision.";
+
+function read(brain: FlyBrain, access: ScreenAccess | null): Snapshot {
   const { client } = brain;
   const { spikesPerSecond, speed } = client.activity();
+  const seeing = brain.seeing();
+  const eyes: EyesView | null = access && {
+    access,
+    map: client.eyes,
+    light: seeing?.light ?? null,
+    source: brain.vision.source,
+    rates: Object.entries(client.state?.stats.rates ?? {})
+      .filter(([name]) => name.startsWith(VISION))
+      .map(([name, rate]) => ({ stage: name.slice(VISION.length), rate })),
+  };
   return {
     status: client.status,
     error: client.error,
@@ -54,6 +70,7 @@ function read(brain: FlyBrain): Snapshot {
     speed,
     active: client.state?.stats.active ?? 0,
     command: client.state?.command ?? null,
+    eyes,
   };
 }
 
@@ -87,12 +104,17 @@ function Meter({ command, label, value }: { command: keyof BrainCommand; label: 
 }
 
 /** A quiet corner panel showing what the fly brain is doing, refreshed about ten times a second. */
-export default function BrainActivity({ brain, layout }: { brain: FlyBrain; layout: OverlayLayout }) {
-  const [view, setView] = useState(() => read(brain));
+export default function BrainActivity({ brain, layout, eyes }: {
+  brain: FlyBrain;
+  layout: OverlayLayout;
+  /** Whether the eyes can see the screen, while Fly Eyes is on; null while it's off. */
+  eyes: ScreenAccess | null;
+}) {
+  const [view, setView] = useState(() => read(brain, eyes));
   useEffect(() => {
-    const interval = setInterval(() => setView(read(brain)), REFRESH_MS);
+    const interval = setInterval(() => setView(read(brain, eyes)), REFRESH_MS);
     return () => clearInterval(interval);
-  }, [brain]);
+  }, [brain, eyes]);
 
   const { workArea } = layout;
   const running = view.status === "running";
@@ -120,6 +142,7 @@ export default function BrainActivity({ brain, layout }: { brain: FlyBrain; layo
             <Meter key={key} command={key} label={label} value={view.command?.[key] ?? 0} />
           ))}
         </div>
+        {view.eyes && <FlyEyes view={view.eyes} />}
       </>}
       {view.status === "unavailable" && <p className="brain-panel-note">Its data wasn't found on this computer.</p>}
       {view.status === "failed" && <>

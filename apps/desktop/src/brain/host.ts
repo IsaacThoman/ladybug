@@ -13,7 +13,7 @@ export function createBrainHost(create: (data: ArrayBuffer) => Brain, post: (res
       if (request.type === "init") {
         if (brain) throw new Error("The brain is already running.");
         brain = create(request.data);
-        post({ type: "ready", neurons: brain.neurons, connections: brain.connections });
+        post({ type: "ready", neurons: brain.neurons, connections: brain.connections, eyes: brain.eyes });
       } else if (request.type === "tick") {
         if (!brain) throw new Error("The brain hasn't been loaded.");
         post({ type: "state", state: brain.tick(request.dtMs, request.senses) });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PoissonInput, Simulation, inputSeed, mulberry32 } from "./sim.ts";
+import { PoissonInput, RatedPoissonInput, Simulation, inputSeed, mulberry32 } from "./sim.ts";
 import type { Network } from "./sim.ts";
 
 type Net = { ptr: Uint32Array; post: Uint32Array; count: Uint16Array };
@@ -24,6 +24,9 @@ type Setup = {
   inputs: { neurons: number[]; rate: number }[];
   /** Rate changes applied just before the given step. */
   changes: { step: number; input: number; rate: number }[];
+  /** Inputs with a rate per neuron, added after the group inputs, and their changes (whole sets of rates). */
+  rated: { neurons: number[]; rates: number[] }[];
+  ratedChanges: { step: number; input: number; rates: number[] }[];
 };
 
 type Run = { spikes: number[][]; v: Float32Array; g: Float32Array; a: Float32Array };
@@ -85,7 +88,33 @@ function randomSetup(seed: number, overrides: Partial<Setup> = {}): Setup {
       { step: 1500, input: 0, rate: 150 },
       { step: 2200, input: 2, rate: 0 },
     ],
+    ...ratedInputs(random, n),
     ...overrides,
+  };
+}
+
+// Two inputs with a rate per neuron: one starting with mixed rates (some 0),
+// one silent at first; their rates are reset several times, once to all 0.
+function ratedInputs(random: () => number, n: number): Pick<Setup, "rated" | "ratedChanges"> {
+  const distinct = (k: number) => {
+    const out = new Set<number>();
+    while (out.size < k) out.add(Math.floor(random() * n));
+    return [...out];
+  };
+  const rates = (k: number, top: number) => Array.from({ length: k }, () => (random() < 0.3 ? 0 : random() * top));
+  const a = distinct(20);
+  const b = distinct(8);
+  return {
+    rated: [
+      { neurons: a, rates: rates(a.length, 300) },
+      { neurons: b, rates: b.map(() => 0) },
+    ],
+    ratedChanges: [
+      { step: 500, input: 1, rates: rates(b.length, 2000) },
+      { step: 1200, input: 0, rates: a.map(() => 0) },
+      { step: 1300, input: 1, rates: rates(b.length, 40) },
+      { step: 1900, input: 0, rates: rates(a.length, 150) },
+    ],
   };
 }
 
@@ -102,6 +131,10 @@ function sparseSetup(seed: number): Setup {
       { step: 400, input: 2, rate: 300 },
       ...[0, 1, 2].map((input) => ({ step: 800, input, rate: 0 })),
       ...[0, 1, 2].map((input) => ({ step: 2400, input, rate: setup.inputs[0].rate })),
+    ],
+    ratedChanges: [
+      ...setup.rated.map((each, input) => ({ step: 800, input, rates: each.neurons.map(() => 0) })),
+      ...setup.rated.map((each, input) => ({ step: 2400, input, rates: each.neurons.map(() => 60) })),
     ],
   };
 }
@@ -124,11 +157,16 @@ function runEngine(setup: Setup, steps: number): Run & { sim: Simulation; active
   });
   if (setup.bias) sim.setBias(setup.bias);
   setup.inputs.forEach((input, q) => sim.addInput(`input ${q}`, input.neurons, input.rate));
+  setup.rated.forEach((input, q) => {
+    sim.addRatedInput(`rated ${q}`, input.neurons);
+    sim.setRates(`rated ${q}`, input.rates);
+  });
   const spikes: number[][] = [];
   let activeLow = Infinity;
   let activeHigh = 0;
   for (let s = 0; s < steps; s++) {
     for (const change of setup.changes) if (change.step === s) sim.setRate(`input ${change.input}`, change.rate);
+    for (const change of setup.ratedChanges) if (change.step === s) sim.setRates(`rated ${change.input}`, change.rates);
     sim.step();
     spikes.push([...sim.lastSpikes()]);
     if (s > 100) activeLow = Math.min(activeLow, sim.active);
@@ -174,6 +212,11 @@ function runReference(setup: Setup, steps: number, cut: boolean): Run {
     if (input.rate > 0) source.setProbability((input.rate * dt) / 1000);
     return source;
   });
+  const rated = setup.rated.map((input, q) => {
+    const source = new RatedPoissonInput(Uint32Array.from(input.neurons), inputSeed(setup.seed, setup.inputs.length + q));
+    source.setProbabilities(input.rates, dt / 1000);
+    return source;
+  });
   const picked = new Uint32Array(n);
   const spikes: number[][] = [];
   for (let s = 0; s < steps; s++) {
@@ -182,6 +225,7 @@ function runReference(setup: Setup, steps: number, cut: boolean): Run {
       rates[change.input] = change.rate;
       sources[change.input].setProbability((change.rate * dt) / 1000);
     }
+    for (const change of setup.ratedChanges) if (change.step === s) rated[change.input].setProbabilities(change.rates, dt / 1000);
     if (s >= delay) {
       for (const pre of spikes[s - delay]) for (let e = net.ptr[pre]; e < net.ptr[pre + 1]; e++) g[net.post[e]] += weight[e];
     }
@@ -212,8 +256,8 @@ function runReference(setup: Setup, steps: number, cut: boolean): Run {
         a[i] = 0;
       }
     }
-    sources.forEach((source, q) => {
-      if (rates[q] === 0) return;
+    [...sources, ...rated].forEach((source, q) => {
+      if (q < sources.length && rates[q] === 0) return;
       const m = source.sample(picked);
       for (let k = 0; k < m; k++) {
         const i = picked[k];
@@ -301,12 +345,14 @@ test("a fixed seed gives the same run; reset replays it; another seed differs", 
   const firstRun = { spikes: sim.stats.spikes, events: sim.stats.events };
   // reset keeps the current rates, so put back the ones the run started with.
   setup.inputs.forEach((input, q) => sim.setRate(`input ${q}`, input.rate));
+  setup.rated.forEach((input, q) => sim.setRates(`rated ${q}`, input.rates));
   sim.reset();
   assert.equal(sim.active, 0);
   assert.equal(sim.time, 0);
   const replay: number[][] = [];
   for (let s = 0; s < 2000; s++) {
     for (const change of setup.changes) if (change.step === s) sim.setRate(`input ${change.input}`, change.rate);
+    for (const change of setup.ratedChanges) if (change.step === s) sim.setRates(`rated ${change.input}`, change.rates);
     sim.step();
     replay.push([...sim.lastSpikes()]);
   }
@@ -478,6 +524,56 @@ test("Poisson inputs fire at the set rate, independently across neurons and step
   assert.equal(input.sample(out), n);
   input.setProbability(0);
   assert.equal(input.sample(out), 0);
+});
+
+test("rated inputs fire each neuron at its own rate", () => {
+  // Four bands of rates, 0 to 0.2 a step, and one neuron that always fires.
+  const n = 2001;
+  const steps = 4000;
+  const p = Float64Array.from({ length: n }, (_, k) => (k === n - 1 ? 1 : (k % 4) * 0.02 + (k % 3 === 0 ? 0.14 : 0)));
+  const neurons = Uint32Array.from({ length: n }, (_, k) => (k * 7919) % n);
+  const input = new RatedPoissonInput(neurons, 7);
+  input.setProbabilities(p, 1);
+  const out = new Uint32Array(n);
+  const perMember = new Float64Array(n);
+  const position = new Map([...neurons].map((i, k) => [i, k]));
+  for (let s = 0; s < steps; s++) {
+    const m = input.sample(out);
+    const seen = new Set<number>();
+    for (let k = 0; k < m; k++) {
+      assert.ok(!seen.has(out[k]), "a neuron is picked at most once a step");
+      seen.add(out[k]);
+      perMember[position.get(out[k])!]++;
+    }
+  }
+  for (let k = 0; k < n; k++) {
+    const expected = steps * p[k];
+    const sd = Math.sqrt(steps * p[k] * (1 - p[k]));
+    if (p[k] === 0) assert.equal(perMember[k], 0);
+    else assert.ok(Math.abs(perMember[k] - expected) <= 5 * sd + 1e-9, `member ${k}: ${perMember[k]} spikes, expected ${expected}`);
+  }
+  input.setProbabilities(new Float64Array(n), 1);
+  assert.equal(input.sample(out), 0);
+  // Rates are clamped to a probability of 1.
+  input.setProbabilities(new Float64Array(n).fill(5000), 0.001);
+  assert.equal(input.sample(out), n);
+
+  const sim = new Simulation({ ptr: new Uint32Array(4), post: new Uint32Array(0), count: new Uint16Array(0) }, { gain: new Float32Array(3) });
+  sim.addRatedInput("eye", [2, 0]);
+  assert.deepEqual([...sim.members("eye")], [2, 0]);
+  assert.throws(() => sim.addRatedInput("eye", [1]), /already an input called "eye"/);
+  assert.throws(() => sim.addRatedInput("twice", [1, 1]), /listed twice/);
+  assert.throws(() => sim.addRatedInput("bad", [3]), /no neuron 3/);
+  assert.throws(() => sim.addRatedInput("bad", [0.5]), /no neuron 0.5/);
+  assert.throws(() => sim.setRates("eye", [1]), /has 2 neurons, not 1/);
+  assert.throws(() => sim.setRates("eye", [1, -1]), /zero or more/);
+  assert.throws(() => sim.setRate("eye", 1), /use setRates/);
+  sim.addInput("group", [1]);
+  assert.throws(() => sim.setRates("group", [1]), /use setRate/);
+  sim.setRates("eye", [1e6, 0]);
+  sim.setRecording(true);
+  sim.step();
+  assert.deepEqual([...sim.recording!], [0, 0, 1]);
 });
 
 test("a driven neuron fires at the Poisson rate, less what refractoriness takes", () => {

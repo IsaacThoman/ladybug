@@ -14,13 +14,14 @@ import {
 } from "electron";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import type { BrainSettings, OverlayLayout, Rect } from "../src/ladybug-api";
+import type { BrainSettings, OverlayLayout, Rect, ScreenAccess } from "../src/ladybug-api";
 import { parseHttpUrl, urlFromClipboardText } from "../src/urls";
 import { shutdownDevice } from "./device-shutdown";
 import { killChrome } from "./browser-kill";
 import { SupportSubscription } from "./support-stream";
 import { CallService } from "./call-service";
 import { CapturePolicy, selectScreen } from "./capture-policy";
+import { EyesCapturePolicy, screenAccess } from "./eyes-capture-policy";
 import { parseCallAuth } from "./call-config";
 import type { CallAuth } from "./call-config";
 import { SettingsStore } from "./settings";
@@ -52,6 +53,9 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 const ICON_PATH = path.join(process.env.VITE_PUBLIC, "icon.png");
 
 const HOVER_POLL_MS = 16;
+/** While Fly Eyes is on, how often to check whether macOS has given (or taken back) Screen Recording. */
+const SCREEN_ACCESS_POLL_MS = 2000;
+const SCREEN_RECORDING_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
 const BRAIN_DATA = brainDataPath({
   env: process.env,
@@ -78,6 +82,10 @@ let callAuth: CallAuth | null = null;
 let supportReady = false;
 const calls = new CallService({ auth: () => callAuth });
 const capturePolicy = new CapturePolicy(calls.getState);
+const eyesOn = () => Boolean(settings?.get().flyBrain && settings.get().flyEyes);
+const eyesPolicy = new EyesCapturePolicy(eyesOn);
+/** The screen access last sent to the renderer, so a change in System Settings can be passed on. */
+let sentScreenAccess: ScreenAccess | null = null;
 const support = new SupportSubscription(() => {
   if (overlayWin && !overlayWin.isDestroyed() && ["idle", "ended", "error"].includes(calls.getState().phase)) {
     showOverlay();
@@ -132,6 +140,21 @@ ipcMain.handle("ladybug:call-capture-source", async (event, id: string) => {
     selectScreen(await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }),
       String(screen.getPrimaryDisplay().id)).id);
   return { id: source, platform: process.platform };
+});
+
+// The bug's eyes: the primary display, only while Fly Eyes is on and the
+// screen can be seen. It never prompts: macOS is only asked when the user
+// turns Fly Eyes on (askForScreen).
+ipcMain.handle("ladybug:eyes-capture-source", async (event) => {
+  trustedCall(event);
+  const allowed = () => fromOverlay(event) && eyesOn() && currentScreenAccess() === "allowed";
+  if (!allowed()) throw new Error("The fly's eyes can't see the screen.");
+  // No thumbnails: they'd be pictures of the screen in this process.
+  const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } });
+  if (!allowed()) throw new Error("Fly Eyes was turned off.");
+  const { id } = selectScreen(sources, String(screen.getPrimaryDisplay().id));
+  eyesPolicy.arm();
+  return { id };
 });
 
 /** Movement bounds in renderer coordinates. */
@@ -227,12 +250,18 @@ function createOverlayWindow() {
     void calls.endCurrent();
   };
   overlayWin.webContents.on("render-process-gone", endMedia);
-  overlayWin.webContents.on("did-start-loading", () => { endMedia(); brainCursor = null; });
+  overlayWin.webContents.on("did-start-loading", () => { endMedia(); eyesPolicy.disarm(); brainCursor = null; });
   const trustedMediaFrame = (contents: Electron.WebContents | null, details: { isMainFrame: boolean; requestingUrl?: string }) =>
     contents === overlayWin?.webContents && details.isMainFrame && details.requestingUrl === contents?.mainFrame.url;
   overlayWin.webContents.session.setPermissionCheckHandler((contents, permission, _origin, details) =>
-    capturePolicy.allows(trustedMediaFrame(contents, details), permission));
+    capturePolicy.allows(trustedMediaFrame(contents, details), permission) || eyesPolicy.allows(trustedMediaFrame(contents, details), permission));
   overlayWin.webContents.session.setPermissionRequestHandler(async (contents, permission, callback, details) => {
+    // The eyes' one stream, from a source just handed out. Screen Recording
+    // was checked then; nothing here asks macOS for the camera.
+    if (eyesPolicy.claim(trustedMediaFrame(contents, details), permission, "mediaTypes" in details ? details.mediaTypes : undefined)) {
+      callback(true);
+      return;
+    }
     const allowed = () => capturePolicy.allows(trustedMediaFrame(contents, details), permission);
     if (!allowed()) { callback(false); return; }
     const id = calls.getState().id;
@@ -322,17 +351,50 @@ function updateBrainCursor() {
   overlayWin.webContents.send("ladybug:brain-cursor", brainCursor);
 }
 
+/** macOS's Screen Recording permission for this app, or "granted" where there's no such thing. */
+const screenStatus = () => (process.platform === "darwin" ? systemPreferences.getMediaAccessStatus("screen") : "granted");
+
+const currentScreenAccess = () => screenAccess({
+  platform: process.platform,
+  windowed: windowedDev,
+  wayland: process.env.XDG_SESSION_TYPE === "wayland",
+  status: screenStatus(),
+});
+
 const brainSettings = (): BrainSettings => {
-  const { flyBrain, brainActivity } = settings?.get() ?? { flyBrain: false, brainActivity: false };
-  return { enabled: flyBrain, showActivity: brainActivity };
+  const { flyBrain, brainActivity, flyEyes } = settings?.get() ?? { flyBrain: false, brainActivity: false, flyEyes: false };
+  sentScreenAccess = currentScreenAccess();
+  return { enabled: flyBrain, showActivity: brainActivity, eyes: flyBrain && flyEyes, screen: sentScreenAccess };
 };
 
-function changeBrainSettings(patch: { flyBrain?: boolean; brainActivity?: boolean }) {
+function sendBrainSettings() {
+  tray?.setContextMenu(buildMenu());
+  if (overlayWin && !overlayWin.isDestroyed()) overlayWin.webContents.send("ladybug:brain-settings", brainSettings());
+}
+
+function changeBrainSettings(patch: { flyBrain?: boolean; brainActivity?: boolean; flyEyes?: boolean }) {
   if (!settings) return;
   void settings.set(patch);
   brainCursor = null;
-  tray?.setContextMenu(buildMenu());
-  if (overlayWin && !overlayWin.isDestroyed()) overlayWin.webContents.send("ladybug:brain-settings", brainSettings());
+  if (!eyesOn()) eyesPolicy.disarm();
+  sendBrainSettings();
+  if (patch.flyEyes) void askForScreen();
+}
+
+/**
+ * Asks macOS for Screen Recording if it never has: listing the screens is
+ * what brings up its prompt. Only ever as the direct result of the user
+ * turning Fly Eyes on or asking to let it see the screen.
+ */
+async function askForScreen() {
+  if (process.platform !== "darwin" || screenStatus() !== "not-determined") return;
+  await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+  sendBrainSettings();
+}
+
+/** Passes on a change to Screen Recording made in System Settings while Fly Eyes is on. */
+function checkScreenAccess() {
+  if (eyesOn() && sentScreenAccess !== null && currentScreenAccess() !== sentScreenAccess) sendBrainSettings();
 }
 
 function showOverlay() {
@@ -385,6 +447,21 @@ function buildMenu() {
       enabled: brainOn,
       click: (item) => changeBrainSettings({ brainActivity: item.checked }),
     },
+    {
+      label: "Fly Eyes",
+      type: "checkbox",
+      checked: brainOn && brainSettings().eyes,
+      enabled: brainOn,
+      click: (item) => changeBrainSettings({ flyEyes: item.checked }),
+    },
+    // Without Screen Recording the eyes see a plain wall; macOS only prompts once.
+    ...(brainOn && brainSettings().eyes && currentScreenAccess() === "not-allowed" ? [{
+      label: "Let Fly Eyes See the Screen…",
+      click: () => {
+        if (screenStatus() === "not-determined") void askForScreen();
+        else void shell.openExternal(SCREEN_RECORDING_SETTINGS);
+      },
+    }] : []),
     { type: "separator" },
     ...(!windowedDev ? [
       { label: "Show / Hide Pet", click: togglePetVisibility },
@@ -467,6 +544,7 @@ app.whenReady().then(() => {
   // Click-through only applies to the overlay (updateMouseTracking skips the
   // development window), but the fly brain follows the cursor in both.
   setInterval(() => { updateMouseTracking(); updateBrainCursor(); }, HOVER_POLL_MS);
+  setInterval(checkScreenAccess, SCREEN_ACCESS_POLL_MS);
 
   screen.on("display-metrics-changed", fitOverlayToDisplay);
   screen.on("display-added", fitOverlayToDisplay);

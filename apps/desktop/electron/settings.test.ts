@@ -12,12 +12,13 @@ async function tempDir(t: { after: (fn: () => Promise<void>) => void }) {
 }
 
 test("settings default to off, and only known keys of the right type are read", () => {
-  assert.deepEqual(DEFAULT_SETTINGS, { flyBrain: false, brainActivity: false });
+  assert.deepEqual(DEFAULT_SETTINGS, { flyBrain: false, brainActivity: false, flyEyes: false });
   assert.deepEqual(parseSettings("not json"), DEFAULT_SETTINGS);
   assert.deepEqual(parseSettings("null"), DEFAULT_SETTINGS);
   assert.deepEqual(parseSettings("[true]"), DEFAULT_SETTINGS);
   assert.deepEqual(parseSettings('{"flyBrain":"yes","brainActivity":1,"other":true}'), DEFAULT_SETTINGS);
-  assert.deepEqual(parseSettings('{"flyBrain":true}'), { flyBrain: true, brainActivity: false });
+  assert.deepEqual(parseSettings('{"flyBrain":true}'), { flyBrain: true, brainActivity: false, flyEyes: false });
+  assert.deepEqual(parseSettings('{"flyEyes":true}'), { flyBrain: false, brainActivity: false, flyEyes: true });
 });
 
 test("a missing or corrupt settings file reads as the defaults", async (t) => {
@@ -36,8 +37,8 @@ test("changes apply at once, are saved in order and survive a restart", async (t
   assert.equal(store.get().flyBrain, true);
   const second = store.set({ brainActivity: true, flyBrain: false });
   await Promise.all([first, second]);
-  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { flyBrain: false, brainActivity: true });
-  assert.deepEqual(new SettingsStore(file).get(), { flyBrain: false, brainActivity: true });
+  assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { flyBrain: false, brainActivity: true, flyEyes: false });
+  assert.deepEqual(new SettingsStore(file).get(), { flyBrain: false, brainActivity: true, flyEyes: false });
 
   // get() hands out a copy.
   const copy = store.get();

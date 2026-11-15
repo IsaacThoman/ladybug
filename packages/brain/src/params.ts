@@ -24,6 +24,12 @@ export type OperatingPoint = {
   /** mV per synapse of neurons with no predicted transmitter after the fixes; signed. */
   unknown: number;
   /**
+   * Factor on the strength of every synapse made by a columnar neuron of the
+   * optic lobe (see `columnar`): graded, non-spiking relays whose synapses
+   * release continuously, which one spike per synapse understates.
+   */
+  graded: number;
+  /**
    * Synaptic saturation: a connection of n synapses acts as
    * saturation × (1 - exp(-n / saturation)) synapses (rounded), so one
    * presynaptic spike can't push its target arbitrarily far. About n for small
@@ -47,6 +53,7 @@ export type OperatingPoint = {
 };
 
 const superClass = (c: Connectome, i: number) => c.columns.superClass.value(i);
+const side = (c: Connectome, i: number) => c.columns.side.value(i);
 const type = (c: Connectome, i: number) => c.columns.type.value(i);
 const predicted = (c: Connectome, i: number) => c.columns.nt.value(i);
 
@@ -84,6 +91,11 @@ export const OPERATING_POINT: OperatingPoint = {
   // Muted: their effects are slow and modulatory, not fast synaptic.
   modulatory: 0,
   unknown: 0,
+  // A spike of the main columnar relay, L2 to Tm1 and Tm2 (124 and 130
+  // synapses, 61 and 62 after saturation), brings its target from rest to
+  // threshold: 7 mV / (0.177 × 0.275 mV × 61.5), where 0.177 is the peak of
+  // the membrane's response to a unit step of drive at these time constants.
+  graded: 2.3,
   saturation: 75,
   fixes: TRANSMITTER_FIXES,
   neuron: {
@@ -102,6 +114,36 @@ export const OPERATING_POINT: OperatingPoint = {
     epsilon: 0.01,
   },
 };
+
+/**
+ * The optic lobe's columnar classes (Fischbach and Dittrich 1989): lamina
+ * monopolar (L), centrifugal (C), T, transmedullary (Tm, TmY), Y and medulla
+ * intrinsic (Mi) neurons.
+ */
+const COLUMNAR_CLASSES = /^(L[1-5]|C[23]|T[1-5][a-d]?|Tm\d+[a-zA-Z]*|TmY\d+[a-z]*|Y\d+|Mi\d+)$/;
+/** Fewer cells of a type on a side than this, and each cell pools many columns: not a column's relay. */
+export const COLUMNAR_MIN_CELLS = 100;
+
+/**
+ * Optic lobe intrinsic neurons of a columnar type: one of the columnar classes
+ * with at least COLUMNAR_MIN_CELLS cells on its side, one for every few of
+ * the eye's ~890 columns. They are the column-by-column relays from the
+ * lamina to the lobula and lobula plate. Left out: the amacrine and other
+ * multicolumnar cells (Dm, Pm, Cm, Lawf and others), which pool many columns
+ * into one point neuron and so are driven hard enough already, and for the
+ * same reason the columnar classes' rarer types, such as Mi18 (36 a side).
+ */
+export function columnar(connectome: Connectome): Uint8Array {
+  const counts = new Map<string, number>();
+  const candidates = connectome.filter((i) => superClass(connectome, i) === "ol_intrinsic" && COLUMNAR_CLASSES.test(type(connectome, i)));
+  for (const i of candidates) {
+    const key = `${type(connectome, i)} ${side(connectome, i)}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const out = new Uint8Array(connectome.neurons);
+  for (const i of candidates) if (counts.get(`${type(connectome, i)} ${side(connectome, i)}`)! >= COLUMNAR_MIN_CELLS) out[i] = 1;
+  return out;
+}
 
 /** Each neuron's transmitter after the fixes, and how many neurons each fix changed. */
 export function transmitters(connectome: Connectome, fixes: readonly TransmitterFix[]): { nt: string[]; changed: number[] } {
@@ -160,6 +202,10 @@ export type Weights = {
 export function buildWeights(connectome: Connectome, point: OperatingPoint = OPERATING_POINT): Weights {
   const { nt, changed } = transmitters(connectome, point.fixes);
   const gain = Float32Array.from(nt, (each) => transmitterGain(point, each));
+  if (point.graded !== 1) {
+    const graded = columnar(connectome);
+    for (let i = 0; i < connectome.neurons; i++) if (graded[i]) gain[i] *= point.graded;
+  }
   const network = { ptr: connectome.ptr, post: connectome.post, count: saturatedCounts(connectome.count, point.saturation) };
   return { gain, network, nt, changed };
 }

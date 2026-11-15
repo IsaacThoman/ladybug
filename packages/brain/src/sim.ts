@@ -150,7 +150,11 @@ export class Simulation {
   #ringLength: Uint32Array;
   #lastSlot = -1;
 
-  #inputs: { name: string; neurons: Uint32Array; rate: number; source: PoissonInput }[] = [];
+  // Inputs in the order they were added, which seeds each one's stream. A
+  // group input has one rate for all its neurons; a rated input (rates set)
+  // has one per neuron, in the order given.
+  #inputs: { name: string; neurons: Uint32Array; rate: number; rates: Float64Array | null; on: boolean; source: PoissonInput | RatedPoissonInput }[] = [];
+  #inputIndex = new Map<string, number>();
   #scratch: Uint32Array;
   #bins = new Uint32Array((1 << SORT_BITS) + 1);
   #sortPasses: number;
@@ -301,21 +305,67 @@ export class Simulation {
    * group's position, so adding groups does not disturb earlier ones.
    */
   addInput(name: string, neurons: ArrayLike<number>, rateHz = 0) {
-    if (this.#inputs.some((input) => input.name === name)) throw new Error(`There is already an input called "${name}"`);
+    if (this.#inputIndex.has(name)) throw new Error(`There is already an input called "${name}"`);
     const members = this.#members(neurons, `input "${name}"`);
     const source = new PoissonInput(members, inputSeed(this.seed, this.#inputs.length));
-    this.#inputs.push({ name, neurons: members, rate: 0, source });
+    this.#inputIndex.set(name, this.#inputs.length);
+    this.#inputs.push({ name, neurons: members, rate: 0, rates: null, on: false, source });
     this.setRate(name, rateHz);
   }
 
-  /** Changes an input's rate, Hz per neuron, from the next step on. */
+  /** Changes a group input's rate, Hz per neuron, from the next step on. */
   setRate(name: string, rateHz: number) {
-    const input = this.#inputs.find((each) => each.name === name);
-    if (!input) throw new Error(`No input called "${name}"`);
+    const input = this.#input(name);
+    if (input.rates) throw new Error(`"${name}" has a rate per neuron; use setRates`);
     if (!(rateHz >= 0)) throw new Error("Input rates must be zero or more");
     if (rateHz === input.rate) return;
     input.rate = rateHz;
-    input.source.setProbability((rateHz * this.dt) / 1000);
+    input.on = rateHz > 0;
+    (input.source as PoissonInput).setProbability((rateHz * this.dt) / 1000);
+  }
+
+  /**
+   * Adds a named group of neurons each driven as its own Poisson train, at a
+   * rate of its own (setRates; all 0 to begin with). The neurons keep the
+   * order given, which is the order of the rates, and must be distinct. It
+   * draws from its own stream, like a group input, and costs per spike plus
+   * a little per neuron when its fastest neuron is much faster than the rest
+   * (see RatedPoissonInput).
+   */
+  addRatedInput(name: string, neurons: ArrayLike<number>) {
+    if (this.#inputIndex.has(name)) throw new Error(`There is already an input called "${name}"`);
+    const members = Uint32Array.from(neurons);
+    for (let k = 0; k < neurons.length; k++) {
+      const i = neurons[k];
+      if (!Number.isInteger(i) || i < 0 || i >= this.neurons) throw new Error(`input "${name}": no neuron ${i}`);
+    }
+    if (new Set(members).size !== members.length) throw new Error(`input "${name}": a neuron is listed twice`);
+    const source = new RatedPoissonInput(members, inputSeed(this.seed, this.#inputs.length));
+    this.#inputIndex.set(name, this.#inputs.length);
+    this.#inputs.push({ name, neurons: members, rate: 0, rates: new Float64Array(members.length), on: false, source });
+  }
+
+  /** Changes each neuron's rate, Hz, of a rated input from the next step on, in the order its neurons were given. */
+  setRates(name: string, ratesHz: ArrayLike<number>) {
+    const input = this.#input(name);
+    const rates = input.rates;
+    if (!rates) throw new Error(`"${name}" has one rate for all its neurons; use setRate`);
+    if (ratesHz.length !== rates.length) throw new Error(`"${name}" has ${rates.length} neurons, not ${ratesHz.length}`);
+    let on = false;
+    for (let k = 0; k < rates.length; k++) {
+      const rate = ratesHz[k];
+      if (!(rate >= 0)) throw new Error("Input rates must be zero or more");
+      rates[k] = rate;
+      if (rate > 0) on = true;
+    }
+    input.on = on;
+    (input.source as RatedPoissonInput).setProbabilities(rates, this.dt / 1000);
+  }
+
+  #input(name: string) {
+    const k = this.#inputIndex.get(name);
+    if (k === undefined) throw new Error(`No input called "${name}"`);
+    return this.#inputs[k];
   }
 
   /** Adds a named group of neurons whose spikes drainReadouts counts. */
@@ -355,8 +405,8 @@ export class Simulation {
   members(name: string): Uint32Array {
     const r = this.#readoutNames.indexOf(name);
     if (r >= 0) return this.#readoutMembers[r];
-    const input = this.#inputs.find((each) => each.name === name);
-    if (input) return input.neurons;
+    const k = this.#inputIndex.get(name);
+    if (k !== undefined) return this.#inputs[k].neurons;
     throw new Error(`No readout or input called "${name}"`);
   }
 
@@ -412,8 +462,15 @@ export class Simulation {
     this.#readoutCounts.fill(0);
     this.#recording?.fill(0);
     this.#inputs.forEach((input, k) => {
-      input.source = new PoissonInput(input.neurons, inputSeed(this.seed, k));
-      input.source.setProbability((input.rate * this.dt) / 1000);
+      if (input.rates) {
+        const source = new RatedPoissonInput(input.neurons, inputSeed(this.seed, k));
+        source.setProbabilities(input.rates, this.dt / 1000);
+        input.source = source;
+      } else {
+        const source = new PoissonInput(input.neurons, inputSeed(this.seed, k));
+        source.setProbability((input.rate * this.dt) / 1000);
+        input.source = source;
+      }
     });
     this.#activateBiased();
   }
@@ -502,7 +559,7 @@ export class Simulation {
     const adaptStep = this.#adaptStep;
     for (let q = 0; q < inputs.length; q++) {
       const input = inputs[q];
-      if (input.rate === 0) continue;
+      if (!input.on) continue;
       const m = input.source.sample(picked);
       if (out.length < fired + m) out = this.#grow(slot, fired + m);
       for (let k = 0; k < m; k++) {
@@ -798,6 +855,63 @@ export class PoissonInput {
     if (this.#p <= 0) return Infinity;
     if (this.#p >= 1) return 0;
     // 1 - random() is in (0, 1], so the log is finite.
+    return Math.floor(Math.log(1 - this.#random()) / this.#logMiss);
+  }
+}
+
+/**
+ * Independent Bernoulli trials for each neuron each step, each neuron with a
+ * probability of its own. Drawn by thinning: candidates come at the highest
+ * probability, skipping geometric gaps as PoissonInput does, and each is kept
+ * with its own probability over the highest. That costs one draw per
+ * candidate, about (neurons × highest probability) a step, so it stays cheap
+ * while most neurons are near the fastest or silent.
+ */
+export class RatedPoissonInput {
+  readonly neurons: Uint32Array;
+  #random: () => number;
+  #p: Float64Array;
+  #max = 0;
+  #logMiss = 0;
+  #next = Infinity;
+
+  constructor(neurons: Uint32Array, seed: number) {
+    this.neurons = neurons;
+    this.#p = new Float64Array(neurons.length);
+    this.#random = mulberry32(seed);
+  }
+
+  /** Each neuron's chance of firing in a step is its rate times `scale` (rates in Hz and the step in seconds), at most 1. */
+  setProbabilities(rates: ArrayLike<number>, scale: number) {
+    let max = 0;
+    for (let k = 0; k < this.#p.length; k++) {
+      const p = Math.min(1, Math.max(0, rates[k] * scale));
+      this.#p[k] = p;
+      if (p > max) max = p;
+    }
+    this.#max = max;
+    this.#logMiss = Math.log1p(-max);
+    this.#next = this.#gap();
+  }
+
+  /** Writes this step's firing neurons into `out`, in group order; returns how many. */
+  sample(out: Uint32Array): number {
+    const size = this.neurons.length;
+    const p = this.#p;
+    const max = this.#max;
+    let at = this.#next;
+    let n = 0;
+    while (at < size) {
+      if (this.#random() * max < p[at]) out[n++] = this.neurons[at];
+      at += 1 + this.#gap();
+    }
+    this.#next = at - size;
+    return n;
+  }
+
+  #gap() {
+    if (this.#max <= 0) return Infinity;
+    if (this.#max >= 1) return 0;
     return Math.floor(Math.log(1 - this.#random()) / this.#logMiss);
   }
 }

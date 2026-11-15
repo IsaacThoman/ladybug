@@ -1,7 +1,7 @@
-import type { CheckRequest, CheckResponse } from "@ladybug/shared";
+import type { CheckRequest, CheckResponse, CheckStatusResponse } from "@ladybug/shared";
 import { logEvent, sendPetAlert } from "./activity.ts";
 import type { AlertRecipient } from "./activity.ts";
-import { isAnalysisRunning, startAnalysis } from "./analyzer.ts";
+import { isAnalysisRunning, pendingAnalysis, startAnalysis } from "./analyzer.ts";
 import { recordVisit } from "./checks.ts";
 import { findRecord } from "./store.ts";
 import { notifyUnsafeVisit } from "./support/service.ts";
@@ -88,4 +88,19 @@ export async function checkVisit(
     sendPetAlert(recipient, "info", `Hmm, I don't know ${host} yet. Checking it…`, url, host, analysis.scanId);
   }
   return { status: "pending", url, etaMs: Math.max(0, analysis.etaAt - Date.now()) };
+}
+
+/**
+ * What's known about a URL right now. Unlike `checkVisit`, nothing is logged,
+ * counted or started: the extension polls this while an analysis runs.
+ */
+export async function lookupVisit(rawUrl: string): Promise<CheckStatusResponse> {
+  const target = normalizeUrl(rawUrl);
+  if (!target.ok) return { status: "skipped", reason: target.reason };
+  const { url, host } = target;
+  const record = await findRecord(url, host);
+  if (record) return { status: "known", verdict: record.verdict, record };
+  const analysis = pendingAnalysis(url);
+  if (analysis) return { status: "pending", url, etaMs: Math.max(0, analysis.etaAt - Date.now()) };
+  return { status: "unknown", url };
 }

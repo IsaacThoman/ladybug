@@ -6,7 +6,7 @@ import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
 import { createModelSettings } from "@ladybug/backend";
 import type { ModelSettingsStore } from "@ladybug/backend";
 import { requireAccount, userOf } from "./accounts.ts";
-import { checkVisit } from "./checker.ts";
+import { checkVisit, lookupVisit } from "./checker.ts";
 import { config } from "./config.ts";
 import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
 import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
@@ -84,6 +84,12 @@ export function createApp(
         { userId: user.id, username: user.username },
       ),
     );
+  });
+
+  // Polled by the extension while a page it reported is analysed, so it can
+  // warn over the page once the verdict is in. Not counted as a visit.
+  app.post("/api/check/status", signedIn, requireStore, async (req, res) => {
+    res.json(await lookupVisit(requireString(req.body?.url, "url", 8192)));
   });
 
   // Desktop pets subscribe here for their user's alerts.

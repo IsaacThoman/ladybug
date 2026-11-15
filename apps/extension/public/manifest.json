@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Ladybugg",
   "version": "0.1.0",
-  "description": "Reports the pages you visit to your Ladybugg server, so your desktop ladybug can warn you about unsafe sites.",
+  "description": "Reports the pages you visit to your Ladybugg server, so your ladybug can warn you about unsafe sites, right over the page.",
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -22,6 +22,12 @@
     "48": "icons/ladybug-48.png",
     "128": "icons/ladybug-128.png"
   },
-  "permissions": ["webNavigation", "storage"],
-  "host_permissions": ["https://ladybugg.garden/*", "http://localhost/*", "http://127.0.0.1/*"]
+  "permissions": ["webNavigation", "storage", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [
+    {
+      "resources": ["warning.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

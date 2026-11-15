@@ -88,6 +88,29 @@ test("Redis support integration (dedicated TEST_REDIS_URL; database is cleared)"
     await f.service.reply(event(second + 1)); // Created inside, received outside.
     assert.equal(f.commands.length, 5);
   });
+  await t.test("SHUTDOWN is exact, account scoped, deduplicated, expires, and is discarded offline", async () => {
+    const f = await fixture();
+    await f.service.notify("https://bad.example", "shutdown-account"); await f.service.drain();
+    const shutdown = (at = f.now()) => ({ ...event(at), text: " \tShUtDoWn\n" });
+    for (const text of ["shutdown now", "please shutdown", "SHUTDOWN!", "", "shutdown support"]) {
+      await f.service.reply({ ...shutdown(), text });
+    }
+    await f.service.reply({ ...shutdown(), masked_recipient: "+15550000000" });
+    await f.service.reply({ ...shutdown(), line_id: "other" });
+    assert.equal(f.commands.length, 0);
+    const duplicate = shutdown();
+    await Promise.all([f.service.reply(duplicate), f.service.reply(duplicate), f.create().reply(duplicate)]);
+    assert.equal(f.commands.length, 1);
+    assert.equal(f.commands[0].kind, "device-shutdown");
+    assert.equal(f.commands[0].accountId, "shutdown-account");
+    const offline = shutdown(); f.offline(); await f.service.reply(offline);
+    f.online(); f.advance(1); await f.service.reply(offline);
+    assert.equal(f.commands.length, 1);
+    await f.service.reply(shutdown()); assert.equal(f.commands.length, 2);
+    f.advance(1_800_000);
+    await f.service.reply(shutdown()); await f.service.reply(shutdown(f.now() - 1000));
+    assert.equal(f.commands.length, 2);
+  });
   await t.test("legacy jobs and windows cannot authorize commands", async () => {
     const f = await fixture();
     await f.service.notify("https://legacy.example", visitor.userId);

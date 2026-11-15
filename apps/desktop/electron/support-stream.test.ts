@@ -59,16 +59,17 @@ test("a signed-out pet does not connect until it is started again", async (t) =>
 });
 
 test("support and browser-kill require a valid unexpired event and stop cancels both", async () => {
-  const received: string[] = [], killed: string[] = [];
+  const received: string[] = [], killed: string[] = [], shutdown: string[] = [];
   let writer!: ReadableStreamDefaultController<Uint8Array>;
   const subscription = new SupportSubscription((id) => received.push(id), {
     auth: () => ({ url: "https://ladybug.example", token: "private-token" }),
     kill: (id) => killed.push(id),
+    shutdown: (id) => shutdown.push(id),
     fetch: async () => new Response(new ReadableStream({ start(controller) { writer = controller; } })),
   });
   const send = (kind: string, data: object) => writer.enqueue(new TextEncoder().encode(`event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`));
   subscription.start(); await turn();
-  for (const kind of ["support", "browser-kill"]) {
+  for (const kind of ["support", "browser-kill", "device-shutdown"]) {
     send(kind, { id: randomUUID(), expiresAt: Date.now() - 1 });
     send(kind, { id: randomUUID() });
     send(kind, { id: "invalid", expiresAt: Date.now() + 60_000 });
@@ -76,7 +77,15 @@ test("support and browser-kill require a valid unexpired event and stop cancels 
   const id = randomUUID();
   send("browser-kill", { id, expiresAt: Date.now() + 60_000 });
   await turn(); assert.deepEqual(killed, [id]); assert.deepEqual(received, []);
+  send("device-shutdown", { id, expiresAt: Date.now() + 60_000 });
+  send("device-shutdown", { id, expiresAt: Date.now() + 60_000 });
+  await turn(); assert.deepEqual(shutdown, [id]);
+  subscription.stop(); writer.close(); await turn();
+  subscription.start(); await turn();
+  send("device-shutdown", { id, expiresAt: Date.now() + 60_000 });
+  await turn(); assert.deepEqual(shutdown, [id]);
   subscription.stop();
+  send("device-shutdown", { id: randomUUID(), expiresAt: Date.now() + 60_000 });
   send("browser-kill", { id: randomUUID(), expiresAt: Date.now() + 60_000 });
-  await turn(); assert.deepEqual(killed, [id]);
+  await turn(); assert.deepEqual(killed, [id]); assert.deepEqual(shutdown, [id]);
 });

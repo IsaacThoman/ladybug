@@ -9,6 +9,7 @@
     "buildResources": "build"
   },
   "files": ["dist", "dist-electron", "!**/.env", "!**/.env.*"],
+  "extraResources": [{ "from": "scripts", "to": "shutdown-setup" }],
   "mac": {
     "target": ["dmg"],
     "entitlements": "build/entitlements.mac.plist",

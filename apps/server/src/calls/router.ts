@@ -97,7 +97,7 @@ export function createCallRouter(options: { accounts: AccountStore; service?: Ca
     shutdown,
     checkLease,
     revoke,
-    deliverSupport: (command: SupportCommand) => (command.kind === "browser-kill" || finished(calls.getState().phase)) && support.deliver(command),
+    deliverSupport: (command: SupportCommand) => (command.kind !== "support" || finished(calls.getState().phase)) && support.deliver(command),
   });
 }
 

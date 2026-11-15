@@ -5,7 +5,7 @@ import type { Request, Response } from "express";
 import { SupportStream } from "./stream.ts";
 import type { SupportCommand } from "./service.ts";
 
-test("SUPPORT selects the newest account desktop; KILL broadcasts only to eligible account desktops", () => {
+for (const broadcast of ["browser-kill", "device-shutdown"] as const) test(`SUPPORT selects the newest account desktop; ${broadcast} broadcasts only to eligible account desktops`, () => {
   let now = 100;
   const stream = new SupportStream(() => now);
   const clients: { req: EventEmitter; events: string[] }[] = [];
@@ -29,21 +29,21 @@ test("SUPPORT selects the newest account desktop; KILL broadcasts only to eligib
     assert.equal(stream.deliver(command("support")), true);
     assert.equal(old.events.length, 0); assert.equal(other.events.length, 0);
     assert.match(newest.events[0], /event: support/);
-    assert.equal(stream.deliver(command("browser-kill")), true);
+    assert.equal(stream.deliver(command(broadcast)), true);
     assert.equal(old.events.length, 1); assert.equal(newest.events.length, 2);
     assert.equal(other.events.length, 0);
-    assert.match(old.events[0], /event: browser-kill\ndata: {"id":"request","expiresAt":1000}/);
+    assert.ok(old.events[0].includes(`event: ${broadcast}\ndata: {"id":"request","expiresAt":1000}`));
     newest.disconnect();
     assert.equal(stream.deliver(command("support")), true); assert.equal(old.events.length, 2);
-    assert.equal(stream.deliver(command("browser-kill", { expiresAt: 99 })), false);
+    assert.equal(stream.deliver(command(broadcast, { expiresAt: 99 })), false);
     stream.close("a");
-    assert.equal(stream.deliver(command("browser-kill")), false);
+    assert.equal(stream.deliver(command(broadcast)), false);
     now = 200;
     const reconnected = connect("a");
-    assert.equal(stream.deliver(command("browser-kill", { sentAt: 100 })), false);
+    assert.equal(stream.deliver(command(broadcast, { sentAt: 100 })), false);
     assert.equal(reconnected.events.length, 0);
-    assert.equal(stream.deliver(command("browser-kill")), true);
+    assert.equal(stream.deliver(command(broadcast)), true);
     stream.close();
-    assert.equal(stream.deliver(command("browser-kill", { accountId: "b" })), false);
+    assert.equal(stream.deliver(command(broadcast, { accountId: "b" })), false);
   } finally { stream.close(); for (const client of clients) client.req.emit("close"); }
 });

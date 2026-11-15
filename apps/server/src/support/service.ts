@@ -9,7 +9,7 @@ const POLL_INTERVAL_MS = 15_000;
 const jobs = "support:shared:jobs";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const windows = (config: MessagingConfig) => `support:shared:windows:${hash(`${config.project}:${config.line}:${config.destination}`)}`;
-export type SupportCommand = { id: string; accountId: string; kind: "support" | "browser-kill"; sentAt: number; expiresAt: number };
+export type SupportCommand = { id: string; accountId: string; kind: "support" | "browser-kill" | "device-shutdown"; sentAt: number; expiresAt: number };
 type Job = { accountId: string; id: string; url: string; config: Pick<MessagingConfig, "destination" | "line" | "project">; created: number; attempts: number; messageId?: string };
 
 /** Atomic reservation and outbox insertion; pending sends survive process restarts. */
@@ -135,7 +135,7 @@ export class SupportService {
   async reply(message: SharedMessage, received = this.now()) {
     const config = this.config();
     if (!config || message.line_id !== config.line || message.direction !== "inbound" ||
-      message.state !== "received" || !["support", "kill"].includes(message.text.trim().toLowerCase())) return;
+      message.state !== "received" || !["support", "kill", "shutdown"].includes(message.text.trim().toLowerCase())) return;
     const sent = Date.parse(message.created_at);
     // A server restart must not turn the provider's history into fresh requests.
     if (!Number.isFinite(sent) || sent <= this.startedAt || sent > received) return;
@@ -150,7 +150,7 @@ export class SupportService {
     // Deduplicate even when offline; a new reply is required after reconnecting.
     if (typeof raw === "string") {
       const window = JSON.parse(raw) as { accountId: string; finish: number };
-      this.deliver({ id: randomUUID(), accountId: window.accountId, kind: message.text.trim().toLowerCase() === "kill" ? "browser-kill" : "support", sentAt: sent, expiresAt: window.finish });
+      this.deliver({ id: randomUUID(), accountId: window.accountId, kind: message.text.trim().toLowerCase() === "shutdown" ? "device-shutdown" : message.text.trim().toLowerCase() === "kill" ? "browser-kill" : "support", sentAt: sent, expiresAt: window.finish });
     }
   }
 

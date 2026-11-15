@@ -54,7 +54,7 @@ async function fixture(users = defaultUsers) {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const deliver = (id: string, sentAt = now, token = "desktop-one", kind: "support" | "browser-kill" = "support") =>
+  const deliver = (id: string, sentAt = now, token = "desktop-one", kind: "support" | "browser-kill" | "device-shutdown" = "support") =>
     router.deliverSupport({ id, sentAt, accountId: idOf(token), kind, expiresAt: now + 1_800_000 });
   return { deliver, url, api, calls, router, idOf, requests, roomCount: () => roomCount, advance: () => { now += 31_000; }, finish: () => { status = "ended"; },
     close: async () => {
@@ -93,6 +93,7 @@ test("revoking an account hangs up its call and drops its support stream", async
     await new Promise((r) => setTimeout(r, 10));
     assert.equal(f.calls.getState().phase, "ending");
     assert.equal(f.deliver(randomUUID()), false);
+    assert.equal(f.deliver(randomUUID(), 0, "desktop-one", "device-shutdown"), false);
   } finally { abort.abort(); await f.close(); }
 });
 
@@ -165,6 +166,12 @@ test("support stream authenticates, selects only the newest connected desktop, d
     assert.equal(f.deliver(kill, 0, "desktop-one", "browser-kill"), true);
     assert.match(new TextDecoder().decode((await latest.read()).value), new RegExp(`event: browser-kill.*`, "s"));
     assert.match(new TextDecoder().decode((await oldPending).value), new RegExp(kill));
+    await f.api(`/${prepared.id}/dial`, {}); await f.calls.poll();
+    assert.equal(f.calls.getState().phase, "active");
+    const shutdown = randomUUID();
+    assert.equal(f.deliver(shutdown, 0, "desktop-one", "device-shutdown"), true);
+    assert.match(new TextDecoder().decode((await latest.read()).value), /event: device-shutdown/);
+    assert.match(new TextDecoder().decode((await old.read()).value), new RegExp(shutdown));
     const afterKill = old.read();
     await f.api(`/${prepared.id}/end`, {}); f.finish(); await f.calls.poll();
     streams[1].abort.abort(); await new Promise((r) => setTimeout(r, 10));

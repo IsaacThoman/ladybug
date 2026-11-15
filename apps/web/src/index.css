@@ -523,11 +523,7 @@ p {
   text-decoration: underline;
 }
 
-/* how it works */
-
-.how {
-  margin-top: clamp(48px, 9vh, 104px);
-}
+/* sections */
 
 .section-title {
   font-family: var(--font-display);
@@ -541,54 +537,6 @@ p {
 .section-sub {
   margin: 0.2rem 0 0;
   color: var(--ink-2);
-}
-
-.how-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin: 1.1rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.how-step {
-  padding: 1.3rem 1.4rem 1.4rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--paper) 82%, transparent);
-  box-shadow: var(--shadow);
-}
-
-.how-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 2.6rem;
-  height: 2.6rem;
-  margin-bottom: 0.9rem;
-  border-radius: 50%;
-  background: var(--leaf-wash);
-  color: var(--leaf-ink);
-}
-
-.how-step h3 {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  font-size: 1.05rem;
-  font-weight: 680;
-}
-
-.how-number {
-  color: var(--muted);
-  font-family: var(--font-display);
-  font-weight: 500;
-}
-
-.how-step p {
-  margin-top: 0.4rem;
-  color: var(--ink-2);
-  font-size: 0.95rem;
 }
 
 /* recent scans */
@@ -1937,10 +1885,6 @@ p {
 
   .hero-mascot .mascot-stage {
     zoom: 0.72;
-  }
-
-  .how-steps {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .topbar {

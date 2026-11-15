@@ -1,9 +1,40 @@
 /*
- * The warning over an unsafe page. The overlay around this frame dims and
- * blurs the page (overlay.ts); this page stays see-through apart from the card.
- * Colours and type come from the garden look (@ladybug/mascot/garden.css),
- * the buttons and chip from the web report page.
+ * The page that blocks an unsafe site: brown, so it never reads as part of the
+ * site, and the same over the page (overlay.ts) or as the whole tab. The
+ * ladybug's speech bubble uses the garden's paper and type
+ * (@ladybug/mascot/garden.css), and the buttons and chip the web report page's.
  */
+
+:root {
+  --blocked-top: #7a4d33;
+  --blocked-bottom: #4a2d1e;
+  --blocked-ink: #fbf1e5;
+  --blocked-ink-2: rgba(251, 241, 229, 0.78);
+  --blocked-chip: rgba(255, 236, 220, 0.14);
+  --blocked-chip-ink: #ffd5c2;
+  --blocked-glow: rgba(255, 196, 150, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --blocked-top: #3d271a;
+    --blocked-bottom: #21150e;
+    --blocked-ink: #f3e6d8;
+    --blocked-ink-2: rgba(243, 230, 216, 0.72);
+    --blocked-chip: rgba(255, 220, 195, 0.1);
+    --blocked-chip-ink: #ffb9a0;
+    --blocked-glow: rgba(255, 170, 120, 0.12);
+
+    /* The garden's night paper is slate blue; keep the speech bubble warm on the brown. */
+    --paper: #34241a;
+    --paper-2: #402d21;
+    --line: rgba(255, 228, 205, 0.1);
+    --line-strong: rgba(255, 228, 205, 0.2);
+    --ink: #f6eadf;
+    --ink-2: #d9c6b6;
+    --muted: #ab9482;
+  }
+}
 
 *,
 *::before,
@@ -15,6 +46,7 @@ html {
   height: 100%;
   /* Keep wheel and touch scrolling from reaching the page underneath. */
   overscroll-behavior: none;
+  background: var(--blocked-bottom);
 }
 
 body {
@@ -22,18 +54,13 @@ body {
   place-items: center;
   min-height: 100%;
   margin: 0;
-  padding: 24px 16px;
-  background: transparent;
-  color: var(--ink);
+  padding: 32px 16px;
+  background: radial-gradient(120% 80% at 50% 0%, var(--blocked-top), var(--blocked-bottom)) fixed var(--blocked-bottom);
+  color: var(--blocked-ink);
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-}
-
-/* The whole tab, when the page kept removing the overlay. */
-html[data-mode="page"] body {
-  background-color: var(--sky-low);
 }
 
 button {
@@ -42,51 +69,31 @@ button {
 }
 
 h1,
+h2,
 p {
   margin: 0;
 }
 
-.card {
+.blocked {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: min(460px, 100%);
-  padding: 8px 32px 28px;
-  border-radius: 24px;
-  background: var(--paper);
-  box-shadow:
-    0 0 0 1px var(--line),
-    0 30px 80px rgba(20, 6, 4, 0.35);
+  width: min(480px, 100%);
   text-align: center;
-  animation: card-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  outline: none;
 }
 
-.card[hidden] {
+.blocked[hidden],
+.blocked [hidden] {
   display: none;
-}
-
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(14px) scale(0.97);
-  }
-}
-
-/* The ladybug on its leaf, with a red glow instead of sunlight. */
-.mascot-stage {
-  margin-bottom: 4px;
-}
-
-.mascot-stage::before {
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--red) 26%, transparent), transparent);
 }
 
 .verdict-chip {
   display: inline-flex;
   padding: 0.22em 0.75em;
   border-radius: 99px;
-  color: var(--red-ink);
-  background: var(--red-wash);
+  color: var(--blocked-chip-ink);
+  background: var(--blocked-chip);
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -94,9 +101,99 @@ p {
 }
 
 h1 {
-  margin-top: 12px;
+  margin-top: 10px;
   font-family: var(--font-display);
-  font-size: 1.75rem;
+  font-size: clamp(2.6rem, 9vw, 3.6rem);
+  font-weight: 640;
+  font-variation-settings: "SOFT" 100;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.summary {
+  margin-top: 12px;
+  color: var(--blocked-ink-2);
+  text-wrap: pretty;
+}
+
+.summary strong {
+  color: var(--blocked-ink);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- a desktop ladybug has the options ---------- */
+
+.handoff {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 28px;
+  color: var(--blocked-ink-2);
+  animation: rise-in 0.28s ease-out;
+}
+
+.link-button {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--blocked-ink);
+  font-size: 0.88rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link-button:focus-visible {
+  outline: 2px solid var(--blocked-chip-ink);
+  outline-offset: 2px;
+}
+
+/* ---------- this page's ladybug, with its speech bubble ---------- */
+
+.here {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin-top: 26px;
+}
+
+.speech {
+  position: relative;
+  width: 100%;
+  padding: 20px 26px 18px;
+  border-radius: 22px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 24px 60px rgba(20, 8, 2, 0.4);
+  animation: rise-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+/* The tail, pointing down at the ladybug. */
+.speech::after {
+  content: "";
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 50%;
+  translate: -50% 0;
+  border: 12px solid transparent;
+  border-top-color: var(--paper);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
   font-weight: 620;
   font-variation-settings: "SOFT" 100;
   line-height: 1.15;
@@ -104,20 +201,15 @@ h1 {
   text-wrap: balance;
 }
 
-.summary {
-  margin-top: 10px;
+.speech-summary {
+  margin-top: 8px;
   color: var(--ink-2);
   text-wrap: pretty;
 }
 
-.summary strong {
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
 .details {
   width: 100%;
-  margin-top: 18px;
+  margin-top: 16px;
   padding: 12px 14px;
   border-radius: 14px;
   background: var(--paper-2);
@@ -154,7 +246,7 @@ h1 {
   justify-content: center;
   gap: 10px;
   width: 100%;
-  margin-top: 22px;
+  margin-top: 20px;
 }
 
 .actions .button {
@@ -162,9 +254,18 @@ h1 {
 }
 
 .footnote {
-  margin-top: 14px;
+  margin-top: 12px;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+/* The ladybug on its leaf, under its bubble, with a warm glow instead of sunlight. */
+.mascot-stage {
+  margin-top: 10px;
+}
+
+.mascot-stage::before {
+  background: radial-gradient(closest-side, var(--blocked-glow), transparent);
 }
 
 /* ---------- buttons, as on the web report page ---------- */
@@ -225,17 +326,18 @@ h1 {
 }
 
 @media (max-width: 420px) {
-  .card {
-    padding: 4px 20px 22px;
+  .speech {
+    padding: 16px 18px;
   }
 
-  h1 {
-    font-size: 1.45rem;
+  h2 {
+    font-size: 1.25rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .card {
+  .handoff,
+  .speech {
     animation: none;
   }
 }

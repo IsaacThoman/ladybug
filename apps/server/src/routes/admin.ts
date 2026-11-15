@@ -30,7 +30,7 @@ import {
   requireStore,
   requireString,
 } from "../http.ts";
-import { adminChannel, petChannel } from "../sse.ts";
+import { adminChannel, petChannel, warningChannel } from "../sse.ts";
 import {
   countBy,
   deleteRecord,
@@ -142,6 +142,7 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, 
     // Pets reconnect and find out they no longer have access.
     if (action.status !== "approved") {
       petChannel.close(user.id);
+      warningChannel.close(user.id);
       revokeCalls(user.id);
     }
     logEvent({
@@ -156,6 +157,7 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, 
     const user = await accounts.remove(req.params.id);
     if (!user) throw new HttpError(404, "No such user");
     petChannel.close(user.id);
+    warningChannel.close(user.id);
     revokeCalls(user.id);
     logEvent({
       type: "admin",

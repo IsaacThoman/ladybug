@@ -1,4 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Web APIs that browsers and Node both have (streams, TextDecoder).
+    "lib": ["ES2023", "DOM"]
+  },
   "include": ["src"]
 }

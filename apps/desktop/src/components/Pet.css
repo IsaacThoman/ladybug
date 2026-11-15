@@ -35,3 +35,184 @@
 .pet-menu button:hover, .pet-menu button:focus-visible { background: #edf2f7; outline: 2px solid #487fc9; }
 .pet-menu button:disabled { opacity: 0.45; cursor: default; }
 .pet:focus-visible { outline: 2px solid #487fc9; border-radius: 50%; }
+
+/*
+ * The speech bubble while the browser is blocking an unsafe page: what the
+ * page is, why it was flagged, and what to do. Positioned from the animation
+ * loop, which also sets data-side and --tail-x.
+ */
+.pet-warning {
+  --bubble-bg: #fff;
+  --red: #e5483e;
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 9;
+  width: 300px;
+  padding: 14px 16px 12px;
+  border-radius: 14px;
+  background: var(--bubble-bg);
+  color: #1d1d1f;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+  will-change: transform;
+  user-select: text;
+}
+
+/* Hidden until the animation loop has placed it. */
+.pet-warning:not([data-side]) {
+  visibility: hidden;
+}
+
+.pet-warning::after {
+  content: "";
+  position: absolute;
+  left: var(--tail-x, 50%);
+  translate: -50% 0;
+  border: 9px solid transparent;
+}
+
+.pet-warning[data-side="above"]::after {
+  top: calc(100% - 1px);
+  border-top-color: var(--bubble-bg);
+}
+
+.pet-warning[data-side="below"]::after {
+  bottom: calc(100% - 1px);
+  border-bottom-color: var(--bubble-bg);
+}
+
+.pet-warning > * {
+  margin: 0;
+  animation: pet-warning-in 0.2s ease-out both;
+}
+
+@keyframes pet-warning-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.pet-warning-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: #fde8e5;
+  color: #b3322a;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pet-warning h2 {
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.pet-warning-summary {
+  margin-top: 6px;
+  color: #4a4a50;
+  text-wrap: pretty;
+}
+
+.pet-warning-summary strong {
+  color: #1d1d1f;
+  overflow-wrap: anywhere;
+}
+
+.pet-warning-details {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #f4f4f6;
+  text-align: left;
+}
+
+.pet-warning-reason {
+  margin: 0 0 4px;
+  color: #4a4a50;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.pet-warning-url {
+  margin: 0;
+  overflow: hidden;
+  color: #75757d;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pet-warning-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.pet-warning-actions button {
+  flex: 1 1 120px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pet-warning-actions button:focus-visible {
+  outline: 2px solid #487fc9;
+  outline-offset: 2px;
+}
+
+.pet-warning-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.pet-warning-actions .primary {
+  background: var(--red);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(229, 72, 62, 0.3);
+}
+
+.pet-warning-actions .primary:hover:not(:disabled) {
+  background: #c63a31;
+}
+
+.pet-warning-actions .ghost {
+  background: #fff;
+  border-color: #d2d2d7;
+  color: #1d1d1f;
+}
+
+.pet-warning-actions .ghost:hover:not(:disabled) {
+  background: #f4f4f6;
+}
+
+.pet-warning-note {
+  margin-top: 9px;
+  color: #75757d;
+  font-size: 11px;
+}
+
+.pet-warning-note[role="alert"] {
+  color: #b3322a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-warning > * {
+    animation: none;
+  }
+}

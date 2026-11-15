@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
+import { WARNING_CHOICES } from "@ladybug/shared";
 import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
 import { createModelSettings } from "@ladybug/backend";
 import type { ModelSettingsStore } from "@ladybug/backend";
@@ -9,7 +10,7 @@ import { requireAccount, userOf } from "./accounts.ts";
 import { checkVisit, lookupVisit } from "./checker.ts";
 import { config } from "./config.ts";
 import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
-import { errorHandler, optionalString, requireStore, requireString } from "./http.ts";
+import { HttpError, errorHandler, optionalString, requireEnum, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
 import type { SandboxLister } from "./routes/admin.ts";
 import { authRouter } from "./routes/auth.ts";
@@ -19,6 +20,7 @@ import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
 import { isStoreReady } from "./store.ts";
+import { chooseForWarning, openWarning, warningsFor } from "./warnings.ts";
 import { SupportService, configureSupport } from "./support/service.ts";
 import { createCallRouter } from "./calls/router.ts";
 
@@ -90,9 +92,33 @@ export function createApp(
     res.json(await lookupVisit(requireString(req.body?.url, "url", 8192)));
   });
 
-  // Desktop pets subscribe here for their user's alerts.
+  // Desktop pets subscribe here for their user's alerts, and the pages their
+  // browser is blocking.
   app.get("/api/pet/stream", signedIn, (req, res) => {
-    petChannel.attach(req, res, userOf(res).id);
+    const user = userOf(res);
+    petChannel.attach(req, res, user.id)("warnings", warningsFor(user.id));
+  });
+
+  // Opened by the extension's blocked page, which keeps the response (an
+  // event stream) open for as long as the page is blocked.
+  app.post("/api/pet/warnings", signedIn, (req, res) => {
+    const late = req.body?.late ?? false;
+    if (typeof late !== "boolean") throw new HttpError(400, '"late" must be a boolean');
+    openWarning(req, res, userOf(res), {
+      url: requireString(req.body?.url, "url", 8192),
+      host: requireString(req.body?.host, "host", 500),
+      reason: optionalString(req.body?.reason, "reason", 2000) ?? "",
+      late,
+    });
+  });
+
+  // A pet's answer to a blocked page: leave it, or continue anyway.
+  app.post("/api/pet/warnings/:id/choice", signedIn, (req, res) => {
+    const choice = requireEnum(req.body?.choice, WARNING_CHOICES, "choice");
+    if (!chooseForWarning(userOf(res), String(req.params.id), choice)) {
+      throw new HttpError(404, "That page isn't blocked anymore");
+    }
+    res.status(204).end();
   });
 
   // Sign-in first: the admin UI calls these while signed out.

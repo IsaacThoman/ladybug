@@ -4,7 +4,8 @@ import { once } from "node:events";
 import { after, before, test } from "node:test";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
-import type { AdminAccount, AuthResponse } from "@ladybug/shared";
+import { readServerSentEvents } from "@ladybug/shared";
+import type { AdminAccount, AuthResponse, PetWarning, WarningStreamEvents } from "@ladybug/shared";
 import type { AccountStore, Db, UserRecord } from "@ladybug/backend";
 import { hashPassword, verifyPassword } from "./accounts.ts";
 import { recipientsFor, startAnalysis } from "./analyzer.ts";
@@ -100,6 +101,32 @@ async function openPetStream(token: string) {
   const controller = new AbortController();
   const res = await fetch(`${base}/api/pet/stream`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
   return { res, close: () => controller.abort() };
+}
+
+/** Reads a stream's events in order. `next` waits for the next one with that name, skipping others. */
+function eventsOf(res: Response) {
+  const queue: { event: string; data: unknown }[] = [];
+  let wake = () => {};
+  void readServerSentEvents(res.body!, (event, data) => {
+    queue.push({ event, data: JSON.parse(data) });
+    wake();
+  }).catch(() => {});
+  return {
+    async next<T>(name: string): Promise<T> {
+      for (;;) {
+        const index = queue.findIndex((item) => item.event === name);
+        if (index >= 0) return queue.splice(0, index + 1).at(-1)!.data as T;
+        await new Promise<void>((resolve) => (wake = resolve));
+      }
+    },
+  };
+}
+
+async function approvedUser(username: string) {
+  const signup = await call("POST", "/api/auth/signup", { body: { username, password: "longenough" } });
+  const { token, account } = (await signup.json()) as AuthResponse;
+  await call("POST", `/api/admin/users/${account.id}/approve`, { admin: "admin-secret" });
+  return token;
 }
 
 test("passwords hash with a salt and verify", async () => {
@@ -240,4 +267,64 @@ test("everyone who visits a URL during its analysis hears the result", () => {
 
   startAnalysis(url, "shared.example", "everyone");
   assert.deepEqual(recipientsFor(url), ["everyone"], "an admin check covers every pet once");
+});
+
+test("a blocked page keeps the user's pets posted, and takes the choice made on a pet", async () => {
+  const token = await approvedUser("erin");
+  const other = await approvedUser("frank");
+  const blocked = { url: "https://bad.example/login", host: "bad.example", reason: "Phishing page", late: false };
+
+  // A page blocked while no pet is listening is told so, and hears when one connects.
+  const lonely = new AbortController();
+  const early = await fetch(`${base}/api/pet/warnings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(blocked),
+    signal: lonely.signal,
+  });
+  assert.equal(early.status, 200);
+  const earlyEvents = eventsOf(early);
+  assert.equal((await earlyEvents.next<WarningStreamEvents["ready"]>("ready")).pets, 0);
+
+  const pet = await openPetStream(token);
+  const petEvents = eventsOf(pet.res);
+  assert.deepEqual(
+    (await petEvents.next<PetWarning[]>("warnings")).map((warning) => warning.url),
+    [blocked.url],
+    "a pet that connects hears about pages already blocked",
+  );
+  assert.equal((await earlyEvents.next<WarningStreamEvents["pets"]>("pets")).pets, 1);
+  lonely.abort();
+  assert.deepEqual(await petEvents.next<PetWarning[]>("warnings"), [], "closing the page lets the pet calm down");
+
+  const open = (body: unknown) =>
+    fetch(`${base}/api/pet/warnings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  const controller = new AbortController();
+  assert.equal((await open({ ...blocked, late: "yes" })).status, 400);
+  assert.equal((await open({ url: blocked.url })).status, 400);
+
+  const page = await open({ ...blocked, late: true });
+  const pageEvents = eventsOf(page);
+  const { id, pets } = await pageEvents.next<WarningStreamEvents["ready"]>("ready");
+  assert.equal(pets, 1);
+  const [warning] = await petEvents.next<PetWarning[]>("warnings");
+  assert.equal(warning?.id, id);
+  assert.equal(warning?.reason, "Phishing page");
+  assert.equal(warning?.late, true);
+
+  const choose = (choice: unknown, as = token) => call("POST", `/api/pet/warnings/${id}/choice`, { token: as, body: { choice } });
+  assert.equal((await choose("leave")).status, 400);
+  assert.equal((await choose("exit", other)).status, 404, "only the user's own pets can answer");
+  assert.equal((await choose("exit")).status, 204);
+  assert.deepEqual(await pageEvents.next<WarningStreamEvents["choice"]>("choice"), { choice: "exit" });
+
+  controller.abort();
+  assert.deepEqual(await petEvents.next<PetWarning[]>("warnings"), []);
+  assert.equal((await choose("continue")).status, 404, "the page isn't blocked anymore");
+  pet.close();
 });

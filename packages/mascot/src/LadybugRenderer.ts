@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { buildLadybug } from "./ladybugModel.ts";
+import { CLOTH_SECONDS, ClothBake, sampleCloth } from "./blanketCloth.ts";
+import { SLEEP_DROP, buildLadybug } from "./ladybugModel.ts";
 import type { LadybugRig } from "./ladybugModel.ts";
 
 export type LadybugMode = "idle" | "walking" | "airborne" | "dragging";
@@ -32,6 +33,12 @@ export type LadybugPose = {
    * occasional peek.
    */
   inspect?: boolean;
+  /**
+   * Bedtime. Drowsy: heavy-eyed. Asleep (best
+   * while idle): lies down under a blanket and snores until this is unset,
+   * then throws the blanket off.
+   */
+  sleep?: "drowsy" | "asleep";
 };
 
 export type LadybugViewport = {
@@ -62,6 +69,20 @@ const LENS_X = 0.2;
 const PEEK_GAP = 0.1;
 /** How much the eye behind the lens swells while peeking. */
 const PEEK_ZOOM = 0.45;
+/** One snore: a breath in, then a long breath out. */
+const SNORE_SECONDS = 3.4;
+/** The part of each snore spent breathing in. */
+const INHALE = 0.4;
+/** Yaw while asleep, a three-quarter view so the blanket shows. */
+const SLEEP_YAW = 0.6;
+/** How long the blanket takes to fade in at the start of its fall. */
+const BLANKET_FADE_SECONDS = 0.5;
+/** Time per frame spent baking the blanket's fall while the bug gets drowsy. */
+const BAKE_BUDGET_MS = 3;
+const TOSS_SECONDS = 0.55;
+
+/** The blanket's fall, baked once (the bug is the same everywhere) and shared. */
+let clothBake: ClothBake | null = null;
 
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 /** Frame-rate independent smoothing factor. */
@@ -133,6 +154,25 @@ export class LadybugRenderer {
   private readonly eyePoint = new THREE.Vector3();
   private readonly otherEyePoint = new THREE.Vector3();
   private readonly toCamera = new THREE.Vector3();
+
+  private sleep: LadybugPose["sleep"];
+  /** 0–1: heavy eyelids, from drowsy on. */
+  private drowse = 0;
+  /** 0–1: lying down asleep. */
+  private rest = 0;
+  /** 0–1: the blanket falling and settling over the bug. */
+  private tuck = 0;
+  /** The fall progress the blanket's mesh last showed. */
+  private drawnTuck = -1;
+  private blanketOpacity = 1;
+  /** 0–1 progress of throwing the blanket off on waking, or -1. */
+  private toss = -1;
+  /** Seconds of snoring so far, timing the breaths. */
+  private snoreTime = 0;
+  private snores = 0;
+  /** A breath out has started and hasn't been collected by takeSnore. */
+  private snorePending = false;
+  private readonly snorePoint = new THREE.Vector3();
 
   constructor(canvas: HTMLCanvasElement, viewport: LadybugViewport) {
     this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
@@ -259,6 +299,63 @@ export class LadybugRenderer {
     this.happy = approach(this.happy, mood === "happy" ? 1 : 0, 5, dt);
     this.nervous = approach(this.nervous, mood === "nervous" ? 1 : 0, 5, dt);
     this.alarmed = approach(this.alarmed, mood === "alarmed" ? 1 : 0, 8, dt);
+
+    // Bedtime: lie down, blanket on, snore. Waking throws the blanket off.
+    const sleep = pose.sleep;
+    if (sleep !== this.sleep) {
+      if (sleep === undefined && this.tuck > 0) {
+        this.toss = 0;
+        // Eyes fly open and the bug perks up with a little stretch.
+        this.startle(0.9);
+        this.squashVelocity += 2.6;
+      }
+      if (sleep === "asleep") {
+        this.snoreTime = 0;
+        this.snores = 0;
+      }
+      this.sleep = sleep;
+    }
+    const asleep = sleep === "asleep";
+    this.drowse = approach(this.drowse, sleep ? 1 : 0, sleep ? 1.5 : 10, dt);
+    this.rest = approach(this.rest, asleep && mode === "idle" ? 1 : 0, asleep ? 1.8 : 9, dt);
+    // Bake the blanket's fall a little each frame from when the bug gets
+    // drowsy, so it's ready by the time it lies down (or finish it then).
+    if (sleep) {
+      clothBake ??= new ClothBake(rig.blanketShape);
+      if (!clothBake.result) {
+        if (asleep && this.rest > 0.65) clothBake.finish();
+        else clothBake.advance(BAKE_BUDGET_MS);
+      }
+    }
+    if (asleep && this.toss < 0 && this.rest > 0.65) this.tuck = Math.min(1, this.tuck + dt / CLOTH_SECONDS);
+    if (this.toss >= 0) {
+      this.toss = Math.min(1, this.toss + dt / TOSS_SECONDS);
+      if (this.toss >= 1) {
+        this.toss = -1;
+        this.tuck = 0;
+      }
+    }
+    // Breathing: in, then a long, slow out. Gets going once tucked in.
+    const snoring = asleep && this.tuck >= 1;
+    let breath = 0;
+    if (snoring) {
+      const before = this.snoreTime / SNORE_SECONDS;
+      this.snoreTime += dt;
+      const after = this.snoreTime / SNORE_SECONDS;
+      // A new breath out each time the cycle crosses the end of the inhale.
+      if (Math.floor(after - INHALE) > Math.floor(before - INHALE)) {
+        this.snores++;
+        this.snorePending = true;
+      }
+      const p = after % 1;
+      breath = p < INHALE
+        ? THREE.MathUtils.smootherstep(p, 0, INHALE)
+        : 1 - THREE.MathUtils.smootherstep(p, INHALE, 1);
+    } else {
+      this.snorePending = false;
+      this.snores = 0;
+    }
+    const sleepWeight = this.rest;
     // Now and then while sniffing, hold the magnifying glass up to one eye.
     // Inspecting, it's up most of the time.
     const inspecting = mood === "sniffing" && mode === "idle" && pose.inspect === true;
@@ -289,8 +386,10 @@ export class LadybugRenderer {
         ? THREE.MathUtils.clamp(pose.look, -0.7, 0.7)
         : 0;
     const targetYaw =
-      mode === "idle" ? glance : held ? pose.heading * 0.3 : pose.heading * WALK_YAW;
-    this.yaw += (targetYaw - this.yaw) * ease(walking ? 8 : 5, dt);
+      mode === "idle"
+        ? asleep ? pose.heading * SLEEP_YAW : glance
+        : held ? pose.heading * 0.3 : pose.heading * WALK_YAW;
+    this.yaw += (targetYaw - this.yaw) * ease(walking ? 8 : asleep ? 2.5 : 5, dt);
     let spinYaw = 0;
     if (this.spin >= 0) {
       this.spin = Math.min(1, this.spin + dt / SPIN_SECONDS);
@@ -313,12 +412,17 @@ export class LadybugRenderer {
           : 0;
     this.phase += cadence * Math.PI * 2 * dt;
 
+    // Under the blanket the folded legs are out of sight (and would poke through it).
+    const legsCovered = this.tuck > 0.45 && this.toss < 0;
     for (const leg of rig.legs) {
+      leg.pivot.visible = !legsCovered;
       const p = this.phase + leg.tripod * Math.PI;
       const swing = Math.sin(p) * 0.5 * this.gait;
       const lift = Math.max(0, Math.cos(p)) * 0.4 * this.gait;
       const dangle = airborne ? -0.35 + Math.sin(p) * 0.15 : 0;
-      leg.pivot.rotation.set(0, -leg.side * swing, leg.side * (lift + dangle));
+      // Lying down, the legs fold up under the body.
+      const fold = this.rest * (0.95 - leg.tripod * 0.15);
+      leg.pivot.rotation.set(0, -leg.side * swing * (1 - this.rest), leg.side * (lift + dangle + fold));
     }
 
     // Body: bob and waddle while walking, breathe while idle. Happy: a
@@ -330,16 +434,24 @@ export class LadybugRenderer {
     rig.body.position.y =
       (walking ? stepBob * 0.012 : 0) +
       Math.abs(Math.sin(t * 7.5)) * 0.025 * wiggle +
-      Math.abs(pitch) * 0.2;
+      Math.abs(pitch) * 0.2 -
+      SLEEP_DROP * this.rest;
     rig.body.rotation.x = pitch;
     rig.body.rotation.y = Math.sin(t * 7.5) * 0.14 * wiggle;
     rig.body.rotation.z =
       Math.sin(this.phase) * 0.05 * this.gait + Math.sin(t * 15) * 0.1 * wiggle;
-    rig.body.scale.y = 1 + Math.sin(t * 2.4) * 0.012 + this.expect * 0.03;
+    // Asleep, each breath in swells the body (and the blanket over it).
+    rig.body.scale.y =
+      1 + Math.sin(t * 2.4) * 0.012 * (1 - this.rest) + this.expect * 0.03 + breath * 0.045 * sleepWeight;
+    rig.body.scale.x = rig.body.scale.z = 1 + breath * 0.018 * sleepWeight;
 
     // Head: curious tilt when idle, nod while walking. Sniffing: nose to the
     // ground in quick bursts of little nods. Expectant: looks up.
-    const tiltTarget = mode === "idle" ? Math.sin(t * 0.6) * (0.14 - this.expect * 0.08) : 0;
+    // Asleep: head tipped over to one side, nodding with each breath.
+    const tiltTarget =
+      mode === "idle"
+        ? THREE.MathUtils.lerp(Math.sin(t * 0.6) * (0.14 - this.expect * 0.08), -pose.heading * 0.26, this.rest)
+        : 0;
     this.headTilt += (tiltTarget - this.headTilt) * ease(3, dt);
     rig.head.rotation.z = this.headTilt;
     const sniffBurst = Math.max(0, Math.sin(t * 1.9)) ** 2;
@@ -349,7 +461,9 @@ export class LadybugRenderer {
       Math.sin(this.phase * 2) * 0.05 * this.gait +
       this.sniff * (0.3 * (1 - peeking * 0.85) + sniffNod) -
       this.expect * 0.45 -
-      this.alarmed * 0.12;
+      this.alarmed * 0.12 +
+      this.drowse * 0.06 * (1 - this.rest) -
+      this.rest * (0.16 - breath * 0.06);
 
     // Antennae: lazy sway, springy when moving, frantic when held or startled. Sniffing
     // makes them twitch; nervous sweeps them back; alarmed stands them up
@@ -359,8 +473,10 @@ export class LadybugRenderer {
       const twitch =
         this.sniff * Math.max(0, Math.sin(t * 2.6 + side * 1.3)) ** 3 * Math.sin(t * 34 + side);
       const quiver = this.alarmed * Math.sin(t * 41 + side) * 0.07;
+      // Drowsy, they wilt; asleep, they flop out and rise and fall with each breath.
+      const limp = this.drowse * 0.25 + this.rest * (0.4 - breath * 0.12);
       pivot.rotation.z =
-        side * (Math.sin(t * 2.2 + side) * 0.1 + stepBob * 0.12) +
+        side * (Math.sin(t * 2.2 + side) * 0.1 * (1 - this.rest * 0.8) + stepBob * 0.12 + limp) +
         frantic +
         twitch * 0.3 +
         quiver +
@@ -370,7 +486,8 @@ export class LadybugRenderer {
         (airborne ? 0.3 : 0) +
         twitch * 0.2 -
         this.nervous * 0.4 +
-        this.expect * 0.25;
+        this.expect * 0.25 -
+        this.rest * 0.2;
     }
 
     // Blinking.
@@ -380,9 +497,18 @@ export class LadybugRenderer {
       this.blinkIn = randomBetween(2, 5.5);
     }
     this.blink = Math.max(0, this.blink - dt);
+    // Drowsy, the blinks come slow and heavy.
+    if (this.blink > 0 && this.drowse > 0.5 && !asleep) this.blink = Math.max(this.blink, 0.1);
     // Happy squints into ^ ^; alarm and anticipation open the eyes wide.
     const wide = 1 + 0.2 * Math.max(this.alarmed, this.expect);
-    const eyeOpen = (this.blink > 0 ? 0.1 : 1) * (1 - 0.45 * this.happy) * wide;
+    // Asleep, the eyes give way to closed ∪ ∪ lids.
+    const closed = THREE.MathUtils.smoothstep(this.rest, 0.25, 0.7);
+    const eyeOpen =
+      (this.blink > 0 ? 0.1 : 1) *
+      (1 - 0.45 * this.happy) *
+      (1 - 0.45 * this.drowse * (1 - this.rest)) *
+      (1 - closed) *
+      wide;
     // Which eye the glass is on: the viewer's side, following the lens over
     // when the bug turns around (rig.eyes is [right, left]).
     const lensOnLeft = THREE.MathUtils.clamp((1 - this.lensX / LENS_X) / 2, 0, 1);
@@ -391,7 +517,12 @@ export class LadybugRenderer {
       eye.scale.y += (eyeOpen * zoom - eye.scale.y) * ease(40, dt);
       eye.scale.x = wide * zoom;
       eye.scale.z = zoom;
+      eye.visible = eye.scale.y > 0.03;
     });
+    for (const lid of rig.lids) {
+      lid.visible = closed > 0.01;
+      lid.scale.setScalar(closed);
+    }
 
     // Wing cases pop open and the wings buzz while in the air, or flare in alarm.
     this.flare = Math.max(0, this.flare - dt);
@@ -478,13 +609,54 @@ export class LadybugRenderer {
       );
     }
 
-    // Contact shadow only while on the ground.
+    // The blanket drops and drapes itself over the bug (played back from the
+    // baked cloth simulation); on waking it's flung up and off.
+    const blanket = rig.blanket;
+    const baked = clothBake?.result;
+    blanket.visible = this.tuck > 0 && baked !== undefined && baked !== null;
+    if (blanket.visible && baked) {
+      if (this.tuck !== this.drawnTuck) {
+        this.drawnTuck = this.tuck;
+        const positions = rig.blanketCloth.getAttribute("position") as THREE.BufferAttribute;
+        sampleCloth(baked, this.tuck * CLOTH_SECONDS, positions.array as Float32Array);
+        positions.needsUpdate = true;
+        rig.blanketCloth.computeVertexNormals();
+      }
+      // It fades in as it falls, solid by the time it lands on the shell.
+      const opacity = THREE.MathUtils.smootherstep(this.tuck * CLOTH_SECONDS, 0, BLANKET_FADE_SECONDS);
+      if (opacity !== this.blanketOpacity) {
+        this.blanketOpacity = opacity;
+        rig.setBlanketOpacity(opacity);
+      }
+      const flung = this.toss >= 0 ? 1 - (1 - this.toss) ** 2 : 0;
+      blanket.position.set(0, flung * 0.55, -flung * 0.3);
+      blanket.rotation.set(-flung * 1.3, 0, flung * 0.6 * pose.heading);
+      blanket.scale.setScalar(1 - flung);
+    }
+
+    // Contact shadow only while on the ground, wider under the blanket.
     const grounded = mode === "idle" || walking;
+    const covered = blanket.visible ? THREE.MathUtils.smootherstep(this.tuck, 0, 1) : 0;
+    this.shadow.scale.set(0.85 + covered * 0.55, 1, 0.6 + covered * 0.45);
     const material = this.shadow.material;
     material.opacity += ((grounded ? 1 : 0) - material.opacity) * ease(12, dt);
     this.shadow.visible = material.opacity > 0.01;
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Once per snore, as the breath out starts: where a floating "z" should
+   * start, in canvas CSS px (just above the bug's head). Otherwise null.
+   */
+  takeSnore(): { x: number; y: number } | null {
+    if (!this.snorePending) return null;
+    this.snorePending = false;
+    const point = this.rig.head.localToWorld(this.snorePoint.set(0, 0.2, 0.12)).project(this.camera);
+    return {
+      x: ((point.x + 1) / 2) * this.viewport.width,
+      y: ((1 - point.y) / 2) * this.viewport.height,
+    };
   }
 
   dispose() {

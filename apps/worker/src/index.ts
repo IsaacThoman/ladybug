@@ -2,6 +2,7 @@ import { Worker } from "bullmq";
 import { SCAN_QUEUE } from "@ladybug/shared";
 import type { ScanJob } from "@ladybug/shared";
 import {
+  countUnsafeReporters,
   createArtifactStore,
   createDb,
   createRedis,
@@ -44,6 +45,7 @@ const worker = new Worker<ScanJob>(
         onStatus: (status) => setScanStatus(db, scanId, status),
         similarity,
         llmModel: () => scanModel(db),
+        communityReports: (host) => countUnsafeReporters(db, host),
       });
       await saveReport(db, scanId, report);
       await publishEvent(redis, scanId, { type: "status", status: "done", at: now() });

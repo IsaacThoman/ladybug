@@ -2,20 +2,21 @@
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.ladybug.desktop",
-  "productName": "Ladybugg",
+  "productName": "Computerbug",
   "asar": true,
   "directories": {
     "output": "release/${version}",
     "buildResources": "build"
   },
   "files": ["dist", "dist-electron", "!**/.env", "!**/.env.*"],
+  "extraResources": [{ "from": "scripts", "to": "shutdown-setup" }],
   "mac": {
     "target": ["dmg"],
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
     "extendInfo": {
-      "NSCameraUsageDescription": "Ladybugg uses your camera during FaceTime calls you start.",
-      "NSMicrophoneUsageDescription": "Ladybugg uses your microphone during FaceTime calls you start."
+      "NSCameraUsageDescription": "Computerbug uses your camera during FaceTime calls you start.",
+      "NSMicrophoneUsageDescription": "Computerbug uses your microphone during FaceTime calls you start."
     },
     "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
   },

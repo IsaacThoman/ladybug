@@ -4,8 +4,8 @@ import cors from "cors";
 import express from "express";
 import { WARNING_CHOICES } from "@ladybug/shared";
 import type { GreetingResponse, HealthResponse } from "@ladybug/shared";
-import { createModelSettings } from "@ladybug/backend";
-import type { ModelSettingsStore } from "@ladybug/backend";
+import { createModelSettings, createReportStore } from "@ladybug/backend";
+import type { ModelSettingsStore, ReportStore } from "@ladybug/backend";
 import { requireAccount, userOf } from "./accounts.ts";
 import { checkVisit, lookupVisit } from "./checker.ts";
 import { config } from "./config.ts";
@@ -14,13 +14,15 @@ import { adminAuthRouter, requireAdmin } from "./adminAuth.ts";
 import { HttpError, errorHandler, optionalString, requireEnum, requireStore, requireString } from "./http.ts";
 import { adminRouter } from "./routes/admin.ts";
 import type { SandboxLister } from "./routes/admin.ts";
-import { authRouter } from "./routes/auth.ts";
+import { adminReports, REPORTS_PER_MINUTE, reportsRouter } from "./reports.ts";
+import { authRouter, redisLimiter } from "./routes/auth.ts";
 import type { Limiter } from "./routes/auth.ts";
 import { listSandboxes } from "./sandboxes.ts";
 import { scansRouter } from "./scans.ts";
 import type { ScanDeps } from "./scans.ts";
 import { petChannel } from "./sse.ts";
-import { isStoreReady } from "./store.ts";
+import type { ReportChain } from "./solana/chain.ts";
+import { isStoreReady, verdictsForHosts } from "./store.ts";
 import { chooseForWarning, openWarning, warningsFor } from "./warnings.ts";
 import { SupportService, configureSupport } from "./support/service.ts";
 import { createCallRouter } from "./calls/router.ts";
@@ -34,9 +36,17 @@ const GREETINGS = [
   "Got a sketchy link? Drop it on me.",
 ];
 
-export function createApp(
-  deps: ScanDeps & { authLimit: Limiter; modelSettings?: ModelSettingsStore; sandboxes?: SandboxLister },
-) {
+export type AppDeps = ScanDeps & {
+  authLimit: Limiter;
+  modelSettings?: ModelSettingsStore;
+  sandboxes?: SandboxLister;
+  reports?: ReportStore;
+  /** Solana client for community reports; null or absent = Postgres only. */
+  chain?: ReportChain | null;
+  reportLimit?: Limiter;
+};
+
+export function createApp(deps: AppDeps) {
   const app = express();
 
   // How many reverse proxies sit in front, so req.ip (used for rate limits) is the client.
@@ -68,6 +78,18 @@ export function createApp(
   // Sign-up and sign-in for the extension, the pet and the web page.
   app.use("/api/auth", authRouter({ accounts: deps.accounts, limit: deps.authLimit, clientIpHeader: deps.clientIpHeader }));
   const signedIn = requireAccount(deps.accounts);
+
+  // Community reports: tallies for anyone, votes from approved accounts.
+  const reports = deps.reports ?? createReportStore(deps.db);
+  app.use(
+    "/api/reports",
+    reportsRouter({
+      accounts: deps.accounts,
+      reports,
+      chain: deps.chain ?? null,
+      limit: deps.reportLimit ?? redisLimiter(deps.redis, REPORTS_PER_MINUTE),
+    }),
+  );
 
   // Sandbox scans: started by the pet, the web page, or the analyzer below.
   app.use("/api/scans", scansRouter(deps));
@@ -137,7 +159,11 @@ export function createApp(
   app.use("/api/admin", adminAuthRouter());
   const modelSettings = deps.modelSettings ?? createModelSettings(deps.db, deps.redis);
   const sandboxes = deps.sandboxes ?? ((limit: number) => listSandboxes(deps.db, deps.redis, limit));
-  app.use("/api/admin", requireAdmin, adminRouter(deps.accounts, modelSettings, sandboxes, calls.revoke));
+  app.use(
+    "/api/admin",
+    requireAdmin,
+    adminRouter(deps.accounts, modelSettings, sandboxes, calls.revoke, adminReports(reports, verdictsForHosts)),
+  );
 
   // Built admin UI (see apps/admin). It's public: it holds no data, and shows
   // its sign-in page until the API accepts the session.

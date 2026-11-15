@@ -80,7 +80,13 @@ export function describeEvent(event: LogEvent): { label: string; tone: Tone; ico
       return { label: "Admin", tone: "neutral", icon: "user" };
     case "account":
       return { label: "Sign-up", tone: "warning", icon: "user" };
+    case "report":
+      return event.verdict === "unsafe"
+        ? { label: "Reported unsafe", tone: "warning", icon: "alert" }
+        : { label: "Reported safe", tone: "neutral", icon: "check" };
     case "error":
       return { label: "Error", tone: "critical", icon: "x" };
   }
+  // A type this build doesn't know yet.
+  return { label: String(event.type).replace(/_/g, " "), tone: "neutral", icon: "minus" };
 }

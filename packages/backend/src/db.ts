@@ -4,6 +4,7 @@ import type { ScanReport, ScanResponse, ScanStatus } from "@ladybug/shared";
 import { setupAccounts } from "./accounts.ts";
 import { setupChecks } from "./checks.ts";
 import { setupFingerprints } from "./fingerprints.ts";
+import { setupReports } from "./reports.ts";
 import { setupSettings } from "./settings.ts";
 
 export type Db = pg.Pool;
@@ -61,6 +62,7 @@ export async function migrate(db: Db): Promise<DbFeatures> {
     await client.query(SCANS_TABLE_SQL);
     await setupAccounts(client);
     await setupSettings(client);
+    await setupReports(client);
     const timescale = await tryFeature(client, "TimescaleDB", setupChecks);
     const vector = await tryFeature(client, "pgvector", setupFingerprints);
     return { timescale, vector };

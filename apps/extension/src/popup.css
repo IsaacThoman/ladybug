@@ -306,3 +306,50 @@ button:disabled {
   margin: 0;
   color: var(--muted);
 }
+
+.community-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+}
+
+.community-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-summary .muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.community-actions {
+  margin-top: 8px;
+}
+
+.community-actions button {
+  flex: 1;
+}
+
+.community-actions button[data-verdict="unsafe"][aria-pressed="true"] {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.community-actions button[data-verdict="safe"][aria-pressed="true"] {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.community-chain {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.community-chain a {
+  color: inherit;
+}

@@ -11,10 +11,10 @@
 /** Covers the page with the warning in `frameUrl`. Replaces any earlier one. */
 export function mountOverlay(frameUrl: string, token: string) {
   type Mounted = { dispose: () => void };
-  const scope = globalThis as typeof globalThis & { __ladybuggWarning?: Mounted };
-  scope.__ladybuggWarning?.dispose();
+  const scope = globalThis as typeof globalThis & { __computerbugWarning?: Mounted };
+  scope.__computerbugWarning?.dispose();
 
-  const host = document.createElement("ladybugg-warning");
+  const host = document.createElement("computerbug-warning");
   const root = host.attachShadow({ mode: "closed" });
   const style = document.createElement("style");
   // Shadow-root !important beats the page's own !important rules for the host.
@@ -37,7 +37,7 @@ export function mountOverlay(frameUrl: string, token: string) {
       pointer-events: auto !important;
       /* The blocked page's brown, so none of the page shows while it loads. */
       background: #4a2d1e !important;
-      animation: ladybugg-in 0.18s ease-out;
+      animation: computerbug-in 0.18s ease-out;
     }
     @media (prefers-color-scheme: dark) {
       :host { background: #21150e !important; }
@@ -51,7 +51,7 @@ export function mountOverlay(frameUrl: string, token: string) {
       /* Matches the warning page, so Chrome doesn't paint the frame white while it loads. */
       color-scheme: light dark;
     }
-    @keyframes ladybugg-in {
+    @keyframes computerbug-in {
       from { opacity: 0; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -60,7 +60,7 @@ export function mountOverlay(frameUrl: string, token: string) {
   `;
   const frame = document.createElement("iframe");
   frame.src = frameUrl;
-  frame.title = "Ladybugg warning";
+  frame.title = "Computerbug warning";
   frame.addEventListener("load", () => frame.focus());
   root.append(style, frame);
   // The top layer sits above anything the page stacks, whatever its z-index.
@@ -108,18 +108,18 @@ export function mountOverlay(frameUrl: string, token: string) {
   if (document.documentElement) observer.observe(document.documentElement, { childList: true });
   attach();
 
-  scope.__ladybuggWarning = {
+  scope.__computerbugWarning = {
     dispose: () => {
       observer.disconnect();
       host.remove();
       unlock();
-      delete scope.__ladybuggWarning;
+      delete scope.__computerbugWarning;
     },
   };
 }
 
 /** Takes the overlay off the page ("Continue anyway"). */
 export function unmountOverlay() {
-  const scope = globalThis as typeof globalThis & { __ladybuggWarning?: { dispose: () => void } };
-  scope.__ladybuggWarning?.dispose();
+  const scope = globalThis as typeof globalThis & { __computerbugWarning?: { dispose: () => void } };
+  scope.__computerbugWarning?.dispose();
 }

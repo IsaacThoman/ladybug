@@ -98,6 +98,51 @@ export async function findRecord(url: string, host: string) {
   return null;
 }
 
+const MAX_PER_PAGE = 250;
+
+/**
+ * What the URL store says about each host, for the admin reports list: its
+ * most specific host-wide record (the host or a parent domain, as in
+ * findRecord), else "unsafe" if a URL record on the host is, else "safe" if
+ * any is. Hosts the store doesn't know are left out.
+ */
+export async function verdictsForHosts(hosts: string[]) {
+  const verdicts = new Map<string, Verdict>();
+  if (hosts.length === 0) return verdicts;
+  const candidates = new Map(hosts.map((host) => [host, hostAndParents(host).map((h) => recordId("host", h))]));
+  const ids = [...new Set([...candidates.values()].flat())];
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += MAX_PER_PAGE) chunks.push(ids.slice(i, i + MAX_PER_PAGE));
+  const list = hosts.map((host) => `\`${host}\``).join(",");
+  const hostsWithUrls = async (filter: string) => {
+    const result = await typesense.search<UrlRecord>(URLS, {
+      q: "*",
+      filter_by: `scope:=url && host:=[${list}]${filter}`,
+      facet_by: "host",
+      max_facet_values: hosts.length,
+      per_page: 0,
+    });
+    return new Set(result.facet_counts?.find((f) => f.field_name === "host")?.counts.map((c) => c.value));
+  };
+  const [hostRecords, known, unsafe] = await Promise.all([
+    Promise.all(
+      chunks.map((chunk) =>
+        typesense.search<UrlRecord>(URLS, { q: "*", filter_by: `id:[${chunk.join(",")}]`, per_page: chunk.length }),
+      ),
+    ),
+    hostsWithUrls(""),
+    hostsWithUrls(" && verdict:=unsafe"),
+  ]);
+  const byId = new Map(hostRecords.flatMap((result) => result.hits?.map((hit) => [hit.document.id, hit.document] as const) ?? []));
+  for (const [host, ids] of candidates) {
+    const record = ids.map((id) => byId.get(id)).find(Boolean);
+    if (record) verdicts.set(host, record.verdict);
+    else if (unsafe.has(host)) verdicts.set(host, "unsafe");
+    else if (known.has(host)) verdicts.set(host, "safe");
+  }
+  return verdicts;
+}
+
 export async function saveRecord(input: Omit<UrlRecord, "id">) {
   const record = buildRecord(input);
   await typesense.upsert(URLS, record);

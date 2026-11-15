@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Ladybugg warning</title>
+    <title>Computerbug warning</title>
   </head>
   <body>
     <main
@@ -17,7 +17,7 @@
     >
       <h1 id="title">Blocked</h1>
       <p id="summary" class="summary">
-        Ladybugg blocked <strong id="host"></strong> because it looks dangerous.
+        Computerbug blocked <strong id="host"></strong> because it looks dangerous.
       </p>
 
       <!-- A desktop ladybug is listening: it has the details and the options. -->
@@ -30,6 +30,14 @@
       <section id="here" class="actions" hidden>
         <button id="exit" type="button" class="button primary">Get me out of here</button>
         <button id="continue" type="button" class="button ghost">Continue anyway</button>
+      </section>
+
+      <!-- Signed in: say the block is a mistake. Doesn't unblock anything. -->
+      <section id="report" class="report" aria-live="polite" hidden>
+        <button id="report-safe" type="button" class="link-button">I think this site is safe</button>
+        <p id="report-done" hidden>Thanks — reported. Computerbug's admins will take a look.</p>
+        <a id="report-chain" class="report-chain" target="_blank" rel="noreferrer" hidden>See it on Solana ↗</a>
+        <p id="report-error" class="report-error" hidden></p>
       </section>
     </main>
 

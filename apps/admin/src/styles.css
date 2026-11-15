@@ -399,8 +399,10 @@ button.sign-out:hover:not(:disabled) {
 
 .card-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
+  gap: 8px 12px;
 }
 
 /* Sign-in page ------------------------------------------------------------ */
@@ -900,6 +902,12 @@ button.small {
   margin-top: 2px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .reason-cell {

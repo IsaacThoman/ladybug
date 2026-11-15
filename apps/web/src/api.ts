@@ -1,5 +1,15 @@
 import { artifactPath, eventsPath } from "@ladybug/shared";
-import type { ApiError, AuthResponse, CreateScanResponse, MeResponse, ScanListResponse, ScanResponse } from "@ladybug/shared";
+import type {
+  ApiError,
+  AuthResponse,
+  CommunityTally,
+  CreateReportRequest,
+  CreateScanResponse,
+  MeResponse,
+  ReportVerdict,
+  ScanListResponse,
+  ScanResponse,
+} from "@ladybug/shared";
 import { getSession, setAccountStatus, setSession } from "./session.ts";
 
 export const API_BASE = (import.meta.env.VITE_SERVER_URL ?? "").replace(/\/+$/, "");
@@ -17,7 +27,7 @@ export type ApiFailure =
 export class ApiRequestError extends Error {
   failure: ApiFailure;
   constructor(failure: ApiFailure) {
-    super("message" in failure ? failure.message : "Can't reach the ladybugg server");
+    super("message" in failure ? failure.message : "Can't reach the computerbug server");
     this.failure = failure;
   }
 }
@@ -70,6 +80,17 @@ export const createScan = (url: string) =>
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ url }),
+  });
+
+/** What signed-in people say about the site. Includes the account's own vote when signed in. */
+export const getCommunity = (url: string, signal?: AbortSignal) =>
+  request<CommunityTally>(`/api/reports?url=${encodeURIComponent(url)}`, { signal });
+
+export const reportSite = (url: string, verdict: ReportVerdict) =>
+  request<CommunityTally>("/api/reports", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url, verdict } satisfies CreateReportRequest),
   });
 
 /** Signs in, or creates an account, and stores the session. */

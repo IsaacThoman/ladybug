@@ -3,7 +3,7 @@ import type { CallState, PreparedCall } from "@ladybug/shared";
 import type { CallAuth } from "./call-config.ts";
 
 const terminal = (state: CallState) => ["idle", "ended", "error"].includes(state.phase);
-const SIGNED_OUT = "Sign in to Ladybugg to request help.";
+const SIGNED_OUT = "Sign in to Computerbug to request help.";
 
 /** The server refused the request: `status` is its HTTP status. */
 class CallApiError extends Error {
@@ -52,7 +52,7 @@ export class CallService {
       // Do not forward arbitrary proxy/server responses or credential-bearing URLs.
       const errors: Record<number, string> = {
         400: "Invalid call request.", 401: SIGNED_OUT,
-        403: "Calls aren't turned on for this account yet. Ask a Ladybugg admin.",
+        403: "Calls aren't turned on for this account yet. Ask a Computerbug admin.",
         404: "This call is no longer available on the server.", 409: "The call line is busy or still cleaning up.",
         429: "Too many call attempts. Wait a minute and try again.", 503: "Calls are not configured on the server.",
       };

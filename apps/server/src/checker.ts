@@ -63,7 +63,7 @@ export async function checkVisit(
       details: { recordId: record.id, scope: record.scope, source: record.source, reason: record.reason },
     });
     if (record.verdict === "unsafe") {
-      if (origin === "extension") notifyUnsafeVisit(url);
+      if (origin === "extension" && recipient !== "everyone") notifyUnsafeVisit(url, recipient.userId);
       sendPetAlert(recipient, "danger", `Careful! ${host} is flagged as unsafe. ${record.reason}.`, url, host);
     }
     return { status: "known", verdict: record.verdict, record };

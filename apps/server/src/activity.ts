@@ -21,7 +21,7 @@ export function logEvent(input: Omit<LogEvent, "id" | "at">): LogEvent {
     event.message,
     event.durationMs !== undefined ? `(${event.durationMs}ms)` : "",
   ];
-  const line = `[ladybugg] ${parts.filter(Boolean).join(" ")}`;
+  const line = `[computerbug] ${parts.filter(Boolean).join(" ")}`;
   if (event.type === "error") console.error(line);
   else console.log(line);
 
@@ -30,7 +30,7 @@ export function logEvent(input: Omit<LogEvent, "id" | "at">): LogEvent {
 
   if (isStoreReady()) {
     saveEvent(event).catch((error: unknown) => {
-      console.error(`[ladybugg] failed to store event ${event.id}:`, error);
+      console.error(`[computerbug] failed to store event ${event.id}:`, error);
     });
   }
   return event;

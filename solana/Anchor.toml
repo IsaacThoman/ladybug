@@ -1,0 +1,20 @@
+[toolchain]
+anchor_version = "1.2.2"
+solana_version = "4.1.2"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+computerbug_verdicts = "AS1X4exfmHfHQ35cgJMAuHjubYNnmie2JuCGtLSj6jn"
+
+[programs.devnet]
+computerbug_verdicts = "AS1X4exfmHfHQ35cgJMAuHjubYNnmie2JuCGtLSj6jn"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/computerbug-solana/authority.json"
+
+[scripts]
+test = "cargo test"

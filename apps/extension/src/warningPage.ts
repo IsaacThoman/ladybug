@@ -1,5 +1,6 @@
 import { readServerSentEvents } from "@ladybug/shared";
 import type { OpenWarningRequest, WarningStreamEvents } from "@ladybug/shared";
+import { submitReport } from "./community";
 import { getAuth, getSettings } from "./settings";
 import type { WarningDetails, WarningMessage } from "./warning";
 import "@ladybug/mascot/garden.css";
@@ -52,7 +53,7 @@ function show(details: NonNullable<WarningDetails>) {
   $("host").textContent = details.host;
   if (details.late) {
     $("summary").replaceChildren(
-      "Ladybugg just finished checking ",
+      "Computerbug just finished checking ",
       Object.assign(document.createElement("strong"), { textContent: details.host }),
       ", and it isn't safe, so it's blocked now.",
     );
@@ -68,6 +69,37 @@ const act = (type: "warning:exit" | "warning:continue") => {
     exitEl.disabled = continueEl.disabled = false;
   });
 };
+
+/**
+ * "I think this site is safe": a community report that the block is a
+ * mistake, for the admins to look at. It doesn't unblock the page.
+ */
+async function offerReport(details: NonNullable<WarningDetails>) {
+  const [settings, auth] = await Promise.all([getSettings(), getAuth()]);
+  if (auth?.account.status !== "approved") return;
+  const button = $<HTMLButtonElement>("report-safe");
+  const errorEl = $("report-error");
+  $("report").hidden = false;
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    errorEl.hidden = true;
+    submitReport(settings.serverUrl, auth, details.url, "safe")
+      .then((tally) => {
+        button.hidden = true;
+        $("report-done").hidden = false;
+        const href = tally.mine?.explorerUrl ?? tally.chain?.explorerUrl;
+        if (href) Object.assign($<HTMLAnchorElement>("report-chain"), { href, hidden: false });
+      })
+      .catch((error: unknown) => {
+        button.disabled = false;
+        errorEl.textContent =
+          error instanceof Error && !(error instanceof TypeError) && error.name !== "TimeoutError"
+            ? error.message
+            : "Can't reach the server. Try again in a moment.";
+        errorEl.hidden = false;
+      });
+  });
+}
 
 /**
  * Keeps the server posted that this page is blocked, for as long as it's
@@ -114,7 +146,7 @@ async function stayInTouch(details: NonNullable<WarningDetails>) {
 async function init() {
   if (asPage) {
     document.documentElement.dataset.mode = "page";
-    document.title = "Unsafe page blocked · Ladybugg";
+    document.title = "Unsafe page blocked · Computerbug";
   }
   const details = token ? await send("warning:get").catch(() => null) : null;
   if (!details) {
@@ -129,6 +161,7 @@ async function init() {
     if (view === "waiting") setView("here");
   }, HANDOFF_WAIT_MS);
   void stayInTouch(details);
+  void offerReport(details);
 }
 
 void init();

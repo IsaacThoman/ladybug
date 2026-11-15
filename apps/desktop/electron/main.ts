@@ -6,6 +6,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   screen,
   shell,
   Tray,
@@ -15,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { OverlayLayout, Rect } from "../src/ladybug-api";
 import { parseHttpUrl, urlFromClipboardText } from "../src/urls";
+import { shutdownDevice } from "./device-shutdown";
+import { killChrome } from "./browser-kill";
 import { SupportSubscription } from "./support-stream";
 import { CallService } from "./call-service";
 import { CapturePolicy, selectScreen } from "./capture-policy";
@@ -67,7 +70,7 @@ const support = new SupportSubscription(() => {
     showOverlay();
     overlayWin.webContents.send("ladybug:support-request");
   }
-}, { auth: () => callAuth });
+}, { auth: () => callAuth, kill: () => { void killChrome(); }, shutdown: () => { void shutdownDevice(); } });
 const fromOverlay = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) =>
   event.sender === overlayWin?.webContents && event.senderFrame === event.sender.mainFrame;
 ipcMain.on("ladybug:support-ready", (event, ready: boolean) => {
@@ -158,7 +161,7 @@ function createOverlayWindow() {
 
   overlayWin = new BrowserWindow({
     ...(windowedDev ? { width: 960, height: 640, minWidth: 480, minHeight: 360 } : bounds),
-    title: windowedDev ? "Ladybugg — Development" : "Ladybugg",
+    title: windowedDev ? "Computerbug — Development" : "Computerbug",
     show: false,
     transparent: !windowedDev,
     backgroundColor: windowedDev ? "#e8edf2" : "#00000000",
@@ -319,14 +322,14 @@ function buildMenu() {
       { label: "Show / Hide Pet", click: togglePetVisibility },
       { type: "separator" as const },
     ] : []),
-    { label: "Quit Ladybugg", role: "quit" },
+    { label: "Quit Computerbug", role: "quit" },
   ]);
 }
 
 function createTray() {
   const icon = nativeImage.createFromPath(ICON_PATH).resize({ width: 18, height: 18 });
   tray = new Tray(icon);
-  tray.setToolTip("Ladybugg");
+  tray.setToolTip("Computerbug");
   tray.setContextMenu(buildMenu());
 }
 
@@ -382,6 +385,8 @@ app.on("window-all-closed", () => {
 });
 
 app.whenReady().then(() => {
+  // Keep renderer media queries and native menus aligned with the system theme.
+  nativeTheme.themeSource = "system";
   if (!windowedDev) {
     app.dock?.hide();
     createTray();

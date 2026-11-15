@@ -12,7 +12,7 @@ import type { Auth, RecentCheck, Settings } from "./settings";
 import { isWarningMessage } from "./warning";
 import type { Warning, WarningDetails, WarningMessage } from "./warning";
 
-// Service worker: reports every top-level page the user visits to the Ladybugg
+// Service worker: reports every top-level page the user visits to the Computerbug
 // server, as the signed-in user. The server decides whether that user's
 // desktop pet should raise an alert. Pages flagged as unsafe also get a
 // warning over the page, with the ladybug, until the user leaves or continues.
@@ -40,14 +40,14 @@ function badgeFor(result: RecentCheck["result"]): Badge {
   switch (result.status) {
     case "known":
       return result.verdict === "unsafe"
-        ? { text: "!", color: "#d93025", title: "Ladybugg: this page is flagged as unsafe" }
-        : { text: "", color: "#000", title: "Ladybugg: known safe" };
+        ? { text: "!", color: "#d93025", title: "Computerbug: this page is flagged as unsafe" }
+        : { text: "", color: "#000", title: "Computerbug: known safe" };
     case "pending":
-      return { text: "…", color: "#e8a317", title: "Ladybugg: checking this page" };
+      return { text: "…", color: "#e8a317", title: "Computerbug: checking this page" };
     case "skipped":
-      return { text: "", color: "#000", title: `Ladybugg: not checked (${result.reason})` };
+      return { text: "", color: "#000", title: `Computerbug: not checked (${result.reason})` };
     case "error":
-      return { text: "?", color: "#80868b", title: `Ladybugg: ${result.error}` };
+      return { text: "?", color: "#80868b", title: `Computerbug: ${result.error}` };
   }
 }
 
@@ -299,7 +299,7 @@ async function report(tabId: number, url: string, newDocument: boolean) {
   // Nothing is reported until the user signs in from the popup.
   const auth = await getAuth();
   if (!auth) {
-    await setBadge(tabId, { status: "error", error: "Sign in from the Ladybugg popup to check pages" });
+    await setBadge(tabId, { status: "error", error: "Sign in from the Computerbug popup to check pages" });
     return;
   }
 

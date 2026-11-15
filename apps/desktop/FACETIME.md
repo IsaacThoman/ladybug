@@ -13,7 +13,7 @@ Provider credentials belong only in `apps/server/.env`:
 - `CHERT_PROJECT_ID` and its assigned `CHERT_LINE_ID`.
 - `EMERGENCY_NUMBER` in international format, including `+` and country code.
 
-The desktop needs no call settings of its own. It calls as the Ladybugg account
+The desktop needs no call settings of its own. It calls as the Computerbug account
 it is signed in to, on the same server. The account must be approved, and an
 admin has to turn on calls for it under **Users** in the admin UI. Calls are off
 by default because they ring a real phone and incur provider charges. Turning
@@ -61,12 +61,12 @@ provider charges; this adapter makes no model API requests.
 ## Screen sharing and permissions
 
 Both **Request help** and an emergency contact's SUPPORT message automatically
-start screen sharing. Ladybugg selects the primary full-screen source when its
+start screen sharing. Computerbug selects the primary full-screen source when its
 display ID is available, otherwise the first source. Under Wayland, it uses the
-source returned by the PipeWire portal. Ladybugg adds no display picker; the OS
+source returned by the PipeWire portal. Computerbug adds no display picker; the OS
 portal may still require approval or source selection and cannot be bypassed.
 Wayland needs PipeWire and a compatible desktop portal. On macOS, enable
-Ladybugg under **System Settings → Privacy & Security → Screen Recording**;
+Computerbug under **System Settings → Privacy & Security → Screen Recording**;
 microphone and camera permissions are requested independently.
 
 The screen fills the outgoing video at its original aspect ratio, capped at
@@ -97,7 +97,7 @@ and [platform notes](https://www.electronjs.org/docs/latest/api/desktop-capturer
 Start the normal backend dependencies with `npm run services:up` if needed.
 Use `npm run dev:overlay` for overlay mode or `npm run dev` for an explicitly
 requested development window. The desktop no longer runs a privileged inbound
-agent worker or requires `chert dev`; outbound calls go through Ladybugg's server.
+agent worker or requires `chert dev`; outbound calls go through Computerbug's server.
 Screen, camera, and microphone capture begins only when **Request help** is selected or a valid emergency-contact SUPPORT reply arrives.
 
 ```sh
@@ -113,9 +113,9 @@ approved account and turn on its calls in the admin UI. Then:
 1. Click the ladybug and select **Request help**, grant device access, and answer on the recipient's phone.
 2. Confirm the phone sees readable screen content and a moving face inset in the bottom-right corner, and hears its microphone after
    Chert reports `bridge_ready`.
-3. Confirm Ladybugg plays the recipient's audio and displays available video.
+3. Confirm Computerbug plays the recipient's audio and displays available video.
 4. Press **Hang up** and verify capture stops immediately. Wait for cleanup and repeat.
-5. End the call on the phone and verify Ladybugg stops capture.
+5. End the call on the phone and verify Computerbug stops capture.
 6. Repeat using an emergency contact's SUPPORT message, without clicking the overlay.
 7. Deny camera access: verify screen and microphone continue and the screen-only message appears.
    Stop the camera during a call and confirm the inset disappears without ending the call.
@@ -132,7 +132,7 @@ is `electron/call-service.ts`, and the provider lifecycle lives in
 
 ## Risky-site alerts and remote support
 
-Ladybug uses Chert's **shared-line texts**, authenticated with the same server-only
+Computerbug uses Chert's **shared-line texts**, authenticated with the same server-only
 `CHERT_API_KEY`, `CHERT_PROJECT_ID`, and `CHERT_LINE_ID` as FaceTime. The fixed
 `EMERGENCY_NUMBER` is also shared. No tenant slug, messaging signing secret, or
 webhook subscription is needed for this product.
@@ -155,27 +155,39 @@ their message ID and current state for polling.
 
 The live GET returns `{ data: { items, total, limit, offset } }`; rows include
 `id`, `line_id`, `direction`, `state`, `masked_recipient`, `created_at`, and `text`.
-Ladybug polls every 15 seconds. More than 50 messages between polls can cause
+Computerbug polls every 15 seconds. More than 50 messages between polls can cause
 messages to be missed; the endpoint provides no durable event cursor here.
 
 Browser visits to known unsafe sites and analyses finding unsafe sites queue:
 
-> The user is accessing a website that might not be trustworthy: {url}. If you would like to initiate a FaceTime call for support, reply SUPPORT.
+```text
+Computerbug warning: The user is accessing a website that might not be trustworthy:
+{url}
+
+Reply within 30 minutes:
+SUPPORT: Start or restart a remote FaceTime support call.
+KILL: Force-close Google Chrome on all connected computers on this account.
+SHUTDOWN: Shut down all connected computers on this account. Unsaved work may be lost.
+```
 
 URLs have credentials and fragments removed. Admin checks and manual scans alone
 do not message anyone. Redis reserves one notification per normalized hostname
-every two minutes, including concurrent visits and server restarts. Subdomains have separate
-limits. The durable outbox retries transient POST failures up to five times with
-the same idempotency key. Accepted pending sends retain their returned message ID
+per account every two minutes, including concurrent visits and server restarts. Subdomains
+have separate limits. The durable outbox retries transient POST failures up to five
+times with the same idempotency key. Accepted pending sends retain their returned message ID
 and are checked through GET without creating another send. Only `state: sent`
 opens a support window; pending/unknown states do not establish delivery.
 Messaging failures do not interrupt site checks or pet alerts.
 
 A confirmed send opens a 30-minute support window scoped to the project, line,
-and emergency contact. Only inbound `received` text equal to SUPPORT (ignoring
-case and surrounding whitespace) is eligible. Both the message's `created_at`
-and the polling receipt must fall inside the window. IDs are deduplicated in
-Redis; each window is consumed once. Messages predating server startup are ignored.
+and emergency contact, retaining the originating account. Only inbound `received`
+text equal to SUPPORT, KILL, or SHUTDOWN (ignoring case and surrounding whitespace) is eligible.
+Both the message's `created_at` and the polling receipt must fall inside the window. IDs are deduplicated in
+Redis atomically; distinct replies keep the original window open without extending
+its expiry. SUPPORT can restart an ended call; SUPPORT replies during an active or ending
+call are ignored without queuing. Messages predating server startup are ignored.
+When windows overlap, the newest confirmed alert preceding the reply determines
+the destination account. Legacy jobs and windows without an account are ignored.
 
 **Sender matching:** shared-line GET currently masks phone numbers as `•••1234`.
 The deployment owner accepts matching the last four digits of registered senders
@@ -183,11 +195,62 @@ to `EMERGENCY_NUMBER`. This is not a full-number identity check: registered phon
 sharing those digits cannot be distinguished. Full unmasked numbers, if returned,
 are compared exactly. No phone number or private message text is written to logs.
 
-The most recently connected eligible desktop receives the request through an
-authenticated main-process SSE connection. A desktop must already have been
-connected when the reply was recorded. Offline requests are discarded and
-reconnects have no backlog. Busy calls ignore additional requests. Keep one server
-process per call line, as required by the existing call lifecycle.
+SUPPORT reaches the originating account's most recently connected eligible
+desktop through an authenticated main-process SSE connection. KILL and SHUTDOWN reach all
+eligible connected desktops for that account, even during calls or after leaving
+the unsafe page. Approval and calls-enabled access are required for all commands;
+sign-out, access revocation, and subscription shutdown stop further execution.
+Expired events are discarded by desktops. Older desktops ignore unknown command types. SHUTDOWN event IDs are deduplicated
+in the desktop main process before OS execution, including across subscription restarts.
+
+KILL runs `/usr/bin/pkill` without a shell, using `-KILL`, the current OS UID,
+and an exact process-name match: `chrome` on Linux, `Google Chrome` on macOS.
+Only stable Google Chrome is targeted; all its windows for that OS user close,
+possibly losing unsaved work. Computerbug and its call continue running. Missing Chrome
+is a successful no-op, and other platforms do nothing. No confirmation or reply
+message is sent.
+
+SHUTDOWN powers off every eligible connected Linux or macOS computer on that
+account, including during support calls. Unsaved work may be lost and calls end
+when the computer powers off. Windows ignores SHUTDOWN. There is no local save
+prompt, remote confirmation, or password prompt; missing setup and execution
+failures produce a local `[support] device shutdown failed` error.
+
+An administrator must enable shutdown once on **each computer**, for the local
+non-root user running Computerbug. From this repository:
+
+```sh
+sudo sh apps/desktop/scripts/install-shutdown.sh LOCAL_USERNAME
+# To remove the permission later:
+sudo sh apps/desktop/scripts/uninstall-shutdown.sh LOCAL_USERNAME
+```
+
+Desktop releases include the three scripts under `resources/shutdown-setup`
+(`Computerbug.app/Contents/Resources/shutdown-setup` on macOS; beside the app
+inside the extracted AppImage on Linux). Run the same install/uninstall scripts
+there with `sudo sh /path/to/shutdown-setup/install-shutdown.sh LOCAL_USERNAME`.
+Keep the scripts together. Uninstall before changing the authorized user or
+reinstalling the rule. Removing the app alone does not remove the sudoers rule.
+
+Setup requires sudo, `/usr/sbin/visudo`, an active `/etc/sudoers.d` include, and
+the platform shutdown executable. It installs a root-owned mode-0440 rule at
+`/etc/sudoers.d/computerbug-shutdown-LOCAL_USERNAME`, validates the rule and the
+full configuration, confirms the rule was included, and lists effective command
+permission without executing shutdown. Failed installation removes its rule.
+Only that user receives passwordless root permission for the exact command:
+Linux `/usr/bin/systemctl poweroff --force`, macOS `/sbin/shutdown -h now`.
+This permission is available to other processes running as that local user too.
+Existing administrator grants are unaffected by removal.
+
+The desktop uses fixed arguments with `execFile` and `/usr/bin/sudo -n`.
+Linux uses one `--force`, terminating processes while retaining filesystem
+shutdown handling ([systemctl documentation](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)).
+macOS uses `shutdown -h now`, bypassing application save prompts.
+
+A desktop must already have been connected when the reply was recorded. Offline
+requests are discarded and reconnects have no backlog. Busy calls ignore additional
+SUPPORT requests. Keep one server process per call line, as required by the existing
+call lifecycle.
 
 Clicking the ladybug opens a menu above it with **Request help**, **Scan clipboard
 URL**, and **View report** when available. Arrow keys and Tab move through items;
@@ -209,9 +272,20 @@ TEST_REDIS_URL=redis://localhost:16379/15 npm test -w @ladybug/server
 
 These tests clear that database. For acceptance after the emergency phone joins,
 visit a known unsafe URL, verify the message, reply SUPPORT, and confirm exactly
-one desktop starts one call after polling. Check duplicate/expired replies,
+one desktop starts one call after polling. End the call, reply SUPPORT again
+within the same window, and confirm a new call starts. On Linux and macOS, send
+KILL during a support call and after navigating away; confirm Chrome closes on
+all connected computers for that account while Computerbug and the call continue.
+Check duplicate/expired replies,
 wrong line or last-four digits, outbound texts, busy calls and offline/reconnected
 desktops. Automated capture tests cover selection, call/frame authorization, cancellation,
 composition geometry, camera fallback, required-device failures, cleanup, publication
 ordering, and microphone gating. Real portal/device permissions and FaceTime delivery
 on Wayland and macOS remain manual checks.
+
+Test SHUTDOWN acceptance only on disposable Linux and macOS machines: install
+setup, send SHUTDOWN during a call and after leaving the page, and confirm all
+eligible account computers power off. Check another account stays online. After
+restarting, verify offline/duplicate/expired replies do not execute; uninstall
+setup and verify a fresh reply logs a permission failure without prompting.
+Never run actual power-off acceptance tests on a development workstation.

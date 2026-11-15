@@ -1,10 +1,39 @@
 import path from "node:path";
 import { DEFAULT_SERVER_PORT } from "@ladybug/shared";
+import type { SolanaCluster } from "@ladybug/shared";
 
 const numberFromEnv = (name: string, fallback: number) => {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
+
+const SOLANA_CLUSTERS = ["devnet", "testnet", "mainnet-beta", "localnet"] as const satisfies readonly SolanaCluster[];
+
+export type SolanaSettings = {
+  rpcUrl: string;
+  cluster: SolanaCluster;
+  programId: string;
+  /** JSON byte array or base58. */
+  authorityKey: string;
+  reporterSecret: string;
+};
+
+/** Community reports go on-chain only when all four are set (see docs/solana.md). */
+export function solanaSettings(env: Record<string, string | undefined>): SolanaSettings | null {
+  const rpcUrl = env.SOLANA_RPC_URL?.trim();
+  const programId = env.SOLANA_PROGRAM_ID?.trim();
+  const authorityKey = env.SOLANA_AUTHORITY_KEY?.trim();
+  const reporterSecret = env.SOLANA_REPORTER_SECRET;
+  if (!rpcUrl || !programId || !authorityKey || !reporterSecret) return null;
+  const cluster = env.SOLANA_CLUSTER?.trim() || "devnet";
+  return {
+    rpcUrl,
+    cluster: (SOLANA_CLUSTERS as readonly string[]).includes(cluster) ? (cluster as SolanaCluster) : "devnet",
+    programId,
+    authorityKey,
+    reporterSecret,
+  };
+}
 
 export const config = {
   port: numberFromEnv("PORT", DEFAULT_SERVER_PORT),
@@ -38,6 +67,8 @@ export const config = {
   clientIpHeader: process.env.CLIENT_IP_HEADER?.trim().toLowerCase() || null,
   /** When set, the admin UI asks for this password, and /api/admin wants its session cookie (or HTTP Basic, any username). */
   adminPassword: process.env.ADMIN_PASSWORD || null,
+  /** Where community reports and scan verdicts are written on-chain. null = Postgres only. */
+  solana: solanaSettings(process.env),
   /** Built admin UI, served at /admin when it exists. */
   adminDist:
     process.env.ADMIN_DIST ?? path.resolve(import.meta.dirname, "../../admin/dist"),

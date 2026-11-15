@@ -11,7 +11,8 @@ const POLL_INTERVAL_MS = 15_000;
 const jobs = "support:shared:jobs";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const windows = (config: MessagingConfig) => `support:shared:windows:${hash(`${config.project}:${config.line}:${config.destination}`)}`;
-type Job = { id: string; url: string; config: Pick<MessagingConfig, "destination" | "line" | "project">; created: number; attempts: number; messageId?: string };
+export type SupportCommand = { id: string; accountId: string; kind: "support" | "browser-kill" | "device-shutdown"; sentAt: number; expiresAt: number };
+type Job = { accountId: string; id: string; url: string; config: Pick<MessagingConfig, "destination" | "line" | "project">; created: number; attempts: number; messageId?: string };
 
 /** Atomic reservation and outbox insertion; pending sends survive process restarts. */
 const reserve = `
@@ -20,14 +21,15 @@ redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[5])
 redis.call('SET', KEYS[2], ARGV[2], 'PX', ARGV[3])
 redis.call('ZADD', KEYS[3], ARGV[4], KEYS[2])
 return 1`;
-const consume = `
+/** Deduplicate the message and resolve its newest eligible alert without changing it. */
+const lookup = `
 if not redis.call('SET', KEYS[2], '1', 'PX', ARGV[4], 'NX') then return false end
 local entries = redis.call('LRANGE', KEYS[1], 0, -1)
 for _, raw in ipairs(entries) do
  local w = cjson.decode(raw)
  if w.contact == ARGV[1] and tonumber(ARGV[2]) >= w.start and tonumber(ARGV[2]) <= w.finish and tonumber(ARGV[3]) >= w.start and tonumber(ARGV[3]) <= w.finish then
-  redis.call('LREM', KEYS[1], 1, raw)
-  return w.id
+  if type(w.accountId) ~= 'string' or w.accountId == '' then return false end
+  return cjson.encode(w)
  end
 end
 return false`;
@@ -39,9 +41,9 @@ export class SupportService {
   private pollTimer?: ReturnType<typeof setInterval>;
   private startedAt: number;
   private redis: Redis;
-  private deliver: (id: string, sentAt: number) => boolean;
+  private deliver: (command: SupportCommand) => boolean;
   private options: { config?: () => MessagingConfig | null; send?: typeof sendMessage; read?: typeof readMessages; now?: () => number };
-  constructor(redis: Redis, deliver: (id: string, sentAt: number) => boolean,
+  constructor(redis: Redis, deliver: (command: SupportCommand) => boolean,
     options: SupportService["options"] = {}) { this.redis = redis; this.deliver = deliver; this.options = options; this.startedAt = this.now(); }
   private now() { return (this.options.now ?? Date.now)(); }
   private config() { return (this.options.config ?? readMessagingConfig)(); }
@@ -53,11 +55,11 @@ export class SupportService {
     return this;
   }
   stop() { clearInterval(this.timer); clearInterval(this.pollTimer); }
-  async notify(rawUrl: string) {
+  async notify(rawUrl: string, accountId: string) {
     const target = normalizeUrl(rawUrl), config = this.config();
-    if (!target.ok || !config) return;
-    const job: Job = { id: randomUUID(), url: target.url, config: { destination: config.destination, line: config.line, project: config.project }, created: this.now(), attempts: 0 };
-    await this.redis.eval(reserve, 3, `support:host:${hash(target.host)}`, `support:job:${job.id}`, jobs,
+    if (!target.ok || !config || !accountId) return;
+    const job: Job = { accountId, id: randomUUID(), url: target.url, config: { destination: config.destination, line: config.line, project: config.project }, created: this.now(), attempts: 0 };
+    await this.redis.eval(reserve, 3, `support:host:${hash(`${accountId}:${target.host}`)}`, `support:job:${job.id}`, jobs,
       job.id, JSON.stringify(job), HOUR, this.now(), HOST_COOLDOWN_MS);
   }
   async drain() {
@@ -74,7 +76,7 @@ export class SupportService {
           const raw = await this.redis.get(key);
           if (!raw) { await this.redis.zrem(jobs, key); continue; }
           const job = JSON.parse(raw) as Job;
-          if (job.config.destination !== config.destination || job.config.line !== config.line || job.config.project !== config.project) {
+          if (!job.accountId || job.config.destination !== config.destination || job.config.line !== config.line || job.config.project !== config.project) {
             await this.redis.zrem(jobs, key); continue;
           }
           try {
@@ -97,7 +99,7 @@ export class SupportService {
             const start = this.now();
             // Commit the successful send and its support window together.
             const tx = this.redis.multi();
-            tx.lpush(windows(config), JSON.stringify({ id: job.id, contact: config.destination, start, finish: start + WINDOW }));
+            tx.lpush(windows(config), JSON.stringify({ id: job.id, accountId: job.accountId, contact: config.destination, start, finish: start + WINDOW }));
             tx.ltrim(windows(config), 0, 999);
             tx.pexpire(windows(config), HOUR);
             tx.del(key); tx.zrem(jobs, key);
@@ -135,7 +137,7 @@ export class SupportService {
   async reply(message: SharedMessage, received = this.now()) {
     const config = this.config();
     if (!config || message.line_id !== config.line || message.direction !== "inbound" ||
-      message.state !== "received" || message.text.trim().toLowerCase() !== "support") return;
+      message.state !== "received" || !["support", "kill", "shutdown"].includes(message.text.trim().toLowerCase())) return;
     const sent = Date.parse(message.created_at);
     // A server restart must not turn the provider's history into fresh requests.
     if (!Number.isFinite(sent) || sent <= this.startedAt || sent > received) return;
@@ -146,15 +148,18 @@ export class SupportService {
     const matches = sender === config.destination ||
       (/^•••\d{4}$/.test(sender) && sender.slice(-4) === config.destination.slice(-4));
     if (!matches) return;
-    const id = await this.redis.eval(consume, 2, windows(config), eventKey, config.destination, sent, received, 7 * 24 * HOUR);
-    // Consume even when offline: support requests are never replayed on reconnect.
-    if (typeof id === "string") this.deliver(id, sent);
+    const raw = await this.redis.eval(lookup, 2, windows(config), eventKey, config.destination, sent, received, 7 * 24 * HOUR);
+    // Deduplicate even when offline; a new reply is required after reconnecting.
+    if (typeof raw === "string") {
+      const window = JSON.parse(raw) as { accountId: string; finish: number };
+      this.deliver({ id: randomUUID(), accountId: window.accountId, kind: message.text.trim().toLowerCase() === "shutdown" ? "device-shutdown" : message.text.trim().toLowerCase() === "kill" ? "browser-kill" : "support", sentAt: sent, expiresAt: window.finish });
+    }
   }
 
 }
 
 let service: SupportService | undefined;
 export function configureSupport(value: SupportService) { service = value; }
-export function notifyUnsafeVisit(url: string) {
-  void service?.notify(url).catch(() => console.error("[support] notification unavailable"));
+export function notifyUnsafeVisit(url: string, accountId: string) {
+  void service?.notify(url, accountId).catch(() => console.error("[support] notification unavailable"));
 }

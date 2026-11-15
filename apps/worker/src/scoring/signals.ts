@@ -1,4 +1,5 @@
 import { parse } from "tldts";
+import { COMMUNITY_SIGNAL_MIN_REPORTS } from "@ladybug/shared";
 import type { ScoreSignal } from "@ladybug/shared";
 import type { Evidence } from "../evidence.ts";
 import { FLOORS, THRESHOLDS, WEIGHTS } from "./weights.ts";
@@ -184,6 +185,15 @@ export function computeSignals(ev: Evidence): ScoreSignal[] {
       evidence: injectionMatch
         ? `page contains: "${injectionMatch[0]}"`
         : "the agent reported instructions aimed at it in the page content",
+    });
+  }
+
+  if (ev.communityUnsafeReports >= COMMUNITY_SIGNAL_MIN_REPORTS) {
+    add({
+      id: "community_reports",
+      label: "Reported unsafe by Computerbug users",
+      weight: WEIGHTS.communityReports,
+      evidence: `${ev.communityUnsafeReports} different accounts reported ${new URL(ev.inputUrl).hostname} as unsafe`,
     });
   }
 

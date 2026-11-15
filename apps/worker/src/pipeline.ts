@@ -25,23 +25,33 @@ export type PipelineDeps = {
   similarity?: SimilarityStore;
   /** The model to investigate with (the admin's pick). Without it, LLM_MODEL. */
   llmModel?: () => Promise<string | null>;
+  /** Approved accounts that reported a host unsafe. Without it, no community signal. */
+  communityReports?: (host: string) => Promise<number>;
 };
 
 /** Worker-side lookups that never touch the target. */
-async function prescan(ctx: ScanContext, ev: Evidence) {
+async function prescan(ctx: ScanContext, ev: Evidence, communityReports: PipelineDeps["communityReports"]) {
   const host = new URL(ev.inputUrl).hostname;
-  const [domain, sb, uh] = await Promise.all([
+  // Reports are kept per normalised host: lowercase, no brackets or trailing dot.
+  const reportHost = host.replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  const [domain, sb, uh, reporters] = await Promise.all([
     lookupDomain(host).catch(() => null),
     safeBrowsing([ev.inputUrl]),
     urlhaus(ev.inputUrl, host),
+    communityReports?.(reportHost).catch((err: unknown) => {
+      console.warn(`[worker] ${ev.scanId}: community report lookup failed`, err);
+      return 0;
+    }) ?? 0,
   ]);
   ev.domain = domain;
   ev.reputationHits.push(...sb, ...uh);
+  ev.communityUnsafeReports = reporters;
   const facts = [
     domain?.ageDays != null ? `${domain.registrableDomain} is ${domain.ageDays} days old` : null,
     domain?.asn ? `hosted on ${domain.asn}` : null,
     domain?.lookalike,
     ...ev.reputationHits.map((h) => `${h.source}: ${h.detail}`),
+    reporters > 0 ? `${reporters} account(s) reported ${reportHost} as unsafe` : null,
   ].filter(Boolean);
   if (facts.length) await ctx.emit({ type: "agent_note", text: `Pre-scan: ${facts.join("; ")}.` });
 }
@@ -93,7 +103,7 @@ export async function runScan(scanId: string, url: string, deps: PipelineDeps): 
     const run = async () => {
       await setStatus("provisioning");
       // Lookups run while the sandbox boots.
-      const [sandbox] = await Promise.all([deps.provider.create(scanId), prescan(ctx, ev)]);
+      const [sandbox] = await Promise.all([deps.provider.create(scanId), prescan(ctx, ev, deps.communityReports)]);
       sandboxId = sandbox.id;
       startClock();
 

@@ -88,12 +88,12 @@ export function createCapture(ended: () => void, status: (state: CaptureStatus) 
           required(screenStream, "video");
         } catch (error) {
           const guidance = platform === "darwin"
-            ? "Enable Ladybugg in macOS System Settings → Privacy & Security → Screen Recording, then try again."
+            ? "Enable Computerbug in macOS System Settings → Privacy & Security → Screen Recording, then try again."
             : platform === "linux"
               ? "Approve screen access in the Wayland/PipeWire portal and check that PipeWire and a compatible desktop portal are running, then try again."
               : platform === "win32"
                 ? "Allow screen capture and check that your display is available, then try again."
-                : "Approve screen access in the Wayland/PipeWire portal, or enable Ladybugg in macOS System Settings → Privacy & Security → Screen Recording, then try again.";
+                : "Approve screen access in the Wayland/PipeWire portal, or enable Computerbug in macOS System Settings → Privacy & Security → Screen Recording, then try again.";
           throw new Error(`Screen sharing could not start. ${guidance}`, { cause: error });
         }
         sharing = true; report();

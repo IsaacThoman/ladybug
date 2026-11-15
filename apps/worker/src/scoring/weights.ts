@@ -19,6 +19,8 @@ export const WEIGHTS = {
   promptInjection: 20,
   /** The page's fingerprint is a near match for a page we already flagged. Suspicious on its own. */
   similarKnownBad: 30,
+  /** Enough different accounts reported the host unsafe (COMMUNITY_SIGNAL_MIN_REPORTS). */
+  communityReports: 15,
 } as const;
 
 export const THRESHOLDS = {

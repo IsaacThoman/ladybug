@@ -9,8 +9,9 @@ export class SupportSubscription {
   private abort?: AbortController;
   private retry?: ReturnType<typeof setTimeout>;
   private active = false;
+  private shutdownIds = new Set<string>();
   private receive: (id: string) => void;
-  private options: { fetch?: typeof fetch; auth: () => CallAuth | null };
+  private options: { kill?: (id: string) => void; shutdown?: (id: string) => void; fetch?: typeof fetch; auth: () => CallAuth | null };
   constructor(receive: (id: string) => void, options: SupportSubscription["options"]) { this.receive = receive; this.options = options; }
   start() { if (this.active) return; this.active = true; void this.connect(); }
   stop() { this.active = false; this.abort?.abort(); clearTimeout(this.retry); }
@@ -44,11 +45,18 @@ export class SupportSubscription {
           let boundary: number;
           while ((boundary = buffer.indexOf("\n\n")) >= 0) {
             const block = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
-            if (!block.split("\n").includes("event: support")) continue;
+            const kind = block.split("\n").find((value) => value.startsWith("event: "))?.slice(7);
+            if (kind !== "support" && kind !== "browser-kill" && kind !== "device-shutdown") continue;
             const line = block.split("\n").find((value) => value.startsWith("data: "));
             if (!line) continue;
-            const data = JSON.parse(line.slice(6)) as { id?: unknown };
-            if (this.active && !abort.signal.aborted && typeof data.id === "string" && /^[a-f0-9-]{36}$/i.test(data.id)) this.receive(data.id);
+            const data = JSON.parse(line.slice(6)) as { id?: unknown; expiresAt?: unknown };
+            if (!this.active || abort.signal.aborted || typeof data.id !== "string" || !/^[a-f0-9-]{36}$/i.test(data.id) ||
+              typeof data.expiresAt !== "number" || !Number.isFinite(data.expiresAt) || data.expiresAt < Date.now()) continue;
+            if (kind === "device-shutdown") {
+              if (this.shutdownIds.has(data.id)) continue;
+              this.shutdownIds.add(data.id);
+              this.options.shutdown?.(data.id);
+            } else if (kind === "browser-kill") this.options.kill?.(data.id); else this.receive(data.id);
           }
         }
       } finally { await reader.cancel().catch(() => {}); }

@@ -122,8 +122,8 @@ test("held by something else, it doesn't move, but wings and grooming still come
   const act = hold(behavior(), { walk: 1, wings: 0.6, groom: 0.4 }, 1, { free: false });
   assert.equal(act.vx, 0);
   assert.equal(act.jump, null);
-  assert.ok(Math.abs(act.wings - 0.6) < 0.01);
-  assert.ok(Math.abs(act.groom - 0.4) < 0.01);
+  assert.ok(Math.abs(act.wings - 0.5) < 0.01);
+  assert.ok(Math.abs(act.groom - 0.25) < 0.01);
 });
 
 test("escape takes off away from the loom, scaled by strength, then rests", () => {
@@ -186,4 +186,13 @@ test("pressed against an edge it faces, it turns around by itself after a while"
   hold(busy, { walk: 0.8 }, EDGE_PATIENCE - 0.1, { blocked: true });
   hold(busy, { walk: 0.8 }, 0.1, { blocked: true, free: false });
   assert.equal(hold(busy, { walk: 0.8 }, EDGE_PATIENCE - 0.1, { blocked: true }).heading, 1);
+});
+
+test("idle wing and grooming activity doesn't reach the pose", () => {
+  const quiet = hold(behavior(), { wings: 0.15, groom: 0.1 }, 1);
+  assert.equal(quiet.wings, 0);
+  assert.equal(quiet.groom, 0);
+  const busy = hold(behavior(), { wings: 1, groom: 0.6 }, 1);
+  assert.ok(Math.abs(busy.wings - 1) < 0.01);
+  assert.ok(Math.abs(busy.groom - 0.5) < 0.01);
 });

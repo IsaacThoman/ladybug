@@ -65,8 +65,8 @@ the pet wanders exactly as it does without it.
 | `turn` | Integrated over time (leaking, so noise doesn't add up); past the threshold it turns around. Toward the fly's left heads right on screen. |
 | `back` | When it beats `walk`, walks backwards at 0.6× speed, as when it backs away from a dangerous page. |
 | `escape` | Rising past 0.5 while on its feet: a startled take-off, from a hop to the alarm jump, away from the side that loomed. Then 1.5 s before it can again. |
-| `wings` | How far the wing cases open, passed to the renderer. |
-| `groom` | Grooming with the front legs, while it stands still. |
+| `wings` | How far the wing cases open, passed to the renderer. Below 0.2 it's the brain idling, and nothing shows. |
+| `groom` | Grooming with the front legs, while it stands still. The same floor applies. |
 | `feed` | Not acted on; shown in the activity panel. |
 
 One thing the body does by itself: pressed against an edge it faces for 2 s, it

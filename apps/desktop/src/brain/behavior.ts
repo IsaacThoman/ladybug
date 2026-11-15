@@ -70,6 +70,13 @@ export const EDGE_PATIENCE = 2;
 /** Sideways speed (px/s) of a take-off, from the weakest to the strongest. */
 export const ESCAPE_SIDE_SPEED = [220, 480] as const;
 
+/**
+ * Wings and grooming below this are the brain idling, not an action: the pose
+ * gets nothing, and what's above is stretched back over 0 to 1.
+ */
+export const POSE_FLOOR = 0.2;
+const posed = (value: number) => Math.max(0, (value - POSE_FLOOR) / (1 - POSE_FLOOR));
+
 /** `feed` has no action in the pet; it only shows in the activity panel. */
 type Smoothed = Omit<BrainCommand, "escape" | "feed">;
 const CHANNELS = ["walk", "turn", "back", "wings", "groom"] as const;
@@ -125,7 +132,9 @@ export class FlyBehavior {
     };
     if (!this.smoothed) this.smoothed = target;
     else for (const channel of CHANNELS) this.smoothed[channel] += (target[channel] - this.smoothed[channel]) * ease(COMMAND_SMOOTHING, dt);
-    const { walk, turn, back, wings, groom } = this.smoothed;
+    const { walk, turn, back } = this.smoothed;
+    const wings = posed(this.smoothed.wings);
+    const groom = posed(this.smoothed.groom);
 
     // Escape is a brief burst from the giant fiber, so it's read unsmoothed.
     const escape = clamp(command.escape, 0, 1);

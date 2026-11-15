@@ -8,9 +8,11 @@ export type Settings = {
   flyBrain: boolean;
   /** Show the brain activity panel while the fly brain is on. */
   brainActivity: boolean;
+  /** Fly Eyes: the fly brain sees the screen. Only while it's on. */
+  flyEyes: boolean;
 };
 
-export const DEFAULT_SETTINGS: Settings = { flyBrain: false, brainActivity: false };
+export const DEFAULT_SETTINGS: Settings = { flyBrain: false, brainActivity: false, flyEyes: false };
 
 /** Known keys with the right type; anything else falls back to the default. */
 export function parseSettings(text: string): Settings {

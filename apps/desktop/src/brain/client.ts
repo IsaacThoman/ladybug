@@ -1,4 +1,4 @@
-import type { BrainRequest, BrainResponse, BrainSenses, BrainState } from "@ladybug/brain";
+import type { BrainRequest, BrainResponse, BrainSenses, BrainState, EyeMap } from "@ladybug/brain";
 
 /**
  * - off: the setting is off
@@ -51,6 +51,8 @@ export class BrainClient {
   stateAt = 0;
   neurons = 0;
   connections = 0;
+  /** Where the running brain's eyes look, or null when it has none. */
+  eyes: EyeMap | null = null;
   /** What went wrong, when failed. */
   error: string | null = null;
 
@@ -136,6 +138,11 @@ export class BrainClient {
     this.worker.post({ type: "tick", dtMs: dt, senses: { ...senses } });
   }
 
+  /** The next `tick` goes out to the brain: it's running and has answered the last one. */
+  get ready() {
+    return this.status === "running" && this.worker !== null && !this.inFlight;
+  }
+
   /** Spike rate and speed over the last second, for the activity panel. */
   activity(): BrainActivity {
     const now = this.now();
@@ -156,6 +163,7 @@ export class BrainClient {
         if (this.status !== "loading") return;
         this.neurons = response.neurons;
         this.connections = response.connections;
+        this.eyes = response.eyes;
         this.status = "running";
         this.runningSince = now;
         break;
@@ -187,6 +195,7 @@ export class BrainClient {
     this.generation++;
     this.worker?.terminate();
     this.worker = null;
+    this.eyes = null;
     this.state = null;
     this.stateAt = 0;
     this.error = null;

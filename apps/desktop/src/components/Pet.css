@@ -411,6 +411,52 @@
   background: var(--red);
 }
 
+/* Fly Eyes: a picture per eye, one dot per facet, and the visual stages' rates. */
+.brain-panel-eyes {
+  display: grid;
+  gap: 8px;
+}
+
+.brain-panel-eye-pictures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.brain-panel-eye-pictures figure {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 0 4px;
+  border-radius: 9px;
+  background: var(--surface-inset);
+}
+
+.brain-panel-eye-pictures canvas {
+  display: block;
+}
+
+.brain-panel-eye-pictures figcaption {
+  color: var(--secondary-text);
+  font-size: 11px;
+}
+
+.brain-panel-vision .brain-panel-meter {
+  grid-template-columns: 88px 1fr 36px;
+}
+
+.brain-panel-vision .brain-panel-meter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brain-panel-meter-value {
+  color: var(--secondary-text);
+  text-align: right;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pet-bubble > *,
   .brain-panel {

@@ -5,6 +5,7 @@ import {
   PUBLIC_URL,
   eventsPath,
   isTerminalStatus,
+  readServerSentEvents,
 } from "@ladybug/shared";
 import type {
   ApiError,
@@ -14,8 +15,11 @@ import type {
   GreetingResponse,
   PetAlert,
   PetFocus,
+  PetWarning,
   ScanEvent,
   ScanResponse,
+  WarningChoice,
+  WarningChoiceRequest,
 } from "@ladybug/shared";
 import { getSession, setAccountStatus, setSession, subscribeSession } from "./session";
 
@@ -143,39 +147,26 @@ const ALERT_RECONNECT_MS = 5_000;
 /** How often a pet waiting for approval checks back. */
 const ALERT_PENDING_RETRY_MS = 15_000;
 
-/** Reads a server-sent-event stream until it ends. */
-async function readEvents(body: ReadableStream<Uint8Array>, onEvent: (event: string, data: string) => void) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-    let end: number;
-    while ((end = buffer.indexOf("\n\n")) >= 0) {
-      const block = buffer.slice(0, end);
-      buffer = buffer.slice(end + 2);
-      let event = "message";
-      const data: string[] = [];
-      for (const line of block.split("\n")) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-      }
-      if (data.length > 0) onEvent(event, data.join("\n"));
-    }
-  }
-}
+export type PetStreamHandlers = {
+  onAlert: (alert: PetAlert) => void;
+  /**
+   * The pages the user's browser is blocking right now, oldest first. Empty
+   * while disconnected: the pages open new warnings when the server is back.
+   */
+  onWarnings: (warnings: PetWarning[]) => void;
+  /** Whether the page in the browser's active tab is being checked. Null while disconnected. */
+  onFocus: (focus: PetFocus | null) => void;
+};
 
 /**
  * Listens for the signed-in user's alerts (unsafe or unknown sites their
- * browser extension reported), and for whether the page in their active tab
- * is being checked (`onFocus`; null while disconnected). Connects whenever
- * someone signs in, and keeps checking back while the account waits for
- * approval. Uses fetch rather than EventSource so the token travels in a
- * header. Returns an unsubscribe function.
+ * browser extension reported), blocked pages, and whether the page in the
+ * active tab is being checked. Connects whenever someone
+ * signs in, and keeps checking back while the account waits for approval.
+ * Uses fetch rather than EventSource so the token travels in a header.
+ * Returns an unsubscribe function.
  */
-export function subscribeToAlerts(onAlert: (alert: PetAlert) => void, onFocus: (focus: PetFocus | null) => void) {
+export function subscribeToPetStream({ onAlert, onWarnings, onFocus }: PetStreamHandlers) {
   let closed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | null = null;
@@ -189,6 +180,7 @@ export function subscribeToAlerts(onAlert: (alert: PetAlert) => void, onFocus: (
   const connect = async () => {
     clearTimeout(retry);
     controller?.abort();
+    onWarnings([]);
     // Whatever the old stream said may be out of date by now.
     onFocus(null);
     const session = getSession();
@@ -211,17 +203,20 @@ export function subscribeToAlerts(onAlert: (alert: PetAlert) => void, onFocus: (
         return;
       }
       setAccountStatus("approved");
-      await readEvents(res.body, (event, data) => {
+      await readServerSentEvents(res.body, (event, data) => {
         if (event === "alert") onAlert(JSON.parse(data) as PetAlert);
+        else if (event === "warnings") onWarnings(JSON.parse(data) as PetWarning[]);
         else if (event === "focus") onFocus(JSON.parse(data) as PetFocus);
       });
       // The server ended the stream (a restart, or access was revoked): reconnecting tells which.
       if (!current.signal.aborted) {
+        onWarnings([]);
         onFocus(null);
         schedule(ALERT_RECONNECT_MS);
       }
     } catch {
       if (!current.signal.aborted && !closed) {
+        onWarnings([]);
         onFocus(null);
         schedule(ALERT_RECONNECT_MS);
       }
@@ -239,4 +234,22 @@ export function subscribeToAlerts(onAlert: (alert: PetAlert) => void, onFocus: (
     controller?.abort();
     unsubscribeSession();
   };
+}
+
+/**
+ * Tells the browser what to do about a page it's blocking. Resolves false
+ * when that page isn't blocked anymore.
+ */
+export async function chooseForWarning(id: string, choice: WarningChoice): Promise<boolean> {
+  const res = await request(`/api/pet/warnings/${encodeURIComponent(id)}/choice`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ choice } satisfies WarningChoiceRequest),
+  });
+  if (res.status === 404) return false;
+  if (!res.ok) {
+    await noteAuthFailure(res);
+    throw new Error(`Choice request failed: ${res.status}`);
+  }
+  return true;
 }

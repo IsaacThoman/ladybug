@@ -4,8 +4,8 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import type { AlertLevel, PetAlert, PetFocus, ScanStatus, ScanVerdict } from "@ladybug/shared";
-import { createScan, getScan, reportUrl, subscribeToAlerts, watchScan } from "../api";
+import type { AlertLevel, PetAlert, PetFocus, PetWarning, ScanStatus, ScanVerdict, WarningChoice } from "@ladybug/shared";
+import { chooseForWarning, createScan, getScan, reportUrl, subscribeToPetStream, watchScan } from "../api";
 import type { OverlayLayout } from "../ladybug-api";
 import { getSession } from "../session";
 import { findHttpUrl, parseHttpUrl } from "../urls";
@@ -38,6 +38,11 @@ const ALERT_REACTION_MS = { benign: 4000, malicious: 12000 };
 const DRAG_HOVER_STALE_MS = 400;
 /** How many scan ids to remember for de-duplicating reactions. */
 const SEEN_SCANS_LIMIT = 100;
+/** Space between the warning bubble and the bug, and the screen edges. */
+const BUBBLE_GAP = 14;
+const BUBBLE_MARGIN = 8;
+/** Re-enable the bubble's buttons if the browser hasn't acted on a choice by then. */
+const CHOICE_TIMEOUT_MS = 6000;
 
 type Mode = "idle" | "walking" | "airborne" | "dragging";
 
@@ -90,8 +95,10 @@ function remember(set: Set<string>, id: string) {
   if (set.size > SEEN_SCANS_LIMIT) set.delete(set.values().next().value!);
 }
 
-function moodFor(scan: ScanState, dropHover: boolean, inspecting: boolean): LadybugMood {
+function moodFor(scan: ScanState, dropHover: boolean, blocking: boolean, inspecting: boolean): LadybugMood {
   if (dropHover) return "expectant";
+  // Scared for as long as the browser is blocking an unsafe page.
+  if (blocking) return "alarmed";
   if (scan.phase === "done") {
     if (scan.verdict === "benign") return "happy";
     if (scan.verdict === "suspicious") return "nervous";
@@ -168,14 +175,25 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
   const [dragging, setDragging] = useState(false);
   const [dropHover, setDropHover] = useState(false);
   const [scan, setScan] = useState<ScanState>({ phase: "idle" });
+  /** Unsafe pages the browser is blocking, oldest first. The bubble speaks for the newest. */
+  const [warnings, setWarnings] = useState<PetWarning[]>([]);
+  /** The warning a choice was just sent for, or that couldn't be sent. */
+  const [answer, setAnswer] = useState<{ id: string; state: "sending" | "sent" | "failed" } | null>(null);
+  const bubbleRef = useRef<HTMLElement>(null);
+  /** Holds the bug still while its bubble is up, so the buttons don't wander off. */
+  const holdRef = useRef(false);
+  const seenWarningsRef = useRef(new Set<string>());
+  const lastFretRef = useRef(0);
   /** Whether the page in the browser's active tab is being checked, from the server. */
   const [focus, setFocus] = useState<PetFocus | null>(null);
 
+  const warning = warnings.at(-1) ?? null;
+  const showBubble = warning !== null && !menu;
   // The page the user is looking at is being checked: stand still and look it
-  // over through the magnifying glass. Reactions and drops come first.
-  const inspecting = Boolean(focus?.investigating) && !dropHover && scan.phase !== "done";
+  // over through the magnifying glass. Blocked pages, reactions and drops come first.
+  const inspecting = Boolean(focus?.investigating) && !dropHover && warning === null && scan.phase !== "done";
   const inspectingRef = useRef(false);
-  const mood = moodFor(scan, dropHover, inspecting);
+  const mood = moodFor(scan, dropHover, warning !== null, inspecting);
 
   useEffect(() => {
     layoutRef.current = layout;
@@ -185,6 +203,10 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     moodRef.current = mood;
     inspectingRef.current = inspecting;
   }, [mood, inspecting]);
+
+  useEffect(() => {
+    holdRef.current = showBubble;
+  }, [showBubble]);
 
   // Movement bounds are the display work area or the development window.
   const getBounds = () => {
@@ -234,8 +256,6 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
       last = now;
       const s = stateRef.current!;
       const mood = moodRef.current;
-      // Holds still while a link is dragged over it, or while it inspects the active tab.
-      const holdStill = mood === "expectant" || inspectingRef.current;
       const { minX, maxX, minY, groundY } = getBounds();
       s.targetX = Math.min(Math.max(s.targetX, minX), maxX);
       // Sniffing and nervous bugs potter about nearby instead of crossing the screen.
@@ -248,10 +268,13 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
             ? WALK_SPEED * 0.35
             : WALK_SPEED;
 
+      const holding = mood === "expectant" || holdRef.current || inspectingRef.current;
       if (!menuOpenRef.current) switch (s.mode) {
         case "idle":
           s.y = groundY;
-          if (holdStill) s.idleUntil = Math.max(s.idleUntil, now + 300);
+          // Hold still while a link is dragged over it, while it's warning
+          // about a page, or while it inspects the active tab.
+          if (holding) s.idleUntil = Math.max(s.idleUntil, now + 300);
           if (now >= s.idleUntil) {
             if (s.backing) {
               s.targetX = s.x - s.heading * randomBetween(110, 180);
@@ -269,7 +292,7 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
 
         case "walking": {
           s.y = groundY;
-          if (holdStill) {
+          if (holding) {
             s.mode = "idle";
             s.idleUntil = now + 300;
             break;
@@ -329,6 +352,25 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
         reportedX = s.x;
         reportedY = s.y;
         window.ladybug.setPetRect({ x: s.x, y: s.y, width: PET_WIDTH, height: PET_HEIGHT });
+      }
+      // The warning bubble rides above the bug (below it near the top of the
+      // screen), kept on screen, with its tail pointing at the bug.
+      const bubble = bubbleRef.current;
+      if (bubble) {
+        const { workArea } = layoutRef.current;
+        const width = bubble.offsetWidth;
+        const height = bubble.offsetHeight;
+        const center = s.x + PET_WIDTH / 2;
+        const left = Math.min(
+          Math.max(center - width / 2, workArea.x + BUBBLE_MARGIN),
+          workArea.x + workArea.width - width - BUBBLE_MARGIN,
+        );
+        const above = s.y - BUBBLE_GAP - height >= workArea.y + BUBBLE_MARGIN;
+        const top = above ? s.y - BUBBLE_GAP - height : s.y + PET_HEIGHT + BUBBLE_GAP;
+        bubble.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+        bubble.style.setProperty("--tail-x", `${Math.min(Math.max(center - left, 22), width - 22)}px`);
+        const side = above ? "above" : "below";
+        if (bubble.dataset.side !== side) bubble.dataset.side = side;
       }
       // On-screen velocity, so drags (which move x outside this loop) count too.
       const vx = dt > 0 ? (s.x - prevX) / dt : 0;
@@ -542,7 +584,52 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     react(verdict);
   });
 
-  useEffect(() => subscribeToAlerts((alert) => onAlert(alert), setFocus), []);
+  // Pages the browser is blocking. Each new one gets a fright; the bug stays
+  // scared until they're all gone.
+  const onWarnings = useEffectEvent((next: PetWarning[]) => {
+    setWarnings(next);
+    setAnswer((prev) => (prev && next.some((w) => w.id === prev.id) ? prev : null));
+    const fresh = next.filter((w) => !seenWarningsRef.current.has(w.id));
+    if (fresh.length === 0) return;
+    for (const w of fresh) remember(seenWarningsRef.current, w.id);
+    const ladybug = ladybugRef.current;
+    ladybug?.startle(3);
+    // The visit's danger alert usually got here first and already jumped.
+    if (scan.phase === "done" && scan.verdict === "malicious") ladybug?.alarm();
+    else react("malicious");
+  });
+
+  useEffect(() => subscribeToPetStream({ onAlert: (alert) => onAlert(alert), onWarnings: (next) => onWarnings(next), onFocus: setFocus }), []);
+
+  // A choice the browser hasn't acted on in a while can be tried again.
+  useEffect(() => {
+    if (answer?.state !== "sent") return;
+    const timeout = setTimeout(() => setAnswer(null), CHOICE_TIMEOUT_MS);
+    return () => clearTimeout(timeout);
+  }, [answer]);
+
+  const choose = (id: string, choice: WarningChoice) => {
+    setAnswer({ id, state: "sending" });
+    chooseForWarning(id, choice)
+      .then((open) => {
+        if (open) setAnswer((prev) => (prev?.id === id ? { id, state: "sent" } : prev));
+        else {
+          // Already gone from the browser (closed, or answered there).
+          setWarnings((prev) => prev.filter((w) => w.id !== id));
+          setAnswer(null);
+        }
+      })
+      .catch(() => setAnswer((prev) => (prev?.id === id ? { id, state: "failed" } : prev)));
+  };
+
+  /** Wings flare when the pointer heads for "Continue anyway". */
+  const fret = () => {
+    const ladybug = ladybugRef.current;
+    if (!ladybug || performance.now() - lastFretRef.current < 2000) return;
+    lastFretRef.current = performance.now();
+    ladybug.startle();
+    ladybug.alarm();
+  };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -654,8 +741,47 @@ export default function Pet({ layout, callBusy, requestHelp, onAccountNeeded }: 
     if (url) startScan(url);
   };
 
+  const busy = answer !== null && answer.id === warning?.id && answer.state !== "failed";
+  const others = warnings.length - 1;
+
   return (
     <>
+    {showBubble && <section
+      ref={bubbleRef}
+      key={warning.id}
+      className="pet-warning"
+      role="alertdialog"
+      aria-labelledby="pet-warning-title"
+      aria-describedby="pet-warning-summary"
+      data-overlay-interactive
+      style={{ maxWidth: layout.workArea.width - BUBBLE_MARGIN * 2 }}
+    >
+      <p className="pet-warning-chip">Unsafe page blocked</p>
+      <h2 id="pet-warning-title">{warning.late ? "This page turned out to be dangerous" : "That page looks dangerous!"}</h2>
+      <p id="pet-warning-summary" className="pet-warning-summary">
+        {warning.late ? (
+          <>I just finished checking <strong>{warning.host}</strong>, and it isn't safe, so I blocked it. Don't enter passwords or payment details, or download anything from it.</>
+        ) : (
+          <>I blocked <strong>{warning.host}</strong> in your browser. It could try to steal your passwords or payment details, or install something harmful.</>
+        )}
+      </p>
+      <div className="pet-warning-details">
+        {warning.reason && <p className="pet-warning-reason">{warning.reason}</p>}
+        <p className="pet-warning-url" title={warning.url}>{warning.url}</p>
+      </div>
+      <div className="pet-warning-actions">
+        <button type="button" className="primary" disabled={busy} onClick={() => choose(warning.id, "exit")}>Get me out of here</button>
+        <button type="button" className="ghost" disabled={busy} onPointerEnter={fret} onFocus={fret} onClick={() => choose(warning.id, "continue")}>Continue anyway</button>
+      </div>
+      {answer?.id === warning.id && answer.state === "failed" ? (
+        <p className="pet-warning-note" role="alert">I couldn't reach your browser. Try again, or use the page itself.</p>
+      ) : (
+        <p className="pet-warning-note">
+          {others > 0 ? `${others} more blocked ${others === 1 ? "page" : "pages"} after this one. ` : ""}
+          Continuing hides the warning for the rest of the browser session.
+        </p>
+      )}
+    </section>}
     {menu && <div ref={menuRef} className="pet-menu" role="menu" aria-label="Ladybugg" data-overlay-interactive
       style={{ maxWidth: layout.workArea.width, maxHeight: layout.workArea.height }}
       onKeyDown={(e) => {

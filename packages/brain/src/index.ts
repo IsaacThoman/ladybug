@@ -21,5 +21,7 @@ export { ACCEPTANCE, EYE_GEOMETRY, buildEyes, facetDirection } from "./eyes.ts";
 export type { EyeCells, Eyes, Side } from "./eyes.ts";
 export { COLUMN_KINDS, EYE_COLUMNS } from "./eye-columns.ts";
 export type { EyeColumn } from "./eye-columns.ts";
+export { RETINA, Retina, VISION_STAGES, stageName } from "./vision.ts";
+export type { RetinaParameters } from "./vision.ts";
 export { PoissonInput, RatedPoissonInput, Simulation, gainByTransmitter, inputSeed, mulberry32 } from "./sim.ts";
 export type { Network, SimulationOptions, SimulationStats } from "./sim.ts";

@@ -9,9 +9,14 @@
 //     strength for 2 s, then back to rest;
 // (c) behaviour at rest over --minutes of fly time, as the pet would act on it;
 // (d) wall time per simulated second at rest, under some typical stimulation
-//     and with everything at once.
+//     and with everything at once;
+// (e) the eyes: every stimulus of the vision battery (src/stimuli.ts), alone
+//     and with every other sense at full strength, then back to its steady
+//     scene, checked against the resting band of (b); and wall time per
+//     simulated second with the eyes open. scripts/vision.ts shows what each
+//     stimulus does, stage by stage.
 //
-// Runs are deterministic for a seed. It takes about two minutes.
+// Runs are deterministic for a seed. It takes about four minutes.
 
 import { parseArgs } from "node:util";
 import { DEFAULT_CONNECTOME_PATH, readConnectomeFile } from "../src/node.ts";
@@ -20,6 +25,8 @@ import { FlyBrain } from "../src/runtime.ts";
 import { RESTING_SENSES } from "../src/types.ts";
 import type { BrainCommand, BrainSenses } from "../src/types.ts";
 import type { ScalarSense } from "../src/io.ts";
+import { BATTERY, facetAngles, render } from "../src/stimuli.ts";
+import type { Scene, Stimulus } from "../src/stimuli.ts";
 
 const { values } = parseArgs({
   options: {
@@ -121,6 +128,8 @@ const windowRate = (b: FlyBrain, senses: BrainSenses) => {
   for (let t = 0; t < WINDOW; t += 10) spikes += b.tick(10, senses).stats.spikes;
   return (spikes * 1000) / WINDOW;
 };
+// The top of the resting band, which (e) checks against too.
+let bandHigh: number;
 {
   const b = brain();
   rest(b, 2000);
@@ -128,6 +137,7 @@ const windowRate = (b: FlyBrain, senses: BrainSenses) => {
   for (let w = 0; w < 120_000 / WINDOW; w++) band.push(windowRate(b, RESTING_SENSES));
   band.sort((x, y) => x - y);
   const high = band[band.length - 1];
+  bandHigh = high;
   console.log(`\n(b) Seizure recovery. The resting band: total spikes per second in ${WINDOW} ms windows over 2 minutes at rest`);
   console.log(`    ran ${band[0].toLocaleString("en-US")} to ${high.toLocaleString("en-US")} (median ${band[band.length >> 1].toLocaleString("en-US")}).`);
   console.log(`    Each case: 1 s of rest, 2 s at full strength, then rest; spikes per second in the ${WINDOW} ms windows after it.`);
@@ -199,5 +209,86 @@ const windowRate = (b: FlyBrain, senses: BrainSenses) => {
   for (const [name, senses] of rows) {
     const seconds = name.startsWith("a full looming") ? loomEverySecond() : cost(senses);
     console.log(`    ${pad(name, 48)} ${seconds.toFixed(3)} s`);
+  }
+}
+
+// (e) The eyes.
+{
+  /** A brain with its eyes open, and a way to show it a scene. */
+  const seeing = () => {
+    const b = brain();
+    const angles = facetAngles(b.eyes!);
+    const light = { left: new Float32Array(angles.left.az.length), right: new Float32Array(angles.right.az.length) };
+    let wall = 0;
+    /** Shows the scene for ms (its time from 0), under these other senses; returns the spikes per 10 ms tick. */
+    const show = (scene: Scene, ms: number, others: BrainSenses = RESTING_SENSES) => {
+      const spikes: number[] = [];
+      for (let t = 0; t < ms; t += 10) {
+        render(scene, t / 1000, angles, light);
+        const { stats } = b.tick(10, { ...others, light });
+        spikes.push(stats.spikes);
+        wall += stats.wallMs;
+      }
+      return spikes;
+    };
+    /** The lamina's total input from both eyes, spikes per second. */
+    const lamina = () => (["left", "right"] as const).reduce((sum, side) => sum + b.vision!.retina[side].rates.reduce((a, x) => a + x, 0), 0);
+    return { show, lamina, wall: () => wall };
+  };
+  const everything = apply(Object.keys(FULL) as ScalarSense[]);
+  const QUIET = 100;
+  console.log(`\n(e) The eyes. Each stimulus after 1 s of its steady scene, alone and with every other sense at full strength, then`);
+  console.log(`    its steady scene again. Going back to it can itself be a change the eyes signal for a while (L3's response`);
+  console.log(`    is sustained), so the clock starts once the lamina is quiet (its input from both eyes under ${QUIET} spikes/s):`);
+  console.log(`    ms until then, and spikes per second in the ${WINDOW} ms windows after (resting band from (b) up to ${bandHigh.toLocaleString("en-US")}).`);
+  let passed = 0;
+  let cases = 0;
+  const width = Math.max(...BATTERY.map((each) => each.name.length)) + 2;
+  for (const stimulus of BATTERY) {
+    const cells: string[] = [];
+    for (const others of [RESTING_SENSES, everything]) {
+      const { show, lamina } = seeing();
+      const ground = () => stimulus.ground;
+      show(ground, 1000);
+      show(stimulus.scene, stimulus.seconds * 1000, others);
+      let quiet = 0;
+      do {
+        show(ground, 10);
+        quiet += 10;
+      } while (lamina() >= QUIET && quiet < 30_000);
+      const after = [0, 1, 2, 3].map(() => (show(ground, WINDOW).reduce((a, x) => a + x, 0) * 1000) / WINDOW);
+      const ok = after[3] <= bandHigh;
+      cases++;
+      if (ok) passed++;
+      cells.push(`${ok ? "ok  " : "FAIL"} ${String(quiet).padStart(5)} ${after.map((x) => Math.round(x).toLocaleString("en-US").padStart(7)).join(" ")}`);
+    }
+    console.log(`    ${pad(stimulus.name, width)}alone ${cells[0]}   with everything ${cells[1]}`);
+  }
+  console.log(`    ${passed} of ${cases} back inside the resting band within 1 s.`);
+
+  console.log("\n    Wall time per simulated second with the eyes open, one thread, 10 s each after 2 s of its steady scene:");
+  {
+    const b = brain();
+    rest(b, 2000);
+    let total = 0;
+    for (let t = 0; t < 10_000; t += 10) total += b.tick(10, RESTING_SENSES).stats.wallMs;
+    console.log(`    ${pad("eyes shut, for comparison", 52)} ${(total / 10_000).toFixed(3)} s`);
+  }
+  const looped = (stimulus: Stimulus): Scene => (t, a, e) => stimulus.scene(t % stimulus.seconds, a, e);
+  const named = (name: string) => BATTERY.find((each) => each.name === name)!;
+  const checkerboard: Scene = (_t, a, e) => named("static checkerboard").scene(0, a, e);
+  const rows: { label: string; ground: Scene; settle: number; scene: Scene }[] = [
+    { label: "a steady uniform scene", ground: () => 1, settle: 2000, scene: () => 1 },
+    { label: "a steady checkerboard, 20 s after it appeared", ground: checkerboard, settle: 20_000, scene: checkerboard },
+    { label: "a dark disc looming at the right eye, over and over", ground: () => 1, settle: 2000, scene: looped(named("loom right")) },
+    { label: "a grating drifting across both eyes", ground: () => 0.5, settle: 2000, scene: named("grating, clockwise").scene },
+    { label: "the whole field flickering at 4 Hz", ground: () => 0.6, settle: 2000, scene: named("flicker").scene },
+  ];
+  for (const { label, ground, settle, scene } of rows) {
+    const { show, wall } = seeing();
+    show(ground, settle);
+    const before = wall();
+    show(scene, 10_000);
+    console.log(`    ${pad(label, 52)} ${((wall() - before) / 10_000).toFixed(3)} s`);
   }
 }

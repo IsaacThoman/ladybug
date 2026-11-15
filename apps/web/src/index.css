@@ -2067,3 +2067,108 @@ p {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* ---------- community reports ---------- */
+
+.community-none {
+  font-size: 0.92rem;
+}
+
+.community-tally {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.92rem;
+  color: var(--ink-2);
+}
+
+.community-tally strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.community-tally .unsafe strong {
+  color: var(--malicious);
+}
+
+.community-tally .safe strong {
+  color: var(--benign);
+}
+
+.community-bar {
+  display: flex;
+  height: 6px;
+  margin: 0.4rem 0 0;
+  border-radius: 3px;
+  background: var(--paper-2);
+  overflow: hidden;
+}
+
+.community-bar .unsafe {
+  background: var(--malicious);
+}
+
+.community-bar .safe {
+  background: var(--benign);
+}
+
+.community-votes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 0.9rem;
+}
+
+.community-vote[data-verdict="unsafe"][aria-pressed="true"] {
+  background: var(--red-wash);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  color: var(--red-ink);
+}
+
+.community-vote[data-verdict="safe"][aria-pressed="true"] {
+  background: var(--leaf-wash);
+  border-color: color-mix(in srgb, var(--leaf) 45%, transparent);
+  color: var(--leaf-ink);
+}
+
+.community-vote:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.community-note {
+  margin-top: 0.6rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.community-note a,
+.community-chain a {
+  color: var(--ink-2);
+  text-underline-offset: 3px;
+}
+
+.community .form-error {
+  margin-top: 0.5rem;
+}
+
+.community-chain {
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.community-chain h3 {
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.community-scan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}

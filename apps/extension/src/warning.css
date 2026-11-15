@@ -127,6 +127,37 @@ h1 {
   outline-offset: 2px;
 }
 
+/* ---------- "I think this site is safe" ---------- */
+
+.report {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+  color: var(--blocked-ink-2);
+  font-size: 0.88rem;
+}
+
+.report .link-button {
+  color: var(--blocked-ink-2);
+}
+
+.report-chain {
+  color: var(--blocked-ink);
+  text-underline-offset: 3px;
+}
+
+.report-chain:focus-visible {
+  outline: 2px solid var(--blocked-chip-ink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.report-error {
+  color: var(--blocked-chip-ink);
+}
+
 /* ---------- the options, here ---------- */
 
 .actions {

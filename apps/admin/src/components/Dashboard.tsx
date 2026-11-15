@@ -91,7 +91,10 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
 
   const onEvent = useCallback((event: LogEvent) => {
     setLive((current) => [event, ...current].slice(0, LIVE_LIMIT));
-    if (event.type === "analysis_completed" || event.type === "admin") setUrlsVersion((v) => v + 1);
+    // The URL database lists community reports too.
+    if (event.type === "analysis_completed" || event.type === "admin" || event.type === "report") {
+      setUrlsVersion((v) => v + 1);
+    }
     if (event.type === "account" || event.type === "admin") setUsersVersion((v) => v + 1);
     if (event.type === "admin") setSettingsVersion((v) => v + 1);
     if (event.type === "analysis_started" || event.type === "analysis_completed" || event.type === "error") {

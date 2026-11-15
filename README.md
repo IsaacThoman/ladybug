@@ -29,7 +29,7 @@ npm-workspaces monorepo:
 | `apps/web` | Vite + React landing page and live scan report, with a recorded demo at `/demo`. |
 | `packages/shared` | Types and constants shared by all of the above. |
 | `packages/mascot` | The 3D ladybug (three.js), used by the desktop pet, plus the garden look the web and admin pages share: colors, fonts, the ladybug on its leaf, the hills. |
-| `packages/backend` | Node-only helpers for the server and worker: Postgres (with the TimescaleDB and pgvector parts), Valkey, the artifact store. |
+| `packages/backend` | Node-only helpers for the server and worker: Postgres (with the TimescaleDB and pgvector parts, and community reports), Valkey, the artifact store. |
 | `infra/` | Vultr deployment: Terraform, kustomize manifests with NetworkPolicies, the mitmproxy egress gateway. See [`infra/README.md`](infra/README.md). |
 | `docs/contracts.md` | Names, ports, labels and environment variables the pieces agree on. |
 | `compose.yaml`, `compose.local.yaml` | The whole backend as a deployable Compose stack (Coolify or any Docker host), and the local override that publishes ports. |
@@ -144,7 +144,7 @@ npm run scan -w @ladybug/worker -- https://example.com
 ### Config
 
 - `.env` (Compose): `POSTGRES_PASSWORD` and `TYPESENSE_API_KEY` (required), `DATABASE_URL` (to use Tiger Cloud), `ADMIN_PASSWORD`, `API_KEYS`, `LLM_*`, `WORKER_CONCURRENCY`, and the local ports
-- `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_PASSWORD`, `ADMIN_DIST`
+- `apps/server/.env`: `PORT`, `TYPESENSE_URL`, `TYPESENSE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `ANALYZER`, `ANALYSIS_DELAY_MS`, `API_KEYS`, `ADMIN_PASSWORD`, `ADMIN_DIST`, and optionally `SOLANA_*` (see [Community reports](#community-reports))
 - `apps/worker/.env`: `DATABASE_URL`, `REDIS_URL`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `SANDBOX_PROVIDER`, `SAFE_BROWSING_API_KEY`, `URLHAUS_AUTH_KEY`
 - `apps/desktop/.env`: `VITE_SERVER_URL`, `VITE_WEB_URL`, and optionally `VITE_API_KEY`. In `npm run dev` the pet uses `http://localhost:3001` and `http://localhost:5175`; packaged builds use the hosted `https://computerbug.garden` for both.
 - Extension: release builds report to `https://computerbug.garden`, and `npm run dev:extension` builds report to `http://localhost:3001`. Either can be changed in its popup.
@@ -209,6 +209,16 @@ Switching an existing deployment from `postgres:17-alpine` to the TimescaleDB im
 
 On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refuses internal addresses and tags each flow with its scan. The sandbox has no DNS, and NetworkPolicies enforce all of this. Locally, sandboxes have normal internet access with the daemon bound to 127.0.0.1.
 
+### Community reports
+
+Signed-in people can report a site as safe or unsafe, one vote per account per host, changeable. Votes are kept in Postgres (`site_reports`; deleting an account deletes its votes, and rejected accounts stop counting). They never flip a verdict on their own:
+
+- The extension, the blocked page and the report page show the tally next to the verdict (`GET /api/reports?url=…`).
+- The admin UI's URL database marks a host for review when the majority disagrees with its stored verdict, or when there's no verdict yet and someone said unsafe.
+- Three or more "unsafe" reports from different accounts are one hard signal in the scan score (`community_reports`, `COMMUNITY_SIGNAL_MIN_REPORTS`).
+
+With `SOLANA_RPC_URL`, `SOLANA_PROGRAM_ID`, `SOLANA_AUTHORITY_KEY` and `SOLANA_REPORTER_SECRET` set, the server also writes every vote and every sandbox verdict to the `computerbug_verdicts` program on-chain, so the tallies can be checked without trusting our database. The server co-signs each vote with a key derived for that account and pays the fees, so nobody needs a wallet or SOL. On startup it creates the program's config if it's missing (its key must be the program's upgrade authority). Writes happen in the background: a vote is `pending` until its transaction confirms, then `confirmed` with a signature and an Explorer link, or `failed`. Tallies come from the chain once nothing for that host is pending, and from Postgres otherwise or when the RPC is down. A scan's on-chain `report_hash` is SHA-256 of the report JSON as `GET /api/scans/:id` returns it. Unset, reports work the same in Postgres only. See [`docs/solana.md`](docs/solana.md) for the program and every variable.
+
 ### API
 
 | Endpoint | Used by |
@@ -220,9 +230,11 @@ On Kubernetes, the sandbox's only route out is the mitmproxy gateway, which refu
 | `GET /api/scans/:id` | Pet, report page |
 | `GET /api/scans/:id/events` | Report page, pet (SSE, replays from the start) |
 | `GET /api/scans/:id/artifacts/:key` | Report page (screenshots, HAR) |
+| `GET /api/reports?url=` (anyone; your own vote when signed in), `POST /api/reports` `{ url, verdict }` | Extension, blocked page, report page (approved account to vote) |
 | `GET /api/admin/summary`, `/events`, `/urls`, `/stream`, `/timeline?range=1h\|24h\|7d` | Admin UI |
 | `POST /api/admin/check`, `POST/PUT/DELETE /api/admin/urls` | Admin UI |
 | `GET /api/admin/users`, `POST /api/admin/users/:id/approve\|reject`, `DELETE /api/admin/users/:id` | Admin UI |
+| `GET /api/admin/reports?limit=50` | Admin UI (reported hosts, flagged for review) |
 | `GET/PUT /api/admin/settings/model` | Admin UI |
 | `GET /health` | Everything |
 

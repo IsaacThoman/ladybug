@@ -1,6 +1,6 @@
 // A recorded phishing scan, replayed on a timer for offline demos. The brand
 // (Northwind Bank) is fictional; IPs are from documentation ranges.
-import type { Finding, ScanEvent, ScanReport, ScanResponse, ScoreSignal } from "@ladybug/shared";
+import type { CommunityTally, Finding, ScanEvent, ScanReport, ScanResponse, ScoreSignal } from "@ladybug/shared";
 import { shotCard, shotLogin, shotMobile, shotOtp, shotRedirect } from "./demoShots.ts";
 
 export const DEMO_SCAN_ID = "demo";
@@ -22,6 +22,15 @@ const KEYS = {
   otp: "scans/demo/screenshots/agent-otp.png",
   card: "scans/demo/screenshots/agent-card.png",
   har: "scans/demo/har/credential-post.har",
+};
+
+/** What the community says about the phishing host, shown as is: the demo doesn't ask the server. */
+export const DEMO_COMMUNITY: CommunityTally = {
+  host: PHISH_HOST,
+  safe: 0,
+  unsafe: 4,
+  chain: null,
+  lastScan: null,
 };
 
 let shotCache: Record<string, string> | null = null;

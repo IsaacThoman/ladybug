@@ -2,14 +2,23 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { Queue } from "bullmq";
 import { SCAN_QUEUE } from "@ladybug/shared";
 import type { ScanJob } from "@ladybug/shared";
-import { createAccountStore, createArtifactStore, createDb, createRedis, migrate } from "@ladybug/backend";
+import {
+  createAccountStore,
+  createArtifactStore,
+  createDb,
+  createRedis,
+  createReportStore,
+  migrate,
+} from "@ladybug/backend";
 import { configureAnalyzer } from "./analyzer.ts";
 import { configureChecks } from "./checks.ts";
 import { createApp } from "./app.ts";
 import { config } from "./config.ts";
+import { notariseScan } from "./reports.ts";
 import { AUTH_ATTEMPTS_PER_MINUTE, redisLimiter } from "./routes/auth.ts";
 import type { ScanDeps } from "./scans.ts";
 import { seedUrls } from "./seed.ts";
+import { startChain } from "./solana/chain.ts";
 import { initStore } from "./store.ts";
 
 const RETRY_MS = 3_000;
@@ -32,12 +41,15 @@ const deps: ScanDeps = {
   rateLimitPerMinute: config.rateLimitPerMinute,
   clientIpHeader: config.clientIpHeader,
 };
-configureAnalyzer(deps);
+// Community reports and scan verdicts also go on-chain when Solana is configured.
+const reports = createReportStore(db);
+const chain = startChain(config.solana);
+configureAnalyzer(deps, chain ? (host, scanId, report) => notariseScan(chain, reports, host, scanId, report) : undefined);
 
-const app = createApp({ ...deps, authLimit: redisLimiter(redis, AUTH_ATTEMPTS_PER_MINUTE) });
+const app = createApp({ ...deps, authLimit: redisLimiter(redis, AUTH_ATTEMPTS_PER_MINUTE), reports, chain });
 const server = app.listen(config.port, () => {
   console.log(
-    `[server] listening on http://localhost:${config.port} (analyzer: ${config.analyzer}, timescaledb: ${features.timescale ? "on" : "off"})`,
+    `[server] listening on http://localhost:${config.port} (analyzer: ${config.analyzer}, timescaledb: ${features.timescale ? "on" : "off"}, solana: ${chain ? config.solana?.cluster : "off"})`,
   );
   if (!config.adminPassword) console.warn("[server] ADMIN_PASSWORD is not set: anyone can open the admin UI and approve accounts");
 });

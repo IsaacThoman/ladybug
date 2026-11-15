@@ -76,6 +76,12 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-2}
       # cf-connecting-ip when the only way in is a Cloudflare Tunnel.
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
+      # Community reports on Solana (docs/solana.md). Empty = Postgres only.
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-}
+      SOLANA_CLUSTER: ${SOLANA_CLUSTER:-devnet}
+      SOLANA_PROGRAM_ID: ${SOLANA_PROGRAM_ID:-}
+      SOLANA_AUTHORITY_KEY: ${SOLANA_AUTHORITY_KEY:-}
+      SOLANA_REPORTER_SECRET: ${SOLANA_REPORTER_SECRET:-}
     volumes:
       - artifacts:/app/.artifacts
     depends_on:

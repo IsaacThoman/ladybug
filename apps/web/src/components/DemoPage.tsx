@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { ScanEvent, ScanResponse } from "@ladybug/shared";
 import {
+  DEMO_COMMUNITY,
   DEMO_DURATION_S,
   DEMO_INPUT_URL,
   DEMO_SCAN_ID,
@@ -84,5 +85,7 @@ function DemoRun({ onReplay }: { onReplay: () => void }) {
     </div>
   );
 
-  return <ReportView scan={scan} artifactSrc={demoArtifactSrc} headerExtra={notice} />;
+  return (
+    <ReportView scan={scan} artifactSrc={demoArtifactSrc} headerExtra={notice} communitySample={DEMO_COMMUNITY} />
+  );
 }

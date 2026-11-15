@@ -3,6 +3,7 @@ import Pet from "./Pet";
 import { FaceTimeController } from "../calls/controller";
 import { createCallMedia } from "../calls/media";
 import type { OverlayLayout } from "../ladybug-api";
+import { getSession } from "../session";
 
 export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayLayout; onAccountNeeded: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
@@ -24,7 +25,10 @@ export default function FaceTime({ layout, onAccountNeeded }: { layout: OverlayL
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const busy = !["idle", "ended", "error"].includes(state.phase);
   const visible = state.phase !== "idle" && (busy || dismissed !== `${state.id}:${state.phase}:${state.message}`);
-  return <><Pet layout={layout} onAccountNeeded={onAccountNeeded} callBusy={busy} requestHelp={() => { void controller.start(); }} /><div className="facetime" data-overlay-interactive style={{ display: visible ? undefined : "none", top: layout.workArea.y + 16, right: layout.width - layout.workArea.x - layout.workArea.width + 16, maxHeight: layout.workArea.height - 32 }}>
+  return <><Pet layout={layout} onAccountNeeded={onAccountNeeded} callBusy={busy} requestHelp={() => {
+    if (getSession()?.account.status !== "approved") { onAccountNeeded(); return; }
+    void controller.start();
+  }} /><div className="facetime" data-overlay-interactive style={{ display: visible ? undefined : "none", top: layout.workArea.y + 16, right: layout.width - layout.workArea.x - layout.workArea.width + 16, maxHeight: layout.workArea.height - 32 }}>
     {visible && <section aria-label="FaceTime call">
       {busy ? <button onClick={() => { void controller.end(); }}>Hang up</button> : <button onClick={() => setDismissed(`${state.id}:${state.phase}:${state.message}`)}>Dismiss</button>}
       <p role="status">{state.message}</p>

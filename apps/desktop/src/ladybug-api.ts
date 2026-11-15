@@ -14,6 +14,11 @@ export type OverlayLayout = {
 
 export type LadybugApi = {
   faceTime: FaceTimeApi;
+  /**
+   * The signed-in session (or null after signing out). The main process
+   * places support calls as this account, on the server that issued it.
+   */
+  setCallSession: (session: { url: string; token: string } | null) => void;
   getLayout: () => Promise<OverlayLayout>;
   onLayoutChanged: (callback: (layout: OverlayLayout) => void) => () => void;
   /**

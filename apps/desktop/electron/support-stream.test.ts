@@ -9,7 +9,7 @@ test("main-process subscription keeps credentials private and decodes split even
   let writer!: ReadableStreamDefaultController<Uint8Array>;
   const encoder = new TextEncoder();
   const subscription = new SupportSubscription((id) => received.push(id), {
-    config: () => ({ url: "https://ladybug.example", token: "private-desktop-token" }),
+    auth: () => ({ url: "https://ladybug.example", token: "private-desktop-token" }),
     fetch: async (url, init) => {
       assert.equal(url, "https://ladybug.example/api/calls/support/stream");
       assert.deepEqual(init?.headers, { Authorization: "Bearer private-desktop-token", Accept: "text/event-stream" });
@@ -26,15 +26,34 @@ test("main-process subscription keeps credentials private and decodes split even
   await turn(); assert.deepEqual(received, [id]);
 });
 
-test("unauthorized streams reconnect without emitting requests", async (t) => {
+test("refused streams back off and reconnect without emitting requests", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let attempts = 0, received = 0;
   const subscription = new SupportSubscription(() => received++, {
-    config: () => ({ url: "https://ladybug.example", token: "private-token" }),
-    fetch: async () => { attempts++; return new Response(null, { status: 401 }); },
+    auth: () => ({ url: "https://ladybug.example", token: "private-token" }),
+    fetch: async () => { attempts++; return new Response(null, { status: 403 }); },
   });
   subscription.start(); await turn();
   t.mock.timers.tick(3000); await turn();
+  assert.equal(attempts, 1, "waits longer when the account can't take calls");
+  t.mock.timers.tick(27_000); await turn();
   assert.equal(attempts, 2); assert.equal(received, 0);
-  subscription.stop(); t.mock.timers.tick(3000); await turn(); assert.equal(attempts, 2);
+  subscription.stop(); t.mock.timers.tick(30_000); await turn(); assert.equal(attempts, 2);
+});
+
+test("a signed-out pet does not connect until it is started again", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let attempts = 0;
+  let auth: { url: string; token: string } | null = null;
+  const subscription = new SupportSubscription(() => {}, {
+    auth: () => auth,
+    fetch: async () => { attempts++; return new Response(null, { status: 503 }); },
+  });
+  subscription.start(); await turn();
+  t.mock.timers.tick(30_000); await turn();
+  assert.equal(attempts, 0);
+  auth = { url: "https://ladybug.example", token: "session" };
+  subscription.start(); await turn();
+  assert.equal(attempts, 1);
+  subscription.stop();
 });

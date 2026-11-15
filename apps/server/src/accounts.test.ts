@@ -20,7 +20,7 @@ function memoryAccounts(): AccountStore {
   return {
     async create(username, passwordHash) {
       if ([...users.values()].some((user) => user.username === username)) return null;
-      const user: UserRecord = { id: randomUUID(), username, passwordHash, status: "pending", createdAt: new Date().toISOString() };
+      const user: UserRecord = { id: randomUUID(), username, passwordHash, status: "pending", createdAt: new Date().toISOString(), callsEnabled: false };
       users.set(user.id, user);
       return user;
     },
@@ -33,12 +33,17 @@ function memoryAccounts(): AccountStore {
     },
     list: async () =>
       [...users.values()].map(
-        ({ id, username, status, createdAt }): AdminAccount => ({ id, username, status, createdAt, lastSeenAt: null, sessions: 0 }),
+        ({ id, username, status, createdAt, callsEnabled }): AdminAccount => ({ id, username, status, createdAt, callsEnabled, lastSeenAt: null, sessions: 0 }),
       ),
     countPending: async () => [...users.values()].filter((user) => user.status === "pending").length,
     async setStatus(id, status) {
       const user = find(id);
       if (user) user.status = status;
+      return user;
+    },
+    async setCallsEnabled(id, enabled) {
+      const user = find(id);
+      if (user) user.callsEnabled = enabled;
       return user;
     },
     async remove(id) {
@@ -186,6 +191,29 @@ test("turning an account down cuts off its pets and its sign-ins", async () => {
   assert.equal((await call("DELETE", `/api/admin/users/${account.id}`, { admin: "admin-secret" })).status, 204);
   assert.equal((await call("GET", "/api/auth/me", { token })).status, 401);
   assert.equal((await call("POST", `/api/admin/users/${account.id}/approve`, { admin: "admin-secret" })).status, 404);
+});
+
+test("support calls use the account session and stay off until an admin turns them on", async () => {
+  const signup = await call("POST", "/api/auth/signup", { body: { username: "dana", password: "longenough" } });
+  const { token, account } = (await signup.json()) as AuthResponse;
+  assert.equal((await call("GET", "/api/calls/state", { token })).status, 403, "pending accounts can't call");
+  await call("POST", `/api/admin/users/${account.id}/approve`, { admin: "admin-secret" });
+  const off = await call("GET", "/api/calls/state", { token });
+  assert.equal(off.status, 403);
+  assert.deepEqual(await off.json(), { error: "An admin hasn't turned on calls for this account" });
+
+  const toggle = (enabled: unknown, admin?: string) => call("PUT", `/api/admin/users/${account.id}/calls`, { admin, body: { enabled } });
+  assert.equal((await toggle(true)).status, 401, "needs the admin password");
+  assert.equal((await toggle("yes", "admin-secret")).status, 400);
+  assert.equal((await call("PUT", `/api/admin/users/${randomUUID()}/calls`, { admin: "admin-secret", body: { enabled: true } })).status, 404);
+  assert.equal((await toggle(true, "admin-secret")).status, 200);
+  const users = (await (await call("GET", "/api/admin/users", { admin: "admin-secret" })).json()) as { accounts: AdminAccount[] };
+  assert.equal(users.accounts.find((user) => user.id === account.id)?.callsEnabled, true);
+  assert.equal((await call("GET", "/api/calls/state", { token })).status, 200);
+  assert.equal((await call("GET", "/api/calls/state")).status, 401);
+
+  assert.equal((await toggle(false, "admin-secret")).status, 200);
+  assert.equal((await call("GET", "/api/calls/state", { token })).status, 403);
 });
 
 test("sign-ins are rate limited", async () => {

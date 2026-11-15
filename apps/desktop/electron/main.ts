@@ -16,7 +16,8 @@ import type { OverlayLayout, Rect } from "../src/ladybug-api";
 import { parseHttpUrl, urlFromClipboardText } from "../src/urls";
 import { SupportSubscription } from "./support-stream";
 import { CallService } from "./call-service";
-import { loadCallEnv } from "./call-config";
+import { parseCallAuth } from "./call-config";
+import type { CallAuth } from "./call-config";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -54,16 +55,34 @@ let interactiveRects: Rect[] = [];
 /** The pet is being dragged; keep mouse events even if the cursor slips off it. */
 let petHeld = false;
 let ignoringMouse = true;
-const calls = new CallService();
+/** The signed-in account, from the renderer. Support calls are placed as this user. */
+let callAuth: CallAuth | null = null;
+let supportReady = false;
+const calls = new CallService({ auth: () => callAuth });
 const support = new SupportSubscription(() => {
   if (overlayWin && !overlayWin.isDestroyed() && ["idle", "ended", "error"].includes(calls.getState().phase)) {
     showOverlay();
     overlayWin.webContents.send("ladybug:support-request");
   }
-});
+}, { auth: () => callAuth });
+const fromOverlay = (event: Electron.IpcMainEvent) =>
+  event.sender === overlayWin?.webContents && event.senderFrame === event.sender.mainFrame;
 ipcMain.on("ladybug:support-ready", (event, ready: boolean) => {
-  if (event.sender !== overlayWin?.webContents || event.senderFrame !== event.sender.mainFrame) return;
+  if (!fromOverlay(event)) return;
+  supportReady = ready;
   if (ready) support.start(); else support.stop();
+});
+ipcMain.on("ladybug:set-call-session", (event, input: unknown) => {
+  if (!fromOverlay(event)) return;
+  let next: CallAuth | null;
+  try { next = parseCallAuth(input); } catch { next = null; }
+  if (next?.url === callAuth?.url && next?.token === callAuth?.token) return;
+  const switched = callAuth !== null;
+  callAuth = next;
+  // Signing out (or in as someone else) hangs up the previous account's call.
+  if (switched) void calls.endCurrent();
+  support.stop();
+  if (supportReady) support.start();
 });
 ipcMain.on("ladybug:scan-clipboard", (event) => {
   if (event.sender === overlayWin?.webContents) void scanClipboard();
@@ -345,7 +364,6 @@ app.on("window-all-closed", () => {
 });
 
 app.whenReady().then(() => {
-  loadCallEnv(path.join(app.isPackaged ? app.getPath("userData") : process.env.APP_ROOT, ".env"));
   if (!windowedDev) {
     app.dock?.hide();
     createTray();

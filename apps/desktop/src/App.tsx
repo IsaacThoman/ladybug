@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Account from "./components/Account";
 import FaceTime from "./components/FaceTime";
 import { useOverlayPointer } from "./overlay-pointer";
+import { SERVER_URL } from "./api";
 import type { OverlayLayout } from "./ladybug-api";
 import { useSession } from "./session";
 
@@ -20,6 +21,10 @@ export default function App() {
   }, []);
 
   useEffect(() => window.ladybug.onAccountRequested(() => setRequested(true)), []);
+
+  // Support calls run in the main process, as whoever is signed in here.
+  const token = session?.token ?? null;
+  useEffect(() => window.ladybug.setCallSession(token ? { url: SERVER_URL, token } : null), [token]);
 
   if (!layout) return null;
   return (

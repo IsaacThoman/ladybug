@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
   status         text NOT NULL DEFAULT 'pending',
   created_at     timestamptz NOT NULL DEFAULT now()
 );
+-- Placing support calls rings a real phone, so an admin turns it on per account.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS calls_enabled boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash     text PRIMARY KEY,
   user_id        uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -27,7 +29,7 @@ export async function setupAccounts(client: pg.PoolClient) {
 }
 
 /** A user as the server sees it, including the password hash. */
-export type UserRecord = Account & { passwordHash: string };
+export type UserRecord = Account & { passwordHash: string; callsEnabled: boolean };
 
 /** Where accounts live. Postgres in the server; an in-memory map in tests. */
 export type AccountStore = {
@@ -43,6 +45,8 @@ export type AccountStore = {
   list(): Promise<AdminAccount[]>;
   countPending(): Promise<number>;
   setStatus(userId: string, status: AccountStatus): Promise<UserRecord | null>;
+  /** Whether the user's pet may place support calls. */
+  setCallsEnabled(userId: string, enabled: boolean): Promise<UserRecord | null>;
   remove(userId: string): Promise<UserRecord | null>;
 };
 
@@ -51,6 +55,7 @@ type UserRow = {
   username: string;
   password_hash: string;
   status: AccountStatus;
+  calls_enabled: boolean;
   created_at: Date;
 };
 
@@ -60,6 +65,7 @@ const toUser = (row: UserRow): UserRecord => ({
   status: row.status,
   createdAt: row.created_at.toISOString(),
   passwordHash: row.password_hash,
+  callsEnabled: row.calls_enabled,
 });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -118,6 +124,7 @@ export function createAccountStore(db: Db): AccountStore {
         username: row.username,
         status: row.status,
         createdAt: row.created_at.toISOString(),
+        callsEnabled: row.calls_enabled,
         lastSeenAt: row.last_seen_at?.toISOString() ?? null,
         sessions: row.sessions,
       }));
@@ -132,6 +139,11 @@ export function createAccountStore(db: Db): AccountStore {
 
     setStatus: (userId, status) =>
       UUID_RE.test(userId) ? one("UPDATE users SET status = $2 WHERE id = $1 RETURNING *", [userId, status]) : Promise.resolve(null),
+
+    setCallsEnabled: (userId, enabled) =>
+      UUID_RE.test(userId)
+        ? one("UPDATE users SET calls_enabled = $2 WHERE id = $1 RETURNING *", [userId, enabled])
+        : Promise.resolve(null),
 
     remove: (userId) =>
       UUID_RE.test(userId) ? one("DELETE FROM users WHERE id = $1 RETURNING *", [userId]) : Promise.resolve(null),

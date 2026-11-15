@@ -4,6 +4,7 @@ import type { LadybugApi, OverlayLayout } from "../src/ladybug-api";
 
 const api: LadybugApi = {
   setInteractiveRects: (rects) => ipcRenderer.send("ladybug:set-interactive-rects", rects),
+  setCallSession: (session) => ipcRenderer.send("ladybug:set-call-session", session),
   faceTime: {
     prepare: () => ipcRenderer.invoke("ladybug:call-prepare"),
     dial: (id) => ipcRenderer.invoke("ladybug:call-dial", id),

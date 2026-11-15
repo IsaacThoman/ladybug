@@ -20,7 +20,7 @@ import { getSession, setAccountStatus, setSession, subscribeSession } from "./se
 
 // Packaged builds use the hosted server, where the report pages share the
 // API's origin. `npm run dev` talks to the local server and report page.
-const SERVER_URL =
+export const SERVER_URL =
   import.meta.env.VITE_SERVER_URL ??
   (import.meta.env.DEV ? `http://localhost:${DEFAULT_SERVER_PORT}` : PUBLIC_URL);
 export const WEB_URL =

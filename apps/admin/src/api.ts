@@ -98,6 +98,9 @@ export const api = {
 
   deleteUser: (id: string) => request<void>(`/api/admin/users/${id}`, { method: "DELETE" }),
 
+  setUserCalls: (id: string, enabled: boolean) =>
+    request<unknown>(`/api/admin/users/${id}/calls`, { method: "PUT", body: JSON.stringify({ enabled }) }),
+
   sandboxes: (limit: number) => request<AdminSandboxesResponse>(`/api/admin/sandboxes${query({ limit })}`),
 
   modelSettings: () => request<AdminModelSettings>("/api/admin/settings/model"),

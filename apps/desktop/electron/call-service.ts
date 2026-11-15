@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { CallState, PreparedCall } from "@ladybug/shared";
-import { readDesktopCallConfig } from "./call-config.ts";
+import type { CallAuth } from "./call-config.ts";
 
 const terminal = (state: CallState) => ["idle", "ended", "error"].includes(state.phase);
+const SIGNED_OUT = "Sign in to Ladybugg to request help.";
+
+/** The server refused the request: `status` is its HTTP status. */
+class CallApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) { super(message); this.status = status; }
+}
+/** The session no longer works for calls (signed out, deleted, or calls turned off). */
+const lostAccess = (error: unknown) => error instanceof CallApiError && (error.status === 401 || error.status === 403);
 
 /** Desktop transport only. Provider credentials and call control live on the server. */
 export class CallService {
@@ -12,10 +21,12 @@ export class CallService {
   private pendingEnd = false;
   private preparing = false;
   private request: typeof fetch;
-  private config: typeof readDesktopCallConfig;
-  constructor(options: { fetch?: typeof fetch; config?: typeof readDesktopCallConfig } = {}) {
+  private auth: () => CallAuth | null;
+  /** The account that placed the current call. It keeps the call even if the pet signs in as someone else. */
+  private caller: CallAuth | null = null;
+  constructor(options: { fetch?: typeof fetch; auth?: () => CallAuth | null } = {}) {
     this.request = options.fetch ?? fetch;
-    this.config = options.config ?? readDesktopCallConfig;
+    this.auth = options.auth ?? (() => null);
   }
   getState = () => ({ ...this.state });
   subscribe(listener: (state: CallState) => void) {
@@ -27,7 +38,8 @@ export class CallService {
     for (const listener of this.listeners) listener(this.getState());
   }
   private async api<T>(path: string, body?: unknown): Promise<T> {
-    const config = this.config();
+    const config = this.caller;
+    if (!config) throw new CallApiError(SIGNED_OUT, 401);
     let response: Response;
     try {
       response = await this.request(`${config.url}/api/calls${path}`, {
@@ -39,11 +51,12 @@ export class CallService {
     if (!response.ok) {
       // Do not forward arbitrary proxy/server responses or credential-bearing URLs.
       const errors: Record<number, string> = {
-        400: "Invalid call request.", 401: "Call server access denied. Check CALL_SERVER_TOKEN.",
+        400: "Invalid call request.", 401: SIGNED_OUT,
+        403: "Calls aren't turned on for this account yet. Ask a Ladybugg admin.",
         404: "This call is no longer available on the server.", 409: "The call line is busy or still cleaning up.",
         429: "Too many call attempts. Wait a minute and try again.", 503: "Calls are not configured on the server.",
       };
-      throw new Error(errors[response.status] ?? "The call server could not complete the request.");
+      throw new CallApiError(errors[response.status] ?? "The call server could not complete the request.", response.status);
     }
     return await response.json() as T;
   }
@@ -54,6 +67,8 @@ export class CallService {
     this.update({ phase: "preparing", message: "Preparing FaceTime…", bridgeReady: false });
     const requestId = randomUUID();
     try {
+      this.caller = this.auth();
+      if (!this.caller) throw new Error(SIGNED_OUT);
       // The server caches this request ID: a lost response must not allocate a second room.
       const prepared = await this.api<PreparedCall>("/prepare", { requestId });
       this.update({ id: prepared.id, phase: "ready", message: "Connecting camera and microphone…", bridgeReady: false });
@@ -103,8 +118,14 @@ export class CallService {
           : state);
       }
       if (terminal(this.state)) this.pendingEnd = false;
-    } catch {
+    } catch (error) {
       if (this.state.id !== id) return;
+      if (lostAccess(error)) {
+        // Nothing this session can do; the server hangs up calls nobody checks in on.
+        this.pendingEnd = false;
+        this.update({ id, phase: "ended", message: "Call ended: this account can no longer place calls.", bridgeReady: false });
+        return;
+      }
       this.pendingEnd = true;
       this.update({ id, phase: "ending", message: "Call server disconnected; stopping media and retrying hang-up…", bridgeReady: false });
     } finally { this.schedule(); }

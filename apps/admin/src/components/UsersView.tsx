@@ -81,6 +81,10 @@ export default function UsersView({ version }: { version: number }) {
 
       <section className="card">
         <h2>Accounts</h2>
+        <p className="hint">
+          Calls let someone's pet ring the emergency contact when they pick Request help. They stay off until you
+          turn them on, and turning them off hangs up a call in progress.
+        </p>
         {others.length === 0 ? (
           <p className="empty">{accounts === null ? "Loading…" : "No accounts yet."}</p>
         ) : (
@@ -93,6 +97,7 @@ export default function UsersView({ version }: { version: number }) {
                   <th>Signed up</th>
                   <th>Last seen</th>
                   <th>Devices</th>
+                  <th>Calls</th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>
@@ -112,7 +117,17 @@ export default function UsersView({ version }: { version: number }) {
                         {account.lastSeenAt ? timeAgo(at(account.lastSeenAt)) : "Never"}
                       </td>
                       <td className="num">{account.sessions}</td>
+                      <td className="muted">{account.callsEnabled ? "On" : "Off"}</td>
                       <td className="actions">
+                        {account.status === "approved" && (
+                          <button
+                            type="button"
+                            className="secondary small"
+                            onClick={() => act(() => api.setUserCalls(account.id, !account.callsEnabled))}
+                          >
+                            {account.callsEnabled ? "Turn off calls" : "Turn on calls"}
+                          </button>
+                        )}
                         {account.status === "approved" ? (
                           <button
                             type="button"

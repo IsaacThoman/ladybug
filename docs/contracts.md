@@ -28,8 +28,11 @@ The source of truth is `packages/shared/src/scan.ts` (scan, event, report and HT
 | `GET /api/admin/timeline?range=1h\|24h\|7d` | admin | `CheckTimeline` |
 | `GET /api/admin/users` | admin | `AdminAccountsResponse` |
 | `POST /api/admin/users/:id/approve`, `/reject`, `DELETE /api/admin/users/:id` | admin | `Account` / 204 |
+| `PUT /api/admin/users/:id/calls` `AdminCallsRequest` | admin | `Account` |
+| `GET /api/calls/state`, `POST /api/calls/prepare`, `/:id/dial`, `/:id/end` | approved account with calls on | see `packages/shared/src/calls.ts` |
+| `GET /api/calls/support/stream` | approved account with calls on | SSE, `support` events |
 
-"Approved account" means `Authorization: Bearer <token>`, the token from sign-in, for a user an admin approved (see `packages/shared/src/accounts.ts`). Refusals carry `ApiError.code`: 401 `signed_out`, 403 `pending` or `rejected`. "Admin" is the `ladybug_admin` cookie from `POST /api/admin/login`, or HTTP Basic auth with `ADMIN_PASSWORD`.
+"Approved account" means `Authorization: Bearer <token>`, the token from sign-in, for a user an admin approved (see `packages/shared/src/accounts.ts`). Refusals carry `ApiError.code`: 401 `signed_out`, 403 `pending` or `rejected`. Call routes also refuse with a plain 403 until an admin turns calls on for the account. "Admin" is the `ladybug_admin` cookie from `POST /api/admin/login`, or HTTP Basic auth with `ADMIN_PASSWORD`.
 
 Errors are `ApiError` JSON with 400/401/403/404/409/429. Scan ids are UUIDs, so reads don't need a key.
 

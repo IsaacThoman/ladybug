@@ -17,7 +17,7 @@ test("a failed poll from a previous call cannot change or hang up the current ca
   let prepares = 0;
   let polls = 0;
   const service = new CallService({
-    config: () => ({ url: "https://example.test", token: "test" }),
+    auth: () => ({ url: "https://example.test", token: "test" }),
     fetch: async (input) => {
       const path = new URL(String(input)).pathname;
       requests.push(path);
@@ -46,6 +46,50 @@ test("a failed poll from a previous call cannot change or hang up the current ca
   assert.equal(service.getState().phase, "active");
   assert.ok(!requests.some((path) => path.endsWith("/end")));
 });
+test("calls need a signed-in session, and keep the caller's session after the pet switches accounts", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let auth: { url: string; token: string } | null = null;
+  const tokens: string[] = [];
+  const service = new CallService({
+    auth: () => auth,
+    fetch: async (input, init) => {
+      tokens.push((init?.headers as Record<string, string>).Authorization);
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith("/prepare")) return Response.json({ id: "call" });
+      return Response.json({ id: "call", phase: "active", message: "", bridgeReady: true });
+    },
+  });
+  await assert.rejects(service.prepare(), /Sign in/);
+  assert.equal(service.getState().phase, "error");
+  assert.equal(tokens.length, 0);
+
+  auth = { url: "https://example.test", token: "alice" };
+  await service.prepare();
+  auth = { url: "https://example.test", token: "bob" };
+  await service.poll();
+  assert.deepEqual(tokens, ["Bearer alice", "Bearer alice"]);
+});
+
+test("losing access mid-call ends the call locally instead of retrying forever", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let refused = false;
+  const service = new CallService({
+    auth: () => ({ url: "https://example.test", token: "session" }),
+    fetch: async (input) => {
+      if (refused) return Response.json({ error: "nope" }, { status: 401 });
+      const path = new URL(String(input)).pathname;
+      if (path.endsWith("/prepare")) return Response.json({ id: "call" });
+      return Response.json({ id: "call", phase: "active", message: "", bridgeReady: true });
+    },
+  });
+  await service.prepare(); await service.poll();
+  assert.equal(service.getState().phase, "active");
+  refused = true;
+  await service.poll();
+  assert.equal(service.getState().phase, "ended");
+  assert.match(service.getState().message, /can no longer place calls/);
+});
+
 function controllerFixture() {
   let listener: (state: CallState) => void = () => {};
   const published = deferred<void>();
@@ -88,13 +132,13 @@ test("cancellation while capture is pending stops media and suppresses dialing a
   f.emit("ended"); f.dispose();
 });
 
-test("missing configuration is visible and allows retry", async () => {
+test("a signed-out request is visible and allows retry", async () => {
   const f = controllerFixture();
   f.published.promise.catch(() => {});
-  f.api.prepare = async () => { throw new Error("Configure CALL_SERVER_TOKEN"); };
+  f.api.prepare = async () => { throw new Error("Sign in to Ladybugg to request help."); };
   await f.controller.start();
   assert.equal(f.controller.getSnapshot().phase, "error");
-  assert.match(f.controller.getSnapshot().message, /Configure/);
+  assert.match(f.controller.getSnapshot().message, /Sign in/);
   f.dispose();
 });
 

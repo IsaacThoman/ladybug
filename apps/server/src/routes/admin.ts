@@ -65,7 +65,10 @@ const DECISIONS = [
 /** Running sandbox scans and the newest `limit` finished ones. */
 export type SandboxLister = (limit: number) => Promise<AdminSandboxesResponse>;
 
-export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, sandboxes: SandboxLister) {
+/** Called when an account can no longer place support calls. */
+export type RevokeCalls = (userId: string) => void;
+
+export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, sandboxes: SandboxLister, revokeCalls: RevokeCalls) {
   const router = express.Router();
 
   // Live activity: every logged event, plus the list of running analyses.
@@ -116,13 +119,31 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, 
     reject: { status: "rejected", verb: "turned down" },
   };
 
+  // Support calls ring a real phone, so they stay off until an admin turns them on.
+  router.put("/users/:id/calls", async (req, res) => {
+    const enabled: unknown = req.body?.enabled;
+    if (typeof enabled !== "boolean") throw new HttpError(400, "enabled must be true or false");
+    const user = await accounts.setCallsEnabled(req.params.id, enabled);
+    if (!user) throw new HttpError(404, "No such user");
+    if (!enabled) revokeCalls(user.id);
+    logEvent({
+      type: "admin",
+      message: `Admin turned ${enabled ? "on" : "off"} calls for ${user.username}`,
+      details: { userId: user.id, user: user.username, callsEnabled: enabled },
+    });
+    res.json(publicAccount(user));
+  });
+
   router.post("/users/:id/:action", async (req, res) => {
     const action = STATUS_ACTIONS[req.params.action];
     if (!action) throw new HttpError(404, "Not found");
     const user = await accounts.setStatus(req.params.id, action.status);
     if (!user) throw new HttpError(404, "No such user");
     // Pets reconnect and find out they no longer have access.
-    if (action.status !== "approved") petChannel.close(user.id);
+    if (action.status !== "approved") {
+      petChannel.close(user.id);
+      revokeCalls(user.id);
+    }
     logEvent({
       type: "admin",
       message: `Admin ${action.verb} ${user.username}`,
@@ -135,6 +156,7 @@ export function adminRouter(accounts: AccountStore, models: ModelSettingsStore, 
     const user = await accounts.remove(req.params.id);
     if (!user) throw new HttpError(404, "No such user");
     petChannel.close(user.id);
+    revokeCalls(user.id);
     logEvent({
       type: "admin",
       message: `Admin deleted ${user.username}`,

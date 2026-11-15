@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import type { AccountStore } from "@ladybug/backend";
 import type { ApiError, PreparedCall } from "@ladybug/shared";
 import { accessProblem, currentUser, sendAuthError } from "../accounts.ts";
+import type { SupportCommand } from "../support/service.ts";
 import { SupportStream } from "../support/stream.ts";
 import { CallService } from "./call-service.ts";
 
@@ -96,7 +97,7 @@ export function createCallRouter(options: { accounts: AccountStore; service?: Ca
     shutdown,
     checkLease,
     revoke,
-    deliverSupport: (id: string, sentAt?: number) => finished(calls.getState().phase) && support.deliver(id, sentAt),
+    deliverSupport: (command: SupportCommand) => (command.kind === "browser-kill" || finished(calls.getState().phase)) && support.deliver(command),
   });
 }
 

@@ -57,9 +57,7 @@
   font-size: 13px;
   line-height: 1.4;
   text-align: center;
-  box-shadow:
-    inset 0 3px 0 var(--red),
-    0 6px 24px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
   will-change: transform;
   user-select: text;
 }
@@ -84,7 +82,7 @@
 
 .pet-warning[data-side="below"]::after {
   bottom: calc(100% - 1px);
-  border-bottom-color: var(--red);
+  border-bottom-color: var(--bubble-bg);
 }
 
 .pet-warning > * {

@@ -166,7 +166,9 @@ test("support stream authenticates, selects only the newest connected desktop, d
     assert.ok(!received.includes(id)); assert.ok(received.includes(next));
     streams[0].abort.abort(); await new Promise((r) => setTimeout(r, 10));
     assert.equal(f.router.deliverSupport(randomUUID()), false);
+    f.advance();
     const reconnected = await connect("desktop-one");
+    assert.equal(f.router.deliverSupport(randomUUID(), 0), false, "a newly connected desktop must not receive a reply recorded before it connected");
     const fresh = randomUUID(); f.router.deliverSupport(fresh);
     assert.match(new TextDecoder().decode((await reconnected.read()).value), new RegExp(fresh));
   } finally { for (const stream of streams) { stream.abort.abort(); await stream.reader.cancel().catch(() => {}); } await f.close(); }

@@ -31,6 +31,14 @@
         <button id="exit" type="button" class="button primary">Get me out of here</button>
         <button id="continue" type="button" class="button ghost">Continue anyway</button>
       </section>
+
+      <!-- Signed in: say the block is a mistake. Doesn't unblock anything. -->
+      <section id="report" class="report" aria-live="polite" hidden>
+        <button id="report-safe" type="button" class="link-button">I think this site is safe</button>
+        <p id="report-done" hidden>Thanks — reported. Computerbug's admins will take a look.</p>
+        <a id="report-chain" class="report-chain" target="_blank" rel="noreferrer" hidden>See it on Solana ↗</a>
+        <p id="report-error" class="report-error" hidden></p>
+      </section>
     </main>
 
     <script type="module" src="./src/warningPage.ts"></script>

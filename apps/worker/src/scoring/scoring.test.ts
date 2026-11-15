@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { COMMUNITY_SIGNAL_MIN_REPORTS } from "@ladybug/shared";
 import type { BrowserEvents, DomSnapshot } from "@ladybug/shared";
 import { newEvidence } from "../evidence.ts";
 import type { Evidence } from "../evidence.ts";
@@ -184,4 +185,13 @@ test("a near match for a flagged page adds the similarity signal and lands in th
   assert.deepEqual(report.similar, similar);
   assert.match(report.signals.find((s) => s.id === "similar_known_bad")!.evidence, /93% match with https:\/\/old-phish\.example\/login/);
   assert.equal(buildReport(evidence()).similar, undefined);
+});
+
+test("enough community unsafe reports add a signal, without a floor", () => {
+  assert.ok(!ids(evidence({ communityUnsafeReports: COMMUNITY_SIGNAL_MIN_REPORTS - 1 })).includes("community_reports"));
+  const [signal] = computeSignals(evidence({ communityUnsafeReports: COMMUNITY_SIGNAL_MIN_REPORTS }));
+  assert.equal(signal?.id, "community_reports");
+  assert.equal(signal?.floor, undefined);
+  assert.match(signal?.evidence ?? "", /3 different accounts reported login\.example\.net as unsafe/);
+  assert.equal(buildReport(evidence({ communityUnsafeReports: 10 })).verdict, "benign", "reports alone don't flip a verdict");
 });

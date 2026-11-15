@@ -36,6 +36,21 @@
       <p id="account-status" class="account-status" hidden></p>
     </section>
 
+    <!-- What signed-in people say about the page in the active tab. -->
+    <section id="community" hidden>
+      <h2>Community</h2>
+      <p class="community-summary">
+        <strong id="community-host" class="community-host"></strong>
+        <span id="community-tally" class="muted"></span>
+      </p>
+      <div id="community-actions" class="row community-actions" hidden>
+        <button type="button" class="secondary" data-verdict="unsafe" aria-pressed="false">Report unsafe</button>
+        <button type="button" class="secondary" data-verdict="safe" aria-pressed="false">Mark safe</button>
+      </div>
+      <p id="community-chain" class="community-chain" hidden></p>
+      <p id="community-error" class="form-error" hidden></p>
+    </section>
+
     <label class="toggle">
       <input id="enabled" type="checkbox" />
       <span>Report the pages I visit</span>

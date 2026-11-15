@@ -4,6 +4,7 @@ import type { UrlRecord, UrlScope, Verdict } from "@ladybug/shared";
 import { api } from "../api";
 import { formatFull, timeAgo } from "../format";
 import { VerdictBadge } from "./Badge";
+import CommunityReports from "./CommunityReports";
 
 const PER_PAGE = 50;
 
@@ -56,6 +57,7 @@ export default function UrlsView({ version }: { version: number }) {
 
   return (
     <div className="stack">
+      <CommunityReports version={version + reload} onChange={refresh} />
       <AddRecordForm onAdded={refresh} />
       <section className="card">
         <div className="toolbar">

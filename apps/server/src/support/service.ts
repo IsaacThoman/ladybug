@@ -6,7 +6,7 @@ import type { MessagingConfig, SharedMessage } from "./chert.ts";
 
 const HOUR = 3_600_000, WINDOW = 1_800_000;
 /** How long one notification blocks another for the same host. */
-const HOST_COOLDOWN_MS = 60_000;
+const HOST_COOLDOWN_MS = 120_000;
 const POLL_INTERVAL_MS = 15_000;
 const jobs = "support:shared:jobs";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");

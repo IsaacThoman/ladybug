@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
+import type { SupportCommand } from "./service.ts";
 
-/** Ephemeral delivery to one desktop; there is deliberately no event history. */
+/** Account-scoped ephemeral command delivery with no event history. */
 export class SupportStream {
   private clients = new Map<Response, { userId: string; connectedAt: number }>();
   private now: () => number;
@@ -13,12 +14,15 @@ export class SupportStream {
     const timer = setInterval(() => res.write(": ping\n\n"), 15_000);
     req.on("close", () => { clearInterval(timer); this.clients.delete(res); });
   }
-  deliver(id: string, sentAt = this.now()) {
-    const client = [...this.clients].reverse().find(([res, { connectedAt }]) =>
-      connectedAt <= sentAt && !res.destroyed && !res.writableEnded)?.[0];
-    if (!client) return false;
-    client.write(`event: support\ndata: ${JSON.stringify({ id })}\n\n`);
-    return true;
+  deliver(command: SupportCommand) {
+    if (command.expiresAt < this.now()) return false;
+    const clients = [...this.clients].reverse().filter(([res, { userId, connectedAt }]) =>
+      userId === command.accountId && connectedAt <= command.sentAt && !res.destroyed && !res.writableEnded);
+    const targets = command.kind === "support" ? clients.slice(0, 1) : clients;
+    for (const [client] of targets) {
+      client.write(`event: ${command.kind}\ndata: ${JSON.stringify({ id: command.id, expiresAt: command.expiresAt })}\n\n`);
+    }
+    return targets.length > 0;
   }
   /** Ends every stream, or only those of one account. */
   close(userId?: string) {

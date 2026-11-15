@@ -54,7 +54,9 @@ async function fixture(users = defaultUsers) {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { url, api, calls, router, idOf, requests, roomCount: () => roomCount, advance: () => { now += 31_000; }, finish: () => { status = "ended"; },
+  const deliver = (id: string, sentAt = now, token = "desktop-one", kind: "support" | "browser-kill" = "support") =>
+    router.deliverSupport({ id, sentAt, accountId: idOf(token), kind, expiresAt: now + 1_800_000 });
+  return { deliver, url, api, calls, router, idOf, requests, roomCount: () => roomCount, advance: () => { now += 31_000; }, finish: () => { status = "ended"; },
     close: async () => {
       status = "ended";
       await calls.endCurrent(); await calls.poll(); await router.shutdown();
@@ -90,7 +92,7 @@ test("revoking an account hangs up its call and drops its support stream", async
     assert.equal((await reader.read()).done, true);
     await new Promise((r) => setTimeout(r, 10));
     assert.equal(f.calls.getState().phase, "ending");
-    assert.equal(f.router.deliverSupport(randomUUID()), false);
+    assert.equal(f.deliver(randomUUID()), false);
   } finally { abort.abort(); await f.close(); }
 });
 
@@ -152,24 +154,29 @@ test("support stream authenticates, selects only the newest connected desktop, d
   };
   try {
     assert.equal((await f.api("/support/stream", undefined, "wrong")).status, 401);
-    assert.equal(f.router.deliverSupport(randomUUID()), false);
-    const old = await connect("desktop-one"), latest = await connect("desktop-two");
-    const id = randomUUID(); assert.equal(f.router.deliverSupport(id), true);
+    assert.equal(f.deliver(randomUUID()), false);
+    const old = await connect("desktop-one"), latest = await connect("desktop-one");
+    const id = randomUUID(); assert.equal(f.deliver(id), true);
     const chunk = await latest.read(); assert.match(new TextDecoder().decode(chunk.value), new RegExp(id));
     const oldPending = old.read();
     const prepared = await (await f.api("/prepare", { requestId: randomUUID() })).json() as PreparedCall;
-    assert.equal(f.router.deliverSupport(randomUUID()), false);
+    assert.equal(f.deliver(randomUUID()), false);
+    const kill = randomUUID();
+    assert.equal(f.deliver(kill, 0, "desktop-one", "browser-kill"), true);
+    assert.match(new TextDecoder().decode((await latest.read()).value), new RegExp(`event: browser-kill.*`, "s"));
+    assert.match(new TextDecoder().decode((await oldPending).value), new RegExp(kill));
+    const afterKill = old.read();
     await f.api(`/${prepared.id}/end`, {}); f.finish(); await f.calls.poll();
     streams[1].abort.abort(); await new Promise((r) => setTimeout(r, 10));
-    const next = randomUUID(); assert.equal(f.router.deliverSupport(next), true);
-    const received = new TextDecoder().decode((await oldPending).value);
+    const next = randomUUID(); assert.equal(f.deliver(next), true);
+    const received = new TextDecoder().decode((await afterKill).value);
     assert.ok(!received.includes(id)); assert.ok(received.includes(next));
     streams[0].abort.abort(); await new Promise((r) => setTimeout(r, 10));
-    assert.equal(f.router.deliverSupport(randomUUID()), false);
+    assert.equal(f.deliver(randomUUID()), false);
     f.advance();
     const reconnected = await connect("desktop-one");
-    assert.equal(f.router.deliverSupport(randomUUID(), 0), false, "a newly connected desktop must not receive a reply recorded before it connected");
-    const fresh = randomUUID(); f.router.deliverSupport(fresh);
+    assert.equal(f.deliver(randomUUID(), 0), false, "a newly connected desktop must not receive a reply recorded before it connected");
+    const fresh = randomUUID(); f.deliver(fresh);
     assert.match(new TextDecoder().decode((await reconnected.read()).value), new RegExp(fresh));
   } finally { for (const stream of streams) { stream.abort.abort(); await stream.reader.cancel().catch(() => {}); } await f.close(); }
 });

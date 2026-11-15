@@ -22,7 +22,7 @@ export function configureAnalyzer(deps: ScanDeps) {
 const useScans = () => config.analyzer === "scan" && scanDeps !== null;
 
 /** Analyses in progress, keyed by normalised URL. */
-const browserVisits = new Set<string>();
+const browserVisits = new Map<string, Set<string>>();
 const pending = new Map<string, PendingAnalysis>();
 /** Who to tell when each analysis finishes, keyed by URL, then user id (or "everyone"). */
 const watchers = new Map<string, Map<string, AlertRecipient>>();
@@ -86,7 +86,11 @@ export function placeholderVerdict(url: string, host: string): { verdict: Verdic
  * URL meanwhile. `joined` is false when this recipient was already waiting.
  */
 export function startAnalysis(url: string, host: string, recipient: AlertRecipient, browserVisit = false) {
-  if (browserVisit) browserVisits.add(url);
+  if (browserVisit && recipient !== "everyone") {
+    const visitors = browserVisits.get(url) ?? new Set<string>();
+    visitors.add(recipient.userId);
+    browserVisits.set(url, visitors);
+  }
   const waiting = watchers.get(url) ?? new Map<string, AlertRecipient>();
   const key = recipientKey(recipient);
   const joined = !waiting.has(key);
@@ -182,7 +186,7 @@ async function runAnalysis({ url, host, startedAt, scanId }: PendingAnalysis, us
       details: { analyzer: scanId ? "scan" : "placeholder", recordId: record.id, reason, scanId },
     });
     if (verdict === "unsafe") {
-      if (browserVisits.has(url)) notifyUnsafeVisit(url);
+      for (const accountId of browserVisits.get(url) ?? []) notifyUnsafeVisit(url, accountId);
       alertAll("danger", `Watch out! ${host} looks unsafe. ${reason.replace(/\.$/, "")}.`);
     } else {
       alertAll("ok", `All good, ${host} checked out fine.`);

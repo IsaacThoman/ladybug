@@ -34,7 +34,7 @@ export async function sendMessage(config: MessagingConfig, id: string, url: stri
       method: "POST", redirect: "error", signal: AbortSignal.timeout(20_000),
       headers: { ...headers(config), "Content-Type": "application/json", "Idempotency-Key": id },
       body: JSON.stringify({ line_id: config.line, recipient: config.destination,
-        text: `The user is accessing a website that might not be trustworthy: ${url}. If you would like to initiate a FaceTime call for support, reply SUPPORT.` }),
+        text: `The user is accessing a website that might not be trustworthy: ${url}. Within 30 minutes, reply SUPPORT to start or restart a FaceTime support call, or KILL to force-close all Google Chrome windows on this account’s connected computers.` }),
     });
   } catch { throw new SendError(true); }
   if (!response.ok) {

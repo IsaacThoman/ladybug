@@ -160,22 +160,26 @@ messages to be missed; the endpoint provides no durable event cursor here.
 
 Browser visits to known unsafe sites and analyses finding unsafe sites queue:
 
-> The user is accessing a website that might not be trustworthy: {url}. If you would like to initiate a FaceTime call for support, reply SUPPORT.
+> The user is accessing a website that might not be trustworthy: {url}. Within 30 minutes, reply SUPPORT to start or restart a FaceTime support call, or KILL to force-close all Google Chrome windows on this account’s connected computers.
 
 URLs have credentials and fragments removed. Admin checks and manual scans alone
 do not message anyone. Redis reserves one notification per normalized hostname
-per hour, including concurrent visits and server restarts. Subdomains have separate
-limits. The durable outbox retries transient POST failures up to five times with
+per account per hour, including concurrent visits and server restarts. Subdomains
+have separate limits. The durable outbox retries transient POST failures up to five times with
 the same idempotency key. Accepted pending sends retain their returned message ID
 and are checked through GET without creating another send. Only `state: sent`
 opens a support window; pending/unknown states do not establish delivery.
 Messaging failures do not interrupt site checks or pet alerts.
 
 A confirmed send opens a 30-minute support window scoped to the project, line,
-and emergency contact. Only inbound `received` text equal to SUPPORT (ignoring
-case and surrounding whitespace) is eligible. Both the message's `created_at`
+and emergency contact, retaining the originating account. Only inbound `received`
+text equal to SUPPORT or KILL (ignoring case and surrounding whitespace) is eligible. Both the message's `created_at`
 and the polling receipt must fall inside the window. IDs are deduplicated in
-Redis; each window is consumed once. Messages predating server startup are ignored.
+Redis atomically; distinct replies keep the original window open without extending
+its expiry. SUPPORT can restart an ended call; replies during an active or ending
+call are ignored without queuing. Messages predating server startup are ignored.
+When windows overlap, the newest confirmed alert preceding the reply determines
+the destination account. Legacy jobs and windows without an account are ignored.
 
 **Sender matching:** shared-line GET currently masks phone numbers as `•••1234`.
 The deployment owner accepts matching the last four digits of registered senders
@@ -183,10 +187,22 @@ to `EMERGENCY_NUMBER`. This is not a full-number identity check: registered phon
 sharing those digits cannot be distinguished. Full unmasked numbers, if returned,
 are compared exactly. No phone number or private message text is written to logs.
 
-The most recently connected eligible desktop receives the request through an
-authenticated main-process SSE connection. A desktop must already have been
-connected when the reply was recorded. Offline requests are discarded and
-reconnects have no backlog. Busy calls ignore additional requests. Keep one server
+SUPPORT reaches the originating account's most recently connected eligible
+desktop through an authenticated main-process SSE connection. KILL reaches all
+eligible connected desktops for that account, even during calls or after leaving
+the unsafe page. Approval and calls-enabled access are required for either command;
+sign-out, access revocation, and subscription shutdown stop further execution.
+Expired events are discarded by desktops. Older desktops ignore `browser-kill`.
+
+KILL runs `/usr/bin/pkill` without a shell, using `-KILL`, the current OS UID,
+and an exact process-name match: `chrome` on Linux, `Google Chrome` on macOS.
+Only stable Google Chrome is targeted; all its windows for that OS user close,
+possibly losing unsaved work. Ladybug and its call continue running. Missing Chrome
+is a successful no-op, and other platforms do nothing. No confirmation or reply
+message is sent.
+
+A desktop must already have been connected when the reply was recorded. Offline requests are discarded and
+reconnects have no backlog. Busy calls ignore additional SUPPORT requests. Keep one server
 process per call line, as required by the existing call lifecycle.
 
 Clicking the ladybug opens a menu above it with **Request help**, **Scan clipboard
@@ -209,7 +225,11 @@ TEST_REDIS_URL=redis://localhost:16379/15 npm test -w @ladybug/server
 
 These tests clear that database. For acceptance after the emergency phone joins,
 visit a known unsafe URL, verify the message, reply SUPPORT, and confirm exactly
-one desktop starts one call after polling. Check duplicate/expired replies,
+one desktop starts one call after polling. End the call, reply SUPPORT again
+within the same window, and confirm a new call starts. On Linux and macOS, send
+KILL during a support call and after navigating away; confirm Chrome closes on
+all connected computers for that account while Ladybug and the call continue.
+Check duplicate/expired replies,
 wrong line or last-four digits, outbound texts, busy calls and offline/reconnected
 desktops. Automated capture tests cover selection, call/frame authorization, cancellation,
 composition geometry, camera fallback, required-device failures, cleanup, publication

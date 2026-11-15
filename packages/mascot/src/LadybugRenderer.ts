@@ -392,10 +392,6 @@ export class LadybugRenderer {
       eye.scale.x = wide * zoom;
       eye.scale.z = zoom;
     });
-    // Worry shows as a small frown; the calm face has no mouth.
-    const frown = Math.max(this.nervous * 0.75, this.alarmed);
-    rig.frown.visible = frown > 0.02;
-    rig.frown.scale.setScalar(frown);
 
     // Wing cases pop open and the wings buzz while in the air, or flare in alarm.
     this.flare = Math.max(0, this.flare - dt);

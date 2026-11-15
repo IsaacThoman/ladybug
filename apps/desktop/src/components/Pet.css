@@ -26,23 +26,22 @@
   min-width: min(180px, 100%);
   padding: 6px;
   border-radius: 12px;
-  background: #fff;
-  color: #1d1d1f;
+  background: var(--surface);
+  color: var(--text);
   box-shadow: 0 4px 18px #0004;
   overflow: auto;
 }
 .pet-menu button { border: 0; background: transparent; color: inherit; padding: 10px 12px; text-align: left; border-radius: 7px; cursor: pointer; }
-.pet-menu button:hover, .pet-menu button:focus-visible { background: #edf2f7; outline: 2px solid #487fc9; }
+.pet-menu button:hover, .pet-menu button:focus-visible { background: var(--menu-hover); outline: 2px solid var(--focus); }
 .pet-menu button:disabled { opacity: 0.45; cursor: default; }
-.pet:focus-visible { outline: 2px solid #487fc9; border-radius: 50%; }
+.pet:focus-visible { outline: 2px solid var(--focus); border-radius: 50%; }
 
 /*
  * Speech bubbles from the bug. Positioned from the animation loop, which also
  * sets data-side and --tail-x.
  */
 .pet-bubble {
-  --bubble-bg: #fff;
-  --red: #e5483e;
+  --bubble-bg: var(--surface);
   box-sizing: border-box;
   position: absolute;
   top: 0;
@@ -51,7 +50,7 @@
   padding: 14px 16px 12px;
   border-radius: 14px;
   background: var(--bubble-bg);
-  color: #1d1d1f;
+  color: var(--text);
   font-size: 13px;
   line-height: 1.4;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
@@ -104,8 +103,8 @@
   display: inline-block;
   padding: 2px 9px;
   border-radius: 99px;
-  background: #fde8e5;
-  color: #b3322a;
+  background: var(--warning-bg);
+  color: var(--warning-text);
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -122,12 +121,12 @@
 
 .pet-warning-summary {
   margin-top: 6px;
-  color: #4a4a50;
+  color: var(--secondary-text);
   text-wrap: pretty;
 }
 
 .pet-warning-summary strong {
-  color: #1d1d1f;
+  color: var(--text);
   overflow-wrap: anywhere;
 }
 
@@ -135,13 +134,13 @@
   margin-top: 10px;
   padding: 8px 10px;
   border-radius: 9px;
-  background: #f4f4f6;
+  background: var(--surface-inset);
   text-align: left;
 }
 
 .pet-warning-reason {
   margin: 0 0 4px;
-  color: #4a4a50;
+  color: var(--secondary-text);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -149,7 +148,7 @@
 .pet-warning-url {
   margin: 0;
   overflow: hidden;
-  color: #75757d;
+  color: var(--muted-text);
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 11px;
   text-overflow: ellipsis;
@@ -178,7 +177,7 @@
 }
 
 .pet-bubble-actions button:focus-visible {
-  outline: 2px solid #487fc9;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -194,27 +193,27 @@
 }
 
 .pet-bubble-actions .primary:hover:not(:disabled) {
-  background: #c63a31;
+  background: var(--red-hover);
 }
 
 .pet-bubble-actions .ghost {
-  background: #fff;
-  border-color: #d2d2d7;
-  color: #1d1d1f;
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
 }
 
 .pet-bubble-actions .ghost:hover:not(:disabled) {
-  background: #f4f4f6;
+  background: var(--surface-inset);
 }
 
 .pet-warning-note {
   margin-top: 9px;
-  color: #75757d;
+  color: var(--muted-text);
   font-size: 11px;
 }
 
 .pet-warning-note[role="alert"] {
-  color: #b3322a;
+  color: var(--warning-text);
 }
 
 /* A support call: its status and controls over the caller's video, as large as fits. */
@@ -275,7 +274,7 @@
 
 .pet-call-note {
   margin: 0 4px;
-  color: #75757d;
+  color: var(--muted-text);
   font-size: 12px;
 }
 

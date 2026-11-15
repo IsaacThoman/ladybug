@@ -1,4 +1,23 @@
 :root {
+  --surface: #fff;
+  --text: #1d1d1f;
+  --account-text: #222;
+  --secondary-text: #4a4a50;
+  --account-secondary-text: #555;
+  --muted-text: #75757d;
+  --surface-inset: #f4f4f6;
+  --menu-hover: #edf2f7;
+  --border: #d2d2d7;
+  --input-border: #ccc;
+  --focus: #487fc9;
+  --red: #e5483e;
+  --red-hover: #c63a31;
+  --warning-bg: #fde8e5;
+  --warning-text: #b3322a;
+  --pending-bg: #fff3dc;
+  --pending-text: #7a5200;
+  --rejected-bg: #fde8e6;
+  --error-text: #b02a2a;
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.4;
   color-scheme: light dark;
@@ -6,6 +25,29 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Electron follows the OS preference and updates this query while running. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #242426;
+    --text: #f5f5f7;
+    --account-text: #f5f5f7;
+    --secondary-text: #d1d1d6;
+    --account-secondary-text: #c7c7cc;
+    --muted-text: #aeaeb6;
+    --surface-inset: #323235;
+    --menu-hover: #383c44;
+    --border: #606066;
+    --input-border: #606066;
+    --focus: #8ab4f8;
+    --warning-bg: #502925;
+    --warning-text: #ffaaa2;
+    --pending-bg: #45371d;
+    --pending-text: #f5cf83;
+    --rejected-bg: #502925;
+    --error-text: #ffaaa2;
+  }
 }
 
 html,
@@ -26,8 +68,8 @@ body,
   max-width: calc(100vw - 32px);
   overflow: auto;
   border-radius: 8px;
-  background: #fff;
-  color: #222;
+  background: var(--surface);
+  color: var(--account-text);
   padding: 12px;
   box-sizing: border-box;
   font-size: 13px;
@@ -35,26 +77,26 @@ body,
 }
 .account-panel p { margin: 0 0 8px; }
 .account-title { font-weight: 600; }
-.account-note { color: #555; }
-.account-panel label { display: block; margin-bottom: 8px; color: #555; font-size: 12px; }
+.account-note { color: var(--account-secondary-text); }
+.account-panel label { display: block; margin-bottom: 8px; color: var(--account-secondary-text); font-size: 12px; }
 .account-panel input {
   display: block;
   width: 100%;
   margin-top: 4px;
   padding: 6px 8px;
   box-sizing: border-box;
-  border: 1px solid #ccc;
+  border: 1px solid var(--input-border);
   border-radius: 6px;
   font: inherit;
-  color: #222;
-  background: #fff;
+  color: var(--account-text);
+  background: var(--surface);
   user-select: text;
 }
-.account-panel input:focus { outline: 2px solid #e5483e; outline-offset: -1px; }
+.account-panel input:focus { outline: 2px solid var(--red); outline-offset: -1px; }
 .account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
 .account-panel button { cursor: pointer; padding: 6px 12px; }
 .account-panel button:disabled { cursor: default; }
-.account-panel button.link { padding: 0 4px; border: 0; background: none; color: #555; text-decoration: underline; }
-.account-status { padding: 8px 10px; border-radius: 6px; background: #fff3dc; color: #7a5200; }
-.account-status[data-status="rejected"] { background: #fde8e6; color: #b02a2a; }
-.account-error { color: #b02a2a; }
+.account-panel button.link { padding: 0 4px; border: 0; background: none; color: var(--account-secondary-text); text-decoration: underline; }
+.account-status { padding: 8px 10px; border-radius: 6px; background: var(--pending-bg); color: var(--pending-text); }
+.account-status[data-status="rejected"] { background: var(--rejected-bg); color: var(--error-text); }
+.account-error { color: var(--error-text); }
